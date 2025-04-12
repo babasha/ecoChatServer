@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"log"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"

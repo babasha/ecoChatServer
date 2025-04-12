@@ -12,13 +12,14 @@ type User struct {
 
 // Admin представляет собой структуру администратора
 type Admin struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Avatar   string `json:"avatar,omitempty"`
-	Role     string `json:"role"` // "admin", "support", etc.
-	ClientID string `json:"clientId"` // ID клиента, на которого работает админ
-	Active   bool   `json:"active"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash,omitempty"`
+	Avatar       string `json:"avatar,omitempty"`
+	Role         string `json:"role"` // "admin", "support", etc.
+	ClientID     string `json:"clientId"` // ID клиента, на которого работает админ
+	Active       bool   `json:"active"`
 }
 
 // Client представляет собой структуру клиента (компании)

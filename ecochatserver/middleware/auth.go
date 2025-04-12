@@ -123,7 +123,7 @@ func Authenticate(email, password string) (string, error) {
 	}
 
 	// Проверяем пароль (хешированный в базе)
-	if err := database.VerifyPassword(password, admin.Password); err != nil {
+	if err := database.VerifyPassword(password, admin.PasswordHash); err != nil {
 		return "", errors.New("неверные учетные данные")
 	}
 

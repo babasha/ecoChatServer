@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"ecochatserver/database"
+	"ecochatserver/middleware"
 	"ecochatserver/models"
 	"ecochatserver/websocket"
-	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
+
 
 // TelegramWebhook обрабатывает входящие запросы от Telegram API
 func TelegramWebhook(c *gin.Context) {
@@ -26,7 +27,7 @@ func TelegramWebhook(c *gin.Context) {
 	}
 	
 	// Создаем или получаем существующий чат
-	chat, newMessage, err := database.CreateOrGetChat(
+	chat, _, err := database.CreateOrGetChat(
 		incomingMessage.UserID,
 		incomingMessage.UserName,
 		incomingMessage.UserEmail,
@@ -101,7 +102,7 @@ func Login(c *gin.Context) {
 	}
 	
 	// Скрываем чувствительные данные
-	admin.Password = ""
+	admin.PasswordHash = ""
 	
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,

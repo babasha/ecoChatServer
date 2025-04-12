@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"ecochatserver/database"
-	"ecochatserver/models"
 	"ecochatserver/websocket"
 	"net/http"
 

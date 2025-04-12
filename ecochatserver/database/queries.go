@@ -15,14 +15,14 @@ func GetAdmin(email string) (*models.Admin, error) {
 	var admin models.Admin
 
 	row := DB.QueryRow("SELECT id, name, email, password_hash, avatar, role, client_id, active FROM admins WHERE email = ?", email)
-	var passwordHash string
-	err := row.Scan(&admin.ID, &admin.Name, &admin.Email, &passwordHash, &admin.Avatar, &admin.Role, &admin.ClientID, &admin.Active)
+	err := row.Scan(&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &admin.Avatar, &admin.Role, &admin.ClientID, &admin.Active)
 	if err != nil {
 		return nil, err
 	}
 
 	return &admin, nil
 }
+
 
 // VerifyPassword проверяет хеш пароля
 func VerifyPassword(password, hashedPassword string) error {
