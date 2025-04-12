@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"ecochatserver/models"
 	"encoding/json"
 	"errors"
@@ -13,16 +14,24 @@ import (
 // GetAdmin получает администратора по электронной почте
 func GetAdmin(email string) (*models.Admin, error) {
 	var admin models.Admin
+	var avatarNull sql.NullString
 
 	row := DB.QueryRow("SELECT id, name, email, password_hash, avatar, role, client_id, active FROM admins WHERE email = ?", email)
-	err := row.Scan(&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &admin.Avatar, &admin.Role, &admin.ClientID, &admin.Active)
+	err := row.Scan(&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &avatarNull, &admin.Role, &admin.ClientID, &admin.Active)
 	if err != nil {
 		return nil, err
 	}
 
+	// Обрабатываем NULL-значение для avatar
+	if avatarNull.Valid {
+		avatarStr := avatarNull.String
+		admin.Avatar = &avatarStr
+	} else {
+		admin.Avatar = nil
+	}
+
 	return &admin, nil
 }
-
 
 // VerifyPassword проверяет хеш пароля
 func VerifyPassword(password, hashedPassword string) error {
@@ -61,15 +70,24 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 		var user models.User
 		var unreadCount int
 		var lastMessageID, lastMessageContent, lastMessageSender, lastMessageTimestamp string
+		var avatarNull sql.NullString
 
 		err := rows.Scan(
 			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
-			&user.ID, &user.Name, &user.Email, &user.Avatar,
+			&user.ID, &user.Name, &user.Email, &avatarNull,
 			&unreadCount,
 			&lastMessageID, &lastMessageContent, &lastMessageSender, &lastMessageTimestamp,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		// Обрабатываем NULL-значение для avatar
+		if avatarNull.Valid {
+			avatarStr := avatarNull.String
+			user.Avatar = &avatarStr
+		} else {
+			user.Avatar = nil
 		}
 
 		chat.User = user
@@ -96,29 +114,48 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 	// Получаем информацию о чате
 	var chat models.Chat
 	var userID string
+	var assignedToNull sql.NullString
 
 	err := DB.QueryRow(`
 		SELECT c.id, c.created_at, c.updated_at, c.status, c.user_id, c.source, c.bot_id, c.client_id, c.assigned_to
 		FROM chats c
 		WHERE c.id = ?
 	`, chatID).Scan(
-		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &userID, &chat.Source, &chat.BotID, &chat.ClientID, &chat.AssignedTo,
+		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedToNull,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	// Обрабатываем NULL значение для assignedTo
+	if assignedToNull.Valid {
+		assignedToStr := assignedToNull.String
+		chat.AssignedTo = &assignedToStr
+	} else {
+		chat.AssignedTo = nil
+	}
+
 	// Получаем информацию о пользователе
 	var user models.User
+	var avatarNull sql.NullString
+	
 	err = DB.QueryRow(`
 		SELECT id, name, email, avatar, source, source_id
 		FROM users
 		WHERE id = ?
 	`, userID).Scan(
-		&user.ID, &user.Name, &user.Email, &user.Avatar, &user.Source, &user.SourceID,
+		&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	// Обрабатываем NULL-значение для avatar
+	if avatarNull.Valid {
+		avatarStr := avatarNull.String
+		user.Avatar = &avatarStr
+	} else {
+		user.Avatar = nil
 	}
 
 	chat.User = user
@@ -262,15 +299,24 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 		}
 	} else {
 		// Получаем существующего пользователя
+		var avatarNull sql.NullString
 		err = DB.QueryRow(`
 			SELECT id, name, email, avatar, source, source_id
 			FROM users
 			WHERE source = ? AND source_id = ?
 		`, source, sourceID).Scan(
-			&user.ID, &user.Name, &user.Email, &user.Avatar, &user.Source, &user.SourceID,
+			&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
 		)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		// Обрабатываем NULL-значение для avatar
+		if avatarNull.Valid {
+			avatarStr := avatarNull.String
+			user.Avatar = &avatarStr
+		} else {
+			user.Avatar = nil
 		}
 	}
 

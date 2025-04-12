@@ -16,7 +16,7 @@ type Chat struct {
 	Source    string    `json:"source"` // Источник (например, "telegram", "whatsapp")
 	BotID     string    `json:"botId"`  // ID бота, через который пришло сообщение
 	ClientID  string    `json:"clientId"` // ID клиента, которому принадлежит бот
-	AssignedTo string    `json:"assignedTo,omitempty"` // ID сотрудника, которому назначен чат
+	AssignedTo *string   `json:"assignedTo,omitempty"` // ID сотрудника, которому назначен чат
 }
 
 // ChatResponse для отправки на фронтенд
