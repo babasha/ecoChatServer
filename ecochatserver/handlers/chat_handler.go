@@ -1,76 +1,58 @@
 package handlers
 
 import (
+	"ecochatserver/database"
 	"ecochatserver/models"
+	"ecochatserver/websocket"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
-
-// Временное хранилище чатов (в реальном проекте будет база данных)
-var chats = make(map[string]models.Chat)
 
 // GetChats возвращает список всех чатов для админа
 func GetChats(c *gin.Context) {
-	// Получаем ID админа из токена аутентификации
+	// Получаем ID админа и клиента из токена аутентификации
 	adminID := c.GetString("adminID")
-	if adminID == "" {
+	clientID := c.GetString("clientID")
+	
+	if adminID == "" || clientID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
 	// Получаем список чатов из базы данных
-	// Здесь должна быть логика получения чатов из БД
-	// Пока используем временное хранилище
-	chatList := []models.ChatResponse{}
-	
-	for _, chat := range chats {
-		// Проверяем, назначен ли чат этому админу
-		if chat.AssignedTo == adminID || chat.AssignedTo == "" {
-			unreadCount := 0
-			for _, msg := range chat.Messages {
-				if !msg.Read && msg.Sender == "user" {
-					unreadCount++
-				}
-			}
-			
-			chatResponse := models.ChatResponse{
-				ID:          chat.ID,
-				User:        chat.User,
-				LastMessage: chat.LastMessage,
-				CreatedAt:   chat.CreatedAt,
-				UpdatedAt:   chat.UpdatedAt,
-				Status:      chat.Status,
-				UnreadCount: unreadCount,
-			}
-			
-			chatList = append(chatList, chatResponse)
-		}
+	chats, err := database.GetChats(clientID, adminID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения чатов"})
+		return
 	}
 
-	c.JSON(http.StatusOK, chatList)
+	c.JSON(http.StatusOK, chats)
 }
 
 // GetChatByID возвращает информацию о конкретном чате и его сообщениях
 func GetChatByID(c *gin.Context) {
 	chatID := c.Param("id")
+	adminID := c.GetString("adminID")
 	
-	// Проверяем наличие чата
-	chat, exists := chats[chatID]
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Chat not found"})
+	if adminID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 	
-	// Обновляем статус прочтения сообщений
-	for i := range chat.Messages {
-		if chat.Messages[i].Sender == "user" && !chat.Messages[i].Read {
-			chat.Messages[i].Read = true
-		}
+	// Получаем информацию о чате из базы данных
+	chat, err := database.GetChatByID(chatID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден"})
+		return
 	}
-	chats[chatID] = chat
+	
+	// Отмечаем сообщения как прочитанные
+	err = database.MarkMessagesAsRead(chatID)
+	if err != nil {
+		// Логируем ошибку, но продолжаем
+		c.Error(err)
+	}
 	
 	c.JSON(http.StatusOK, chat)
 }
@@ -78,17 +60,17 @@ func GetChatByID(c *gin.Context) {
 // SendMessage отправляет сообщение в чат
 func SendMessage(c *gin.Context) {
 	chatID := c.Param("id")
+	adminID := c.GetString("adminID")
 	
-	// Проверяем наличие чата
-	chat, exists := chats[chatID]
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Chat not found"})
+	if adminID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 	
 	// Получаем данные сообщения
 	var messageData struct {
 		Content string `json:"content" binding:"required"`
+		Type    string `json:"type"`
 	}
 	
 	if err := c.ShouldBindJSON(&messageData); err != nil {
@@ -96,31 +78,38 @@ func SendMessage(c *gin.Context) {
 		return
 	}
 	
-	// Создаем новое сообщение
-	adminID := c.GetString("adminID")
-	now := time.Now()
-	message := models.Message{
-		ID:        uuid.New().String(),
-		ChatID:    chatID,
-		Content:   messageData.Content,
-		Sender:    "admin",
-		SenderID:  adminID,
-		Timestamp: now,
-		Read:      false,
-		Type:      "text",
+	// Если тип не указан, используем "text"
+	messageType := "text"
+	if messageData.Type != "" {
+		messageType = messageData.Type
 	}
 	
-	// Добавляем сообщение в чат
-	chat.Messages = append(chat.Messages, message)
-	chat.LastMessage = &message
-	chat.UpdatedAt = now
-	chats[chatID] = chat
+	// Добавляем сообщение в базу данных
+	message, err := database.AddMessage(chatID, messageData.Content, "admin", adminID, messageType, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отправки сообщения"})
+		return
+	}
 	
-	// Здесь нужно отправить сообщение через Telegram API
-	// ... (код для отправки сообщения пользователю)
+	// Получаем обновленный чат
+	chat, err := database.GetChatByID(chatID)
+	if err != nil {
+		c.Error(err)
+	} else {
+		// Отправляем уведомление по WebSocket
+		messageData, err := websocket.NewChatMessage(chat, message)
+		if err == nil {
+			// Отправляем всем клиентам или конкретному админу
+			// В идеале нужно отправлять только админам, связанным с этим чатом
+			websocketHub.Broadcast(messageData)
+		}
+	}
 	
-	// Отправляем уведомление всем подключенным клиентам через WebSocket
-	// Должна быть интеграция с WebSocket Hub
+	// Здесь нужно добавить код для отправки сообщения через Telegram API
+	// В зависимости от source в чате
 	
 	c.JSON(http.StatusOK, message)
 }
+
+// Глобальная переменная для доступа к WebSocket хабу
+var websocketHub *websocket.Hub
