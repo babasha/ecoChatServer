@@ -6,18 +6,46 @@ import (
 	"ecochatserver/middleware"
 	"ecochatserver/websocket"
 	"log"
+	"os"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Инициализация базы данных
-	err := database.InitDB("ecochat.db")
+	// Настройка логирования
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("Запуск EcoChat сервера...")
+
+	// Загрузка переменных окружения
+	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("Ошибка подключения к базе данных: %v", err)
+		log.Println("Файл .env не найден, используются переменные среды")
+	}
+
+	// Установка режима Gin
+	ginMode := os.Getenv("GIN_MODE")
+	if ginMode == "" {
+		ginMode = "debug"
+	}
+	gin.SetMode(ginMode)
+
+	// Инициализация базы данных
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "ecochat.db"
+	}
+
+	log.Printf("Инициализация базы данных: %s", dbPath)
+	err = database.InitDB(dbPath)
+	if err != nil {
+		log.Fatalf("Критическая ошибка подключения к базе данных: %v", err)
 	}
 	defer database.CloseDB()
+
+	log.Println("База данных успешно инициализирована")
 
 	// Инициализация роутера Gin
 	r := gin.Default()
@@ -26,21 +54,36 @@ func main() {
 	r.Use(middleware.Logger())
 
 	// Настройка CORS для взаимодействия с фронтендом
+	allowOrigins := []string{"http://localhost:3000"}
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL != "" {
+		allowOrigins = append(allowOrigins, frontendURL)
+	}
+
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"}, // URL вашего Next.js приложения
+		AllowOrigins:     allowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
 	}))
+
+	log.Printf("CORS настроен для: %v", allowOrigins)
 
 	// Инициализация WebSocket хаба
 	hub := websocket.NewHub()
 	go hub.Run()
 	handlers.SetWebSocketHub(hub)
+	log.Println("WebSocket Hub запущен")
 
 	// API эндпоинты
 	api := r.Group("/api")
 	{
+		// Эндпоинт для проверки работоспособности
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{"status": "ok", "time": time.Now()})
+		})
+
 		// Эндпоинт для авторизации админов (публичный)
 		api.POST("/auth/login", handlers.Login)
 		
@@ -66,9 +109,15 @@ func main() {
 		websocket.ServeWs(hub, c.Writer, c.Request)
 	})
 
+	// Получаем порт из переменных окружения
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	// Запуск сервера
-	log.Println("Сервер запущен на порту :8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Ошибка запуска сервера: %v", err)
+	log.Printf("Сервер запущен на порту :%s", port)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("Критическая ошибка запуска сервера: %v", err)
 	}
 }

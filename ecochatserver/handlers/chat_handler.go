@@ -3,6 +3,7 @@ package handlers
 import (
 	"ecochatserver/database"
 	"ecochatserver/websocket"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,17 +16,22 @@ func GetChats(c *gin.Context) {
 	clientID := c.GetString("clientID")
 	
 	if adminID == "" || clientID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		log.Printf("Ошибка авторизации: adminID или clientID отсутствуют")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходима авторизация"})
 		return
 	}
+
+	log.Printf("Запрос на получение чатов от admin: %s, client: %s", adminID, clientID)
 
 	// Получаем список чатов из базы данных
 	chats, err := database.GetChats(clientID, adminID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения чатов"})
+		log.Printf("Ошибка получения чатов для admin: %s, client: %s: %v", adminID, clientID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения чатов: " + err.Error()})
 		return
 	}
 
+	log.Printf("Успешно получено %d чатов для admin: %s", len(chats), adminID)
 	c.JSON(http.StatusOK, chats)
 }
 
@@ -35,14 +41,18 @@ func GetChatByID(c *gin.Context) {
 	adminID := c.GetString("adminID")
 	
 	if adminID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		log.Printf("Ошибка авторизации при получении чата %s: adminID отсутствует", chatID)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходима авторизация"})
 		return
 	}
+	
+	log.Printf("Запрос на получение чата %s от admin: %s", chatID, adminID)
 	
 	// Получаем информацию о чате из базы данных
 	chat, err := database.GetChatByID(chatID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден"})
+		log.Printf("Ошибка получения чата %s: %v", chatID, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден: " + err.Error()})
 		return
 	}
 	
@@ -50,9 +60,11 @@ func GetChatByID(c *gin.Context) {
 	err = database.MarkMessagesAsRead(chatID)
 	if err != nil {
 		// Логируем ошибку, но продолжаем
+		log.Printf("Предупреждение: ошибка при отметке сообщений как прочитанные: %v", err)
 		c.Error(err)
 	}
 	
+	log.Printf("Успешно получен чат %s с %d сообщениями", chatID, len(chat.Messages))
 	c.JSON(http.StatusOK, chat)
 }
 
@@ -62,9 +74,12 @@ func SendMessage(c *gin.Context) {
 	adminID := c.GetString("adminID")
 	
 	if adminID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		log.Printf("Ошибка авторизации при отправке сообщения в чат %s: adminID отсутствует", chatID)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходима авторизация"})
 		return
 	}
+	
+	log.Printf("Запрос на отправку сообщения в чат %s от admin: %s", chatID, adminID)
 	
 	// Получаем данные сообщения
 	var messageData struct {
@@ -73,9 +88,12 @@ func SendMessage(c *gin.Context) {
 	}
 	
 	if err := c.ShouldBindJSON(&messageData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Printf("Ошибка в формате данных сообщения: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректные данные: " + err.Error()})
 		return
 	}
+	
+	log.Printf("Содержимое сообщения: %s, тип: %s", messageData.Content, messageData.Type)
 	
 	// Если тип не указан, используем "text"
 	messageType := "text"
@@ -86,29 +104,31 @@ func SendMessage(c *gin.Context) {
 	// Добавляем сообщение в базу данных
 	message, err := database.AddMessage(chatID, messageData.Content, "admin", adminID, messageType, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отправки сообщения"})
+		log.Printf("Ошибка при добавлении сообщения в БД: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка отправки сообщения: " + err.Error()})
 		return
 	}
 	
 	// Получаем обновленный чат
 	chat, err := database.GetChatByID(chatID)
 	if err != nil {
+		log.Printf("Предупреждение: не удалось получить обновленный чат: %v", err)
 		c.Error(err)
 	} else {
 		// Отправляем уведомление по WebSocket
 		messageData, err := websocket.NewChatMessage(chat, message)
 		if err == nil {
 			// Отправляем всем клиентам или конкретному админу
-			// В идеале нужно отправлять только админам, связанным с этим чатом
-			websocketHub.Broadcast(messageData)
+			WebSocketHub.Broadcast(messageData)
+			log.Printf("Отправлено уведомление по WebSocket")
+		} else {
+			log.Printf("Ошибка при создании WebSocket сообщения: %v", err)
 		}
 	}
 	
 	// Здесь нужно добавить код для отправки сообщения через Telegram API
 	// В зависимости от source в чате
 	
+	log.Printf("Сообщение успешно отправлено с ID: %s", message.ID)
 	c.JSON(http.StatusOK, message)
 }
-
-// Глобальная переменная для доступа к WebSocket хабу
-var websocketHub *websocket.Hub

@@ -5,6 +5,7 @@ import (
 	"ecochatserver/models"
 	"encoding/json"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ func GetAdmin(email string) (*models.Admin, error) {
 	row := DB.QueryRow("SELECT id, name, email, password_hash, avatar, role, client_id, active FROM admins WHERE email = ?", email)
 	err := row.Scan(&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &avatarNull, &admin.Role, &admin.ClientID, &admin.Active)
 	if err != nil {
+		log.Printf("Ошибка при получении администратора: %v", err)
 		return nil, err
 	}
 
@@ -40,26 +42,29 @@ func VerifyPassword(password, hashedPassword string) error {
 
 // GetChats получает список чатов для указанного админа
 func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
-	rows, err := DB.Query(`
+	log.Printf("Получение чатов для клиента %s и админа %s", clientID, adminID)
+	
+	// Исправленный SQL запрос с раздельными подзапросами для каждого поля последнего сообщения
+	query := `
 		SELECT c.id, c.created_at, c.updated_at, c.status, 
 			u.id, u.name, u.email, u.avatar,
 			(
 				SELECT COUNT(*) FROM messages 
 				WHERE chat_id = c.id AND sender = 'user' AND read = false
 			) as unread_count,
-			(
-				SELECT m.id, m.content, m.sender, m.timestamp
-				FROM messages m 
-				WHERE m.chat_id = c.id 
-				ORDER BY m.timestamp DESC 
-				LIMIT 1
-			) as last_message
+			(SELECT m.id FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_id,
+			(SELECT m.content FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_content,
+			(SELECT m.sender FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_sender,
+			(SELECT m.timestamp FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_timestamp
 		FROM chats c
 		JOIN users u ON c.user_id = u.id
 		WHERE c.client_id = ? AND (c.assigned_to = ? OR c.assigned_to IS NULL)
 		ORDER BY c.updated_at DESC
-	`, clientID, adminID)
+	`
+	
+	rows, err := DB.Query(query, clientID, adminID)
 	if err != nil {
+		log.Printf("Ошибка SQL запроса GetChats: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -69,7 +74,7 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 		var chat models.ChatResponse
 		var user models.User
 		var unreadCount int
-		var lastMessageID, lastMessageContent, lastMessageSender, lastMessageTimestamp string
+		var lastMessageID, lastMessageContent, lastMessageSender, lastMessageTimestamp sql.NullString
 		var avatarNull sql.NullString
 
 		err := rows.Scan(
@@ -79,6 +84,7 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 			&lastMessageID, &lastMessageContent, &lastMessageSender, &lastMessageTimestamp,
 		)
 		if err != nil {
+			log.Printf("Ошибка сканирования данных чата: %v", err)
 			return nil, err
 		}
 
@@ -93,12 +99,13 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 		chat.User = user
 		chat.UnreadCount = unreadCount
 
-		if lastMessageID != "" {
-			timestamp, _ := time.Parse(time.RFC3339, lastMessageTimestamp)
+		// Обрабатываем последнее сообщение, только если оно существует
+		if lastMessageID.Valid && lastMessageContent.Valid && lastMessageSender.Valid && lastMessageTimestamp.Valid {
+			timestamp, _ := time.Parse(time.RFC3339, lastMessageTimestamp.String)
 			chat.LastMessage = &models.Message{
-				ID:        lastMessageID,
-				Content:   lastMessageContent,
-				Sender:    lastMessageSender,
+				ID:        lastMessageID.String,
+				Content:   lastMessageContent.String,
+				Sender:    lastMessageSender.String,
 				Timestamp: timestamp,
 			}
 		}
@@ -106,11 +113,19 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 		chats = append(chats, chat)
 	}
 
+	if err = rows.Err(); err != nil {
+		log.Printf("Ошибка после сканирования строк: %v", err)
+		return nil, err
+	}
+
+	log.Printf("Успешно получено %d чатов", len(chats))
 	return chats, nil
 }
 
 // GetChatByID получает чат по ID с его сообщениями
 func GetChatByID(chatID string) (*models.Chat, error) {
+	log.Printf("Получение чата по ID: %s", chatID)
+	
 	// Получаем информацию о чате
 	var chat models.Chat
 	var userID string
@@ -124,6 +139,7 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedToNull,
 	)
 	if err != nil {
+		log.Printf("Ошибка при получении чата: %v", err)
 		return nil, err
 	}
 
@@ -147,6 +163,7 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
 	)
 	if err != nil {
+		log.Printf("Ошибка при получении пользователя для чата: %v", err)
 		return nil, err
 	}
 
@@ -168,6 +185,7 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		ORDER BY timestamp ASC
 	`, chatID)
 	if err != nil {
+		log.Printf("Ошибка при получении сообщений чата: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -184,6 +202,7 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 			&timestamp, &message.Read, &typeStr, &metadataNull,
 		)
 		if err != nil {
+			log.Printf("Ошибка при сканировании сообщения: %v", err)
 			return nil, err
 		}
 
@@ -202,6 +221,11 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		messages = append(messages, message)
 	}
 
+	if err = rows.Err(); err != nil {
+		log.Printf("Ошибка после сканирования сообщений: %v", err)
+		return nil, err
+	}
+
 	chat.Messages = messages
 
 	// Последнее сообщение
@@ -210,19 +234,24 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		chat.LastMessage = &lastMessage
 	}
 
+	log.Printf("Успешно получен чат с %d сообщениями", len(messages))
 	return &chat, nil
 }
 
 // AddMessage добавляет новое сообщение в чат
 func AddMessage(chatID, content, sender, senderID, messageType string, metadata map[string]interface{}) (*models.Message, error) {
+	log.Printf("Добавление сообщения в чат %s от %s", chatID, sender)
+	
 	// Проверяем, существует ли чат
 	var exists bool
 	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM chats WHERE id = ?)", chatID).Scan(&exists)
 	if err != nil {
+		log.Printf("Ошибка при проверке существования чата: %v", err)
 		return nil, err
 	}
 
 	if !exists {
+		log.Printf("Чат с ID %s не найден", chatID)
 		return nil, errors.New("чат не найден")
 	}
 
@@ -235,6 +264,7 @@ func AddMessage(chatID, content, sender, senderID, messageType string, metadata 
 	if metadata != nil {
 		metadataJSON, err = json.Marshal(metadata)
 		if err != nil {
+			log.Printf("Ошибка при сериализации метаданных: %v", err)
 			return nil, err
 		}
 	}
@@ -245,12 +275,14 @@ func AddMessage(chatID, content, sender, senderID, messageType string, metadata 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, messageID, chatID, content, sender, senderID, now, false, messageType, metadataJSON)
 	if err != nil {
+		log.Printf("Ошибка при добавлении сообщения в БД: %v", err)
 		return nil, err
 	}
 
 	// Обновляем время последнего обновления чата
 	_, err = DB.Exec("UPDATE chats SET updated_at = ? WHERE id = ?", now, chatID)
 	if err != nil {
+		log.Printf("Ошибка при обновлении времени чата: %v", err)
 		return nil, err
 	}
 
@@ -267,17 +299,21 @@ func AddMessage(chatID, content, sender, senderID, messageType string, metadata 
 		Metadata:  metadata,
 	}
 
+	log.Printf("Сообщение успешно добавлено с ID: %s", messageID)
 	return message, nil
 }
 
 // CreateOrGetChat создает новый чат или находит существующий
 func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clientID string) (*models.Chat, *models.Message, error) {
+	log.Printf("Создание/получение чата для пользователя %s (источник: %s)", userID, source)
+	
 	var user models.User
 	var userExists bool
 
 	// Проверяем, существует ли пользователь
 	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE source = ? AND source_id = ?)", source, sourceID).Scan(&userExists)
 	if err != nil {
+		log.Printf("Ошибка при проверке существования пользователя: %v", err)
 		return nil, nil, err
 	}
 
@@ -296,8 +332,10 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 			VALUES (?, ?, ?, ?, ?)
 		`, user.ID, user.Name, user.Email, user.Source, user.SourceID)
 		if err != nil {
+			log.Printf("Ошибка при создании пользователя: %v", err)
 			return nil, nil, err
 		}
+		log.Printf("Создан новый пользователь с ID: %s", user.ID)
 	} else {
 		// Получаем существующего пользователя
 		var avatarNull sql.NullString
@@ -309,6 +347,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 			&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
 		)
 		if err != nil {
+			log.Printf("Ошибка при получении существующего пользователя: %v", err)
 			return nil, nil, err
 		}
 
@@ -319,6 +358,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 		} else {
 			user.Avatar = nil
 		}
+		log.Printf("Найден существующий пользователь с ID: %s", user.ID)
 	}
 
 	// Проверяем, существует ли чат для этого пользователя
@@ -332,6 +372,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 		)
 	`, user.ID, source, botID).Scan(&chatExists)
 	if err != nil {
+		log.Printf("Ошибка при проверке существования чата: %v", err)
 		return nil, nil, err
 	}
 
@@ -345,20 +386,24 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 			WHERE user_id = ? AND source = ? AND bot_id = ?
 		`, user.ID, source, botID).Scan(&chatID)
 		if err != nil {
+			log.Printf("Ошибка при получении ID существующего чата: %v", err)
 			return nil, nil, err
 		}
 
 		// Обновляем статус чата на активный
 		_, err = DB.Exec("UPDATE chats SET status = 'active', updated_at = ? WHERE id = ?", now, chatID)
 		if err != nil {
+			log.Printf("Ошибка при обновлении статуса чата: %v", err)
 			return nil, nil, err
 		}
 
 		// Получаем полную информацию о чате
 		chat, err := GetChatByID(chatID)
 		if err != nil {
+			log.Printf("Ошибка при получении полной информации о чате: %v", err)
 			return nil, nil, err
 		}
+		log.Printf("Найден существующий чат с ID: %s", chatID)
 
 		return chat, nil, nil
 	}
@@ -370,6 +415,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, chatID, user.ID, now, now, "active", source, botID, clientID)
 	if err != nil {
+		log.Printf("Ошибка при создании нового чата: %v", err)
 		return nil, nil, err
 	}
 
@@ -384,16 +430,26 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 		BotID:     botID,
 		ClientID:  clientID,
 	}
+	log.Printf("Создан новый чат с ID: %s", chatID)
 
 	return &chat, nil, nil
 }
 
 // MarkMessagesAsRead отмечает сообщения чата как прочитанные
 func MarkMessagesAsRead(chatID string) error {
-	_, err := DB.Exec(`
+	log.Printf("Отметка сообщений как прочитанные для чата %s", chatID)
+	
+	result, err := DB.Exec(`
 		UPDATE messages 
 		SET read = true 
 		WHERE chat_id = ? AND sender = 'user' AND read = false
 	`, chatID)
-	return err
+	if err != nil {
+		log.Printf("Ошибка при отметке сообщений как прочитанные: %v", err)
+		return err
+	}
+	
+	count, _ := result.RowsAffected()
+	log.Printf("Отмечено как прочитанные %d сообщений", count)
+	return nil
 }
