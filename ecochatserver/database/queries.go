@@ -175,12 +175,13 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 	var messages []models.Message
 	for rows.Next() {
 		var message models.Message
-		var typeStr, metadataStr string
+		var typeStr string
+		var metadataNull sql.NullString
 		var timestamp time.Time
 
 		err := rows.Scan(
 			&message.ID, &message.Content, &message.Sender, &message.SenderID,
-			&timestamp, &message.Read, &typeStr, &metadataStr,
+			&timestamp, &message.Read, &typeStr, &metadataNull,
 		)
 		if err != nil {
 			return nil, err
@@ -191,9 +192,9 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		message.Type = typeStr
 
 		// Парсим метаданные, если они есть
-		if metadataStr != "" {
+		if metadataNull.Valid && metadataNull.String != "" {
 			var metadata map[string]interface{}
-			if err := json.Unmarshal([]byte(metadataStr), &metadata); err == nil {
+			if err := json.Unmarshal([]byte(metadataNull.String), &metadata); err == nil {
 				message.Metadata = metadata
 			}
 		}
