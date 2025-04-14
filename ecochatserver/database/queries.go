@@ -12,6 +12,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Параметры пагинации по умолчанию
+const (
+	DefaultPageSize = 20
+	MaxPageSize     = 100
+)
+
 // GetAdmin получает администратора по электронной почте
 func GetAdmin(email string) (*models.Admin, error) {
 	var admin models.Admin
@@ -24,13 +30,7 @@ func GetAdmin(email string) (*models.Admin, error) {
 		return nil, err
 	}
 
-	// Обрабатываем NULL-значение для avatar
-	if avatarNull.Valid {
-		avatarStr := avatarNull.String
-		admin.Avatar = &avatarStr
-	} else {
-		admin.Avatar = nil
-	}
+	admin.Avatar = nullStringToPointer(avatarNull)
 
 	return &admin, nil
 }
@@ -40,32 +40,61 @@ func VerifyPassword(password, hashedPassword string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 }
 
-// GetChats получает список чатов для указанного админа
-func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
-	log.Printf("Получение чатов для клиента %s и админа %s", clientID, adminID)
+// GetChats получает список чатов для указанного админа с поддержкой пагинации
+func GetChats(clientID string, adminID string, page, pageSize int) ([]models.ChatResponse, int, error) {
+	log.Printf("Получение чатов для клиента %s и админа %s (страница: %d, размер: %d)", clientID, adminID, page, pageSize)
 	
-	// Исправленный SQL запрос с раздельными подзапросами для каждого поля последнего сообщения
+	// Проверка и установка значений пагинации по умолчанию
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > MaxPageSize {
+		pageSize = DefaultPageSize
+	}
+	
+	offset := (page - 1) * pageSize
+	
+	// Сначала получаем общее количество чатов для пагинации
+	var totalCount int
+	err := DB.QueryRow(`
+		SELECT COUNT(*) 
+		FROM chats c
+		WHERE c.client_id = ? AND (c.assigned_to = ? OR c.assigned_to IS NULL)
+	`, clientID, adminID).Scan(&totalCount)
+	
+	if err != nil {
+		log.Printf("Ошибка при получении общего количества чатов: %v", err)
+		return nil, 0, err
+	}
+
+	// Оптимизированный SQL запрос с JOIN вместо подзапросов
 	query := `
 		SELECT c.id, c.created_at, c.updated_at, c.status, 
 			u.id, u.name, u.email, u.avatar,
-			(
-				SELECT COUNT(*) FROM messages 
-				WHERE chat_id = c.id AND sender = 'user' AND read = false
-			) as unread_count,
-			(SELECT m.id FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_id,
-			(SELECT m.content FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_content,
-			(SELECT m.sender FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_sender,
-			(SELECT m.timestamp FROM messages m WHERE m.chat_id = c.id ORDER BY m.timestamp DESC LIMIT 1) as last_message_timestamp
+			COUNT(CASE WHEN m.sender = 'user' AND m.read = false THEN 1 END) as unread_count,
+			last_msg.id, last_msg.content, last_msg.sender, last_msg.timestamp
 		FROM chats c
 		JOIN users u ON c.user_id = u.id
+		LEFT JOIN messages m ON m.chat_id = c.id
+		LEFT JOIN (
+			SELECT m1.chat_id, m1.id, m1.content, m1.sender, m1.timestamp
+			FROM messages m1
+			JOIN (
+				SELECT chat_id, MAX(timestamp) as max_time 
+				FROM messages 
+				GROUP BY chat_id
+			) m2 ON m1.chat_id = m2.chat_id AND m1.timestamp = m2.max_time
+		) last_msg ON c.id = last_msg.chat_id
 		WHERE c.client_id = ? AND (c.assigned_to = ? OR c.assigned_to IS NULL)
+		GROUP BY c.id
 		ORDER BY c.updated_at DESC
+		LIMIT ? OFFSET ?
 	`
 	
-	rows, err := DB.Query(query, clientID, adminID)
+	rows, err := DB.Query(query, clientID, adminID, pageSize, offset)
 	if err != nil {
 		log.Printf("Ошибка SQL запроса GetChats: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -85,17 +114,10 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 		)
 		if err != nil {
 			log.Printf("Ошибка сканирования данных чата: %v", err)
-			return nil, err
+			return nil, 0, err
 		}
 
-		// Обрабатываем NULL-значение для avatar
-		if avatarNull.Valid {
-			avatarStr := avatarNull.String
-			user.Avatar = &avatarStr
-		} else {
-			user.Avatar = nil
-		}
-
+		user.Avatar = nullStringToPointer(avatarNull)
 		chat.User = user
 		chat.UnreadCount = unreadCount
 
@@ -115,16 +137,26 @@ func GetChats(clientID string, adminID string) ([]models.ChatResponse, error) {
 
 	if err = rows.Err(); err != nil {
 		log.Printf("Ошибка после сканирования строк: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	log.Printf("Успешно получено %d чатов", len(chats))
-	return chats, nil
+	log.Printf("Успешно получено %d чатов (всего: %d)", len(chats), totalCount)
+	return chats, totalCount, nil
 }
 
-// GetChatByID получает чат по ID с его сообщениями
-func GetChatByID(chatID string) (*models.Chat, error) {
-	log.Printf("Получение чата по ID: %s", chatID)
+// GetChatByID получает чат по ID с его сообщениями с поддержкой пагинации
+func GetChatByID(chatID string, page, pageSize int) (*models.Chat, int, error) {
+	log.Printf("Получение чата по ID: %s (страница: %d, размер: %d)", chatID, page, pageSize)
+	
+	// Проверка и установка значений пагинации по умолчанию
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > MaxPageSize {
+		pageSize = DefaultPageSize
+	}
+	
+	offset := (page - 1) * pageSize
 	
 	// Получаем информацию о чате
 	var chat models.Chat
@@ -140,16 +172,10 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 	)
 	if err != nil {
 		log.Printf("Ошибка при получении чата: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	// Обрабатываем NULL значение для assignedTo
-	if assignedToNull.Valid {
-		assignedToStr := assignedToNull.String
-		chat.AssignedTo = &assignedToStr
-	} else {
-		chat.AssignedTo = nil
-	}
+	chat.AssignedTo = nullStringToPointer(assignedToNull)
 
 	// Получаем информацию о пользователе
 	var user models.User
@@ -164,29 +190,33 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 	)
 	if err != nil {
 		log.Printf("Ошибка при получении пользователя для чата: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	// Обрабатываем NULL-значение для avatar
-	if avatarNull.Valid {
-		avatarStr := avatarNull.String
-		user.Avatar = &avatarStr
-	} else {
-		user.Avatar = nil
-	}
-
+	user.Avatar = nullStringToPointer(avatarNull)
 	chat.User = user
 
-	// Получаем сообщения чата
+	// Получаем общее количество сообщений для пагинации
+	var totalMessages int
+	err = DB.QueryRow(`
+		SELECT COUNT(*) FROM messages WHERE chat_id = ?
+	`, chatID).Scan(&totalMessages)
+	if err != nil {
+		log.Printf("Ошибка при получении общего количества сообщений: %v", err)
+		return nil, 0, err
+	}
+
+	// Получаем сообщения чата с пагинацией
 	rows, err := DB.Query(`
 		SELECT id, content, sender, sender_id, timestamp, read, type, metadata
 		FROM messages
 		WHERE chat_id = ?
 		ORDER BY timestamp ASC
-	`, chatID)
+		LIMIT ? OFFSET ?
+	`, chatID, pageSize, offset)
 	if err != nil {
 		log.Printf("Ошибка при получении сообщений чата: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -203,7 +233,7 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 		)
 		if err != nil {
 			log.Printf("Ошибка при сканировании сообщения: %v", err)
-			return nil, err
+			return nil, 0, err
 		}
 
 		message.ChatID = chatID
@@ -223,28 +253,76 @@ func GetChatByID(chatID string) (*models.Chat, error) {
 
 	if err = rows.Err(); err != nil {
 		log.Printf("Ошибка после сканирования сообщений: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
 	chat.Messages = messages
 
 	// Последнее сообщение
-	if len(messages) > 0 {
-		lastMessage := messages[len(messages)-1]
+	// Получаем последнее сообщение отдельным запросом, 
+	// чтобы оно было доступно независимо от пагинации
+	var lastMessage models.Message
+	var lastMessageTypeStr string
+	var lastMessageMetadataNull sql.NullString
+	var lastMessageTimestamp time.Time
+
+	err = DB.QueryRow(`
+		SELECT id, content, sender, sender_id, timestamp, read, type, metadata
+		FROM messages
+		WHERE chat_id = ?
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`, chatID).Scan(
+		&lastMessage.ID, &lastMessage.Content, &lastMessage.Sender, &lastMessage.SenderID,
+		&lastMessageTimestamp, &lastMessage.Read, &lastMessageTypeStr, &lastMessageMetadataNull,
+	)
+	
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("Ошибка при получении последнего сообщения: %v", err)
+		return nil, 0, err
+	}
+	
+	if err != sql.ErrNoRows {
+		lastMessage.ChatID = chatID
+		lastMessage.Timestamp = lastMessageTimestamp
+		lastMessage.Type = lastMessageTypeStr
+		
+		if lastMessageMetadataNull.Valid && lastMessageMetadataNull.String != "" {
+			var metadata map[string]interface{}
+			if err := json.Unmarshal([]byte(lastMessageMetadataNull.String), &metadata); err == nil {
+				lastMessage.Metadata = metadata
+			}
+		}
+		
 		chat.LastMessage = &lastMessage
 	}
 
-	log.Printf("Успешно получен чат с %d сообщениями", len(messages))
-	return &chat, nil
+	log.Printf("Успешно получен чат с %d сообщениями (всего: %d)", len(messages), totalMessages)
+	return &chat, totalMessages, nil
 }
 
-// AddMessage добавляет новое сообщение в чат
+// AddMessage добавляет новое сообщение в чат с использованием транзакции
 func AddMessage(chatID, content, sender, senderID, messageType string, metadata map[string]interface{}) (*models.Message, error) {
 	log.Printf("Добавление сообщения в чат %s от %s", chatID, sender)
 	
+	// Начинаем транзакцию
+	tx, err := DB.Begin()
+	if err != nil {
+		log.Printf("Ошибка при начале транзакции: %v", err)
+		return nil, err
+	}
+	
+	// Функция для отката транзакции в случае ошибки
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Транзакция отменена: %v", err)
+		}
+	}()
+	
 	// Проверяем, существует ли чат
 	var exists bool
-	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM chats WHERE id = ?)", chatID).Scan(&exists)
+	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM chats WHERE id = ?)", chatID).Scan(&exists)
 	if err != nil {
 		log.Printf("Ошибка при проверке существования чата: %v", err)
 		return nil, err
@@ -269,8 +347,8 @@ func AddMessage(chatID, content, sender, senderID, messageType string, metadata 
 		}
 	}
 
-	// Сохраняем в базу
-	_, err = DB.Exec(`
+	// Сохраняем сообщение в базу
+	_, err = tx.Exec(`
 		INSERT INTO messages (id, chat_id, content, sender, sender_id, timestamp, read, type, metadata)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, messageID, chatID, content, sender, senderID, now, false, messageType, metadataJSON)
@@ -280,9 +358,16 @@ func AddMessage(chatID, content, sender, senderID, messageType string, metadata 
 	}
 
 	// Обновляем время последнего обновления чата
-	_, err = DB.Exec("UPDATE chats SET updated_at = ? WHERE id = ?", now, chatID)
+	_, err = tx.Exec("UPDATE chats SET updated_at = ? WHERE id = ?", now, chatID)
 	if err != nil {
 		log.Printf("Ошибка при обновлении времени чата: %v", err)
+		return nil, err
+	}
+
+	// Фиксируем транзакцию
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("Ошибка при фиксации транзакции: %v", err)
 		return nil, err
 	}
 
@@ -303,15 +388,30 @@ func AddMessage(chatID, content, sender, senderID, messageType string, metadata 
 	return message, nil
 }
 
-// CreateOrGetChat создает новый чат или находит существующий
+// CreateOrGetChat создает новый чат или находит существующий с использованием транзакции
 func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clientID string) (*models.Chat, *models.Message, error) {
 	log.Printf("Создание/получение чата для пользователя %s (источник: %s)", userID, source)
+	
+	// Начинаем транзакцию
+	tx, err := DB.Begin()
+	if err != nil {
+		log.Printf("Ошибка при начале транзакции: %v", err)
+		return nil, nil, err
+	}
+	
+	// Функция для отката транзакции в случае ошибки
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Транзакция отменена: %v", err)
+		}
+	}()
 	
 	var user models.User
 	var userExists bool
 
 	// Проверяем, существует ли пользователь
-	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE source = ? AND source_id = ?)", source, sourceID).Scan(&userExists)
+	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE source = ? AND source_id = ?)", source, sourceID).Scan(&userExists)
 	if err != nil {
 		log.Printf("Ошибка при проверке существования пользователя: %v", err)
 		return nil, nil, err
@@ -327,7 +427,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 			SourceID: sourceID,
 		}
 
-		_, err = DB.Exec(`
+		_, err = tx.Exec(`
 			INSERT INTO users (id, name, email, source, source_id)
 			VALUES (?, ?, ?, ?, ?)
 		`, user.ID, user.Name, user.Email, user.Source, user.SourceID)
@@ -339,7 +439,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 	} else {
 		// Получаем существующего пользователя
 		var avatarNull sql.NullString
-		err = DB.QueryRow(`
+		err = tx.QueryRow(`
 			SELECT id, name, email, avatar, source, source_id
 			FROM users
 			WHERE source = ? AND source_id = ?
@@ -351,13 +451,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 			return nil, nil, err
 		}
 
-		// Обрабатываем NULL-значение для avatar
-		if avatarNull.Valid {
-			avatarStr := avatarNull.String
-			user.Avatar = &avatarStr
-		} else {
-			user.Avatar = nil
-		}
+		user.Avatar = nullStringToPointer(avatarNull)
 		log.Printf("Найден существующий пользователь с ID: %s", user.ID)
 	}
 
@@ -365,7 +459,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 	var chatID string
 	var chatExists bool
 
-	err = DB.QueryRow(`
+	err = tx.QueryRow(`
 		SELECT EXISTS (
 			SELECT 1 FROM chats 
 			WHERE user_id = ? AND source = ? AND bot_id = ?
@@ -381,7 +475,7 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 
 	if chatExists {
 		// Получаем существующий чат
-		err = DB.QueryRow(`
+		err = tx.QueryRow(`
 			SELECT id FROM chats
 			WHERE user_id = ? AND source = ? AND bot_id = ?
 		`, user.ID, source, botID).Scan(&chatID)
@@ -391,14 +485,22 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 		}
 
 		// Обновляем статус чата на активный
-		_, err = DB.Exec("UPDATE chats SET status = 'active', updated_at = ? WHERE id = ?", now, chatID)
+		_, err = tx.Exec("UPDATE chats SET status = 'active', updated_at = ? WHERE id = ?", now, chatID)
 		if err != nil {
 			log.Printf("Ошибка при обновлении статуса чата: %v", err)
 			return nil, nil, err
 		}
+		
+		// Фиксируем транзакцию
+		err = tx.Commit()
+		if err != nil {
+			log.Printf("Ошибка при фиксации транзакции: %v", err)
+			return nil, nil, err
+		}
 
 		// Получаем полную информацию о чате
-		chat, err := GetChatByID(chatID)
+		// Используем 1 в качестве параметров пагинации, чтобы получить первую страницу сообщений
+		chat, _, err := GetChatByID(chatID, 1, DefaultPageSize)
 		if err != nil {
 			log.Printf("Ошибка при получении полной информации о чате: %v", err)
 			return nil, nil, err
@@ -410,12 +512,19 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 
 	// Создаем новый чат
 	chatID = uuid.New().String()
-	_, err = DB.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO chats (id, user_id, created_at, updated_at, status, source, bot_id, client_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, chatID, user.ID, now, now, "active", source, botID, clientID)
 	if err != nil {
 		log.Printf("Ошибка при создании нового чата: %v", err)
+		return nil, nil, err
+	}
+	
+	// Фиксируем транзакцию
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("Ошибка при фиксации транзакции: %v", err)
 		return nil, nil, err
 	}
 
@@ -439,13 +548,35 @@ func CreateOrGetChat(userID, userName, userEmail, source, sourceID, botID, clien
 func MarkMessagesAsRead(chatID string) error {
 	log.Printf("Отметка сообщений как прочитанные для чата %s", chatID)
 	
-	result, err := DB.Exec(`
+	// Начинаем транзакцию
+	tx, err := DB.Begin()
+	if err != nil {
+		log.Printf("Ошибка при начале транзакции: %v", err)
+		return err
+	}
+	
+	// Функция для отката транзакции в случае ошибки
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Транзакция отменена: %v", err)
+		}
+	}()
+	
+	result, err := tx.Exec(`
 		UPDATE messages 
 		SET read = true 
 		WHERE chat_id = ? AND sender = 'user' AND read = false
 	`, chatID)
 	if err != nil {
 		log.Printf("Ошибка при отметке сообщений как прочитанные: %v", err)
+		return err
+	}
+	
+	// Фиксируем транзакцию
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("Ошибка при фиксации транзакции: %v", err)
 		return err
 	}
 	

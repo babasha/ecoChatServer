@@ -70,8 +70,8 @@ func TelegramWebhook(c *gin.Context) {
 	
 	log.Printf("Добавлено сообщение с ID: %s в чат %s", message.ID, chat.ID)
 	
-	// Обновляем чат
-	updatedChat, err := database.GetChatByID(chat.ID)
+	// Обновляем чат (получаем первую страницу сообщений)
+	updatedChat, _, err := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
 	if err != nil {
 		log.Printf("Предупреждение: не удалось получить обновленный чат: %v", err)
 		c.Error(err)

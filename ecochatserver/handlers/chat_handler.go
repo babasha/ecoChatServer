@@ -2,12 +2,23 @@ package handlers
 
 import (
 	"ecochatserver/database"
+	"ecochatserver/models"
 	"ecochatserver/websocket"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
+
+// PaginationResponse стандартная структура ответа с пагинацией
+type PaginationResponse struct {
+	Items      interface{} `json:"items"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"pageSize"`
+	TotalItems int         `json:"totalItems"`
+	TotalPages int         `json:"totalPages"`
+}
 
 // GetChats возвращает список всех чатов для админа
 func GetChats(c *gin.Context) {
@@ -21,18 +32,39 @@ func GetChats(c *gin.Context) {
 		return
 	}
 
-	log.Printf("Запрос на получение чатов от admin: %s, client: %s", adminID, clientID)
+	// Получаем параметры пагинации
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", strconv.Itoa(database.DefaultPageSize)))
+
+	log.Printf("Запрос на получение чатов от admin: %s, client: %s (страница: %d, размер: %d)", 
+		adminID, clientID, page, pageSize)
 
 	// Получаем список чатов из базы данных
-	chats, err := database.GetChats(clientID, adminID)
+	chats, totalItems, err := database.GetChats(clientID, adminID, page, pageSize)
 	if err != nil {
 		log.Printf("Ошибка получения чатов для admin: %s, client: %s: %v", adminID, clientID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения чатов: " + err.Error()})
 		return
 	}
 
-	log.Printf("Успешно получено %d чатов для admin: %s", len(chats), adminID)
-	c.JSON(http.StatusOK, chats)
+	// Рассчитываем общее количество страниц
+	totalPages := (totalItems + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Формируем ответ с пагинацией
+	response := PaginationResponse{
+		Items:      chats,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalItems: totalItems,
+		TotalPages: totalPages,
+	}
+
+	log.Printf("Успешно получено %d чатов для admin: %s (страница %d из %d)", 
+		len(chats), adminID, page, totalPages)
+	c.JSON(http.StatusOK, response)
 }
 
 // GetChatByID возвращает информацию о конкретном чате и его сообщениях
@@ -46,10 +78,15 @@ func GetChatByID(c *gin.Context) {
 		return
 	}
 	
-	log.Printf("Запрос на получение чата %s от admin: %s", chatID, adminID)
+	// Получаем параметры пагинации для сообщений
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", strconv.Itoa(database.DefaultPageSize)))
+	
+	log.Printf("Запрос на получение чата %s от admin: %s (страница: %d, размер: %d)", 
+		chatID, adminID, page, pageSize)
 	
 	// Получаем информацию о чате из базы данных
-	chat, err := database.GetChatByID(chatID)
+	chat, totalMessages, err := database.GetChatByID(chatID, page, pageSize)
 	if err != nil {
 		log.Printf("Ошибка получения чата %s: %v", chatID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден: " + err.Error()})
@@ -64,8 +101,30 @@ func GetChatByID(c *gin.Context) {
 		c.Error(err)
 	}
 	
-	log.Printf("Успешно получен чат %s с %d сообщениями", chatID, len(chat.Messages))
-	c.JSON(http.StatusOK, chat)
+	// Рассчитываем общее количество страниц
+	totalPages := (totalMessages + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	
+	// Формируем ответ с пагинацией
+	response := struct {
+		Chat       *models.Chat `json:"chat"`
+		Page       int          `json:"page"`
+		PageSize   int          `json:"pageSize"`
+		TotalItems int          `json:"totalMessages"`
+		TotalPages int          `json:"totalPages"`
+	}{
+		Chat:       chat,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalItems: totalMessages,
+		TotalPages: totalPages,
+	}
+	
+	log.Printf("Успешно получен чат %s с %d сообщениями (страница %d из %d)", 
+		chatID, len(chat.Messages), page, totalPages)
+	c.JSON(http.StatusOK, response)
 }
 
 // SendMessage отправляет сообщение в чат
@@ -109,8 +168,8 @@ func SendMessage(c *gin.Context) {
 		return
 	}
 	
-	// Получаем обновленный чат
-	chat, err := database.GetChatByID(chatID)
+	// Получаем обновленный чат (первую страницу сообщений)
+	chat, _, err := database.GetChatByID(chatID, 1, database.DefaultPageSize)
 	if err != nil {
 		log.Printf("Предупреждение: не удалось получить обновленный чат: %v", err)
 		c.Error(err)

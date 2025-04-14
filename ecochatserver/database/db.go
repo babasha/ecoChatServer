@@ -35,6 +35,11 @@ func InitDB(dataSourceName string) error {
 		return err
 	}
 
+	// Создаем индексы
+	if err = createIndices(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -133,9 +138,55 @@ func createTables() error {
 	return nil
 }
 
+// createIndices создает индексы для часто используемых полей поиска
+func createIndices() error {
+	// Индексы для таблицы users
+	indices := []string{
+		`CREATE INDEX IF NOT EXISTS idx_users_source_source_id ON users(source, source_id)`,
+		
+		// Индексы для таблицы admins
+		`CREATE INDEX IF NOT EXISTS idx_admins_client_id ON admins(client_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email)`,
+		
+		// Индексы для таблицы chats
+		`CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_client_id ON chats(client_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_assigned_to ON chats(assigned_to)`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_source_bot_id ON chats(source, bot_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats(updated_at)`,
+		
+		// Индексы для таблицы messages
+		`CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(read)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_chat_id_timestamp ON messages(chat_id, timestamp)`,
+	}
+
+	for _, indexSQL := range indices {
+		_, err := DB.Exec(indexSQL)
+		if err != nil {
+			log.Printf("Ошибка при создании индекса: %v. SQL: %s", err, indexSQL)
+			return err
+		}
+	}
+
+	log.Println("Индексы успешно созданы")
+	return nil
+}
+
 // CloseDB закрывает соединение с базой данных
 func CloseDB() {
 	if DB != nil {
 		DB.Close()
 	}
+}
+
+// Вспомогательная функция для обработки NULL-значений в строковых полях
+func nullStringToPointer(ns sql.NullString) *string {
+	if ns.Valid {
+		s := ns.String
+		return &s
+	}
+	return nil
 }

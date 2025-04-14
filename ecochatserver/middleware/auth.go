@@ -3,7 +3,9 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -13,7 +15,19 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-var jwtKey = []byte("ваш_секретный_ключ_для_подписи_токена") // В продакшене должен храниться в секретах
+// jwtKey - ключ для подписи JWT токена
+var jwtKey []byte
+
+func init() {
+	// Получаем ключ из переменных окружения
+	jwtSecret := os.Getenv("JWT_SECRET_KEY")
+	if jwtSecret == "" {
+		// В продакшене этот код должен выдавать ошибку или использовать защищенное хранилище секретов
+		log.Println("Предупреждение: JWT_SECRET_KEY не установлен, используется стандартный ключ")
+		jwtSecret = "временный_ключ_для_разработки_не_использовать_в_продакшене"
+	}
+	jwtKey = []byte(jwtSecret)
+}
 
 // AuthMiddleware проверяет JWT токен и авторизует запрос
 func AuthMiddleware() gin.HandlerFunc {
