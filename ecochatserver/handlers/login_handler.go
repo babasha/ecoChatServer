@@ -40,7 +40,6 @@ func Login(c *gin.Context) {
 		return
 	}
 	
-	// Скрываем чувствительные данные
 	admin.PasswordHash = ""
 	
 	log.Printf("Успешная авторизация администратора: %s (ID: %s)", admin.Email, admin.ID)
