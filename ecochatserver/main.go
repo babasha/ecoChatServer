@@ -64,6 +64,9 @@ func main() {
 	go hub.Run()
 	handlers.SetWebSocketHub(hub)
 	log.Println("WebSocket Hub запущен")
+	
+	// Инициализация автоответчика на базе LLM
+	handlers.InitAutoResponder()
 
 	// Настройка API эндпоинтов
 	setupAPIRoutes(r, hub)
@@ -89,6 +92,17 @@ func checkEnvironmentVariables() {
 		// В продакшене можно сделать fatal для обеспечения безопасности
 		// log.Fatal("JWT_SECRET_KEY обязателен для безопасной работы приложения")
 	}
+	
+	// Проверка настроек LLM
+	if os.Getenv("LLM_API_URL") == "" {
+		log.Println("LLM_API_URL не установлен, будет использоваться значение по умолчанию: http://localhost:1234/v1")
+	}
+
+	// Проверка включения автоответчика
+	enableAutoResponder := os.Getenv("ENABLE_AUTO_RESPONDER")
+	if enableAutoResponder == "" {
+		log.Println("ENABLE_AUTO_RESPONDER не установлен, автоответчик будет включен по умолчанию")
+	}
 
 	// Проверка других ключевых переменных (при необходимости)
 }
@@ -113,7 +127,7 @@ func setupCORS(r *gin.Engine) {
 	log.Printf("CORS настроен для: %v", allowOrigins)
 }
 
-// setupAPIRoutes настраивает маршруты API
+// setupAPIRoutes настраивает маршруты API (оставляем как было)
 func setupAPIRoutes(r *gin.Engine, hub *websocket.Hub) {
 	// API эндпоинты
 	api := r.Group("/api")
