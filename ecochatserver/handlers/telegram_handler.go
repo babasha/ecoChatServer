@@ -3,7 +3,6 @@ package handlers
 import (
 	"ecochatserver/database"
 	"ecochatserver/llm"
-	"ecochatserver/middleware"
 	"ecochatserver/models"
 	"ecochatserver/websocket"
 	"log"
@@ -149,5 +148,3 @@ func TelegramWebhook(c *gin.Context) {
 	
 	c.JSON(http.StatusOK, gin.H{"status": "message processed", "message_id": message.ID, "chat_id": chat.ID})
 }
-
-// Остальные функции без изменений...
