@@ -6,15 +6,16 @@ import (
 	"ecochatserver/middleware"
 	"ecochatserver/websocket"
 	"log"
-	"net/http"  // Добавлен импорт для http.StatusOK
+	"net/http"
 	"os"
-	"strings"  // Добавлен импорт для strings.Split
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
+
 func main() {
 	// Настройка логирования
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -108,100 +109,100 @@ func checkEnvironmentVariables() {
 	// Проверка других ключевых переменных (при необходимости)
 }
 
-// setupCORS настраивает CORS для взаимодействия с фронтендом
-func setupCORS(r *gin.Engine) {
-    // Базовые доверенные источники: админ-панель и виджет
-    allowOrigins := []string{
-		"http://localhost:3000",             // Локальная админ-панель
-		"https://ecp-chat-widget.vercel.app", // Виджет на Vercel
-    }
-    
-    // Добавляем URL из переменной окружения FRONTEND_URL
-    frontendURL := os.Getenv("FRONTEND_URL")
-    if frontendURL != "" && !contains(allowOrigins, frontendURL) {
-        allowOrigins = append(allowOrigins, frontendURL)
-    }
-    
-    // Добавляем дополнительные источники из ADDITIONAL_ALLOWED_ORIGINS
-    additionalOrigins := os.Getenv("ADDITIONAL_ALLOWED_ORIGINS")
-    if additionalOrigins != "" {
-        origins := strings.Split(additionalOrigins, ",")
-        for _, origin := range origins {
-            trimmedOrigin := strings.TrimSpace(origin)
-            if trimmedOrigin != "" && !contains(allowOrigins, trimmedOrigin) {
-                allowOrigins = append(allowOrigins, trimmedOrigin)
-            }
-        }
-    }
-    
-    // Для разработки добавляем дополнительные локальные адреса
-    if gin.Mode() == gin.DebugMode {
-        devOrigins := []string{
-            "http://localhost:5000",
-            "http://localhost:5500",
-            "http://localhost:8000",
-            "http://127.0.0.1:5500",
-            "http://127.0.0.1:5000",
-            "http://127.0.0.1:8000",
-        }
-        
-        for _, origin := range devOrigins {
-            if !contains(allowOrigins, origin) {
-                allowOrigins = append(allowOrigins, origin)
-            }
-        }
-    }
-    
-    // Создаем конфигурацию CORS
-    config := cors.Config{
-        AllowOrigins:     allowOrigins,
-        AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-        AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Requested-With"},
-        ExposeHeaders:    []string{"Content-Length", "X-Total-Count", "X-Total-Pages"},
-        AllowCredentials: true,
-        MaxAge:           12 * time.Hour,
-    }
-    
-    // Проверяем переменную ALLOW_ALL_ORIGINS
-    if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
-        config.AllowAllOrigins = true
-        log.Println("ВНИМАНИЕ: CORS настроен для всех источников! Используйте только для отладки.")
-    }
-    
-    // Применяем CORS middleware
-    r.Use(cors.New(config))
-    
-    // Логируем настройки CORS
-    log.Printf("CORS настроен для: %v", allowOrigins)
-    
-    // Добавляем глобальный обработчик OPTIONS для упрощения предварительных запросов
-    r.OPTIONS("/*path", func(c *gin.Context) {
-        origin := c.Request.Header.Get("Origin")
-        
-        // Если источник разрешен или разрешены все источники
-        if config.AllowAllOrigins || contains(allowOrigins, origin) {
-            c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-            c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-            c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
-            c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-            c.Writer.Header().Set("Access-Control-Max-Age", "86400")
-        }
-        
-        c.AbortWithStatus(http.StatusOK)
-    })
-}
-
 // Вспомогательная функция для проверки наличия элемента в слайсе
 func contains(slice []string, item string) bool {
-    for _, s := range slice {
-        if s == item {
-            return true
-        }
-    }
-    return false
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
-// setupAPIRoutes настраивает маршруты API (оставляем как было)
+// setupCORS настраивает CORS для взаимодействия с фронтендом
+func setupCORS(r *gin.Engine) {
+	// Базовые доверенные источники: админ-панель и виджет
+	allowOrigins := []string{
+		"http://localhost:3000",             // Локальная админ-панель
+		"https://ecp-chat-widget.vercel.app", // Виджет на Vercel
+	}
+	
+	// Добавляем URL из переменной окружения FRONTEND_URL
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL != "" && !contains(allowOrigins, frontendURL) {
+		allowOrigins = append(allowOrigins, frontendURL)
+	}
+	
+	// Добавляем дополнительные источники из ADDITIONAL_ALLOWED_ORIGINS
+	additionalOrigins := os.Getenv("ADDITIONAL_ALLOWED_ORIGINS")
+	if additionalOrigins != "" {
+		origins := strings.Split(additionalOrigins, ",")
+		for _, origin := range origins {
+			trimmedOrigin := strings.TrimSpace(origin)
+			if trimmedOrigin != "" && !contains(allowOrigins, trimmedOrigin) {
+				allowOrigins = append(allowOrigins, trimmedOrigin)
+			}
+		}
+	}
+	
+	// Для разработки добавляем дополнительные локальные адреса
+	if gin.Mode() == gin.DebugMode {
+		devOrigins := []string{
+			"http://localhost:5000",
+			"http://localhost:5500",
+			"http://localhost:8000",
+			"http://127.0.0.1:5500",
+			"http://127.0.0.1:5000",
+			"http://127.0.0.1:8000",
+		}
+		
+		for _, origin := range devOrigins {
+			if !contains(allowOrigins, origin) {
+				allowOrigins = append(allowOrigins, origin)
+			}
+		}
+	}
+	
+	// Создаем конфигурацию CORS
+	config := cors.Config{
+		AllowOrigins:     allowOrigins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Requested-With"},
+		ExposeHeaders:    []string{"Content-Length", "X-Total-Count", "X-Total-Pages"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}
+	
+	// Проверяем переменную ALLOW_ALL_ORIGINS
+	if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
+		config.AllowAllOrigins = true
+		log.Println("ВНИМАНИЕ: CORS настроен для всех источников! Используйте только для отладки.")
+	}
+	
+	// Применяем CORS middleware
+	r.Use(cors.New(config))
+	
+	// Логируем настройки CORS
+	log.Printf("CORS настроен для: %v", allowOrigins)
+	
+	// Добавляем глобальный обработчик OPTIONS для упрощения предварительных запросов
+	r.OPTIONS("/*path", func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		
+		// Если источник разрешен или разрешены все источники
+		if config.AllowAllOrigins || contains(allowOrigins, origin) {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+		}
+		
+		c.AbortWithStatus(http.StatusOK)
+	})
+}
+
+// setupAPIRoutes настраивает маршруты API
 func setupAPIRoutes(r *gin.Engine, hub *websocket.Hub) {
 	// API эндпоинты
 	api := r.Group("/api")
@@ -218,6 +219,29 @@ func setupAPIRoutes(r *gin.Engine, hub *websocket.Hub) {
 		// Эндпоинт для авторизации админов (публичный)
 		api.POST("/auth/login", handlers.Login)
 		
+		// Эндпоинт для Telegram бота (webhook)
+		api.POST("/telegram/webhook", handlers.TelegramWebhook)
+		
+		// Специальный обработчик OPTIONS для маршрута telegram/webhook
+		api.OPTIONS("/telegram/webhook", func(c *gin.Context) {
+			origin := c.Request.Header.Get("Origin")
+			
+			// Специальная обработка CORS для webhook URL
+			// Это гарантирует, что webhook будет доступен для виджета
+			if origin != "" {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			} else {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+			
+			c.Status(http.StatusOK)
+		})
+
 		// Защищенные маршруты
 		authorized := api.Group("/")
 		authorized.Use(middleware.AuthMiddleware())
@@ -235,13 +259,25 @@ func setupAPIRoutes(r *gin.Engine, hub *websocket.Hub) {
 				chats.POST("/:id/messages", handlers.SendMessage)
 			}
 		}
-
-		// Эндпоинт для Telegram бота (webhook)
-		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 	}
 
 	// WebSocket эндпоинт
 	r.GET("/ws", func(c *gin.Context) {
+		// Обрабатываем параметры запроса
+		token := c.Query("token")
+		clientType := c.Query("type")
+		chatID := c.Query("chat_id")
+		
+		if token == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Отсутствует параметр token"})
+			return
+		}
+		
+		// Логируем информацию о подключении
+		log.Printf("Попытка WebSocket подключения: type=%s, token=%s, chat_id=%s", 
+			clientType, token, chatID)
+		
+		// Передаем запрос в WebSocket обработчик
 		websocket.ServeWs(hub, c.Writer, c.Request)
 	})
 }

@@ -135,6 +135,11 @@ func TelegramWebhook(c *gin.Context) {
 			log.Printf("TelegramWebhook: Ошибка при создании WebSocket сообщения: %v", err)
 		}
 	}
+	
+	// Переменные для хранения ответа бота
+	var botResponseText string
+	var botMessageID string
+	var savedBotMessage *models.Message
 
 	// Если автоответчик включен, генерируем автоматический ответ
 	if AutoResponder != nil && updatedChat != nil {
@@ -145,7 +150,7 @@ func TelegramWebhook(c *gin.Context) {
 			log.Printf("TelegramWebhook: Ошибка при генерации автоответа: %v", err)
 		} else if botResponse != nil {
 			// Добавляем сообщение от бота в базу данных
-			savedBotMessage, err := database.AddMessage(
+			savedBotMessage, err = database.AddMessage(
 				chat.ID,
 				botResponse.Content,
 				botResponse.Sender,
@@ -157,6 +162,9 @@ func TelegramWebhook(c *gin.Context) {
 			if err != nil {
 				log.Printf("TelegramWebhook: Ошибка при сохранении автоответа: %v", err)
 			} else {
+				botResponseText = savedBotMessage.Content
+				botMessageID = savedBotMessage.ID
+				
 				log.Printf("TelegramWebhook: Автоответчик успешно создал ответ: %s", savedBotMessage.Content)
 				
 				// Получаем обновленный чат еще раз после добавления ответа бота
@@ -168,17 +176,31 @@ func TelegramWebhook(c *gin.Context) {
 						WebSocketHub.Broadcast(botMessageData)
 						log.Printf("TelegramWebhook: Отправлено уведомление с автоответом по WebSocket")
 					}
+					
+					// Создаем сообщение специально для виджета и отправляем
+					widgetMessage, err := websocket.NewWidgetMessage(savedBotMessage)
+					if err == nil {
+						// Отправляем сообщение всем виджетам, связанным с этим чатом
+						sentCount := WebSocketHub.SendToChat(chat.ID, widgetMessage)
+						if sentCount > 0 {
+							log.Printf("TelegramWebhook: Отправлено сообщение бота %d виджетам через WebSocket", sentCount)
+						}
+					} else {
+						log.Printf("TelegramWebhook: Ошибка при создании сообщения для виджета: %v", err)
+					}
 				}
 			}
 		}
 	}
 	
-	// Возвращаем успешный ответ с расширенной информацией
+	// Возвращаем успешный ответ с расширенной информацией и ответом бота
 	c.JSON(http.StatusOK, gin.H{
 		"status": "message processed", 
 		"message_id": message.ID, 
 		"chat_id": chat.ID,
 		"success": true,
 		"timestamp": time.Now().Format(time.RFC3339),
+		"bot_response": botResponseText,
+		"bot_message_id": botMessageID,
 	})
 }

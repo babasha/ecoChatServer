@@ -24,6 +24,12 @@ const (
 	maxMessageSize = 512
 )
 
+// Типы клиентов
+const (
+	ClientTypeAdmin  = "admin"
+	ClientTypeWidget = "widget"
+)
+
 var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
@@ -48,8 +54,10 @@ type Client struct {
 	// Буферизованный канал для исходящих сообщений
 	send chan []byte
 
-	// Данные о клиенте (админе)
-	adminID string
+	// Данные о клиенте
+	clientType string // "admin" или "widget"
+	id         string // ID администратора или пользователя
+	chatID     string // ID чата (для виджета)
 }
 
 // readPump читает сообщения от WebSocket соединения и отправляет их в Hub
@@ -65,15 +73,17 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				log.Printf("WebSocket ошибка: %v", err)
 			}
 			break
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		
 		// Здесь можно обрабатывать входящие сообщения от клиента
+		log.Printf("Получено сообщение от клиента типа %s с ID %s: %s", c.clientType, c.id, string(message))
 		
-		//c.hub.broadcast <- message
+		// Пересылаем сообщение в хаб для обработки
+		c.hub.broadcast <- message
 	}
 }
 
@@ -123,18 +133,57 @@ func (c *Client) writePump() {
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Println("Ошибка при установке WebSocket соединения:", err)
 		return
 	}
 	
-	// Извлекаем adminID из токена (в реальном приложении)
-	// adminID := extractAdminIDFromToken(r)
-	adminID := r.URL.Query().Get("token") // Упрощенный вариант
+	// Параметры запроса
+	query := r.URL.Query()
+	token := query.Get("token")
+	clientType := query.Get("type")
+	chatID := query.Get("chat_id")
 	
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), adminID: adminID}
+	// Определяем тип клиента и ID
+	var id string
+	
+	// Если тип не указан явно, пробуем определить по наличию параметров
+	if clientType == "" {
+		if chatID != "" {
+			clientType = ClientTypeWidget // Если указан chatID, это виджет
+		} else {
+			clientType = ClientTypeAdmin // По умолчанию считаем админом
+		}
+	}
+	
+	// Логика идентификации клиента
+	if clientType == ClientTypeAdmin {
+		// Для админов извлекаем ID из токена
+		// В реальной системе здесь должна быть проверка JWT
+		id = token
+		log.Printf("Подключен администратор с ID: %s", id)
+	} else {
+		// Для виджетов используем token как userId
+		id = token
+		log.Printf("Подключен виджет пользователя с ID: %s, для чата: %s", id, chatID)
+	}
+	
+	// Создаем клиента соответствующего типа
+	client := &Client{
+		hub:        hub,
+		conn:       conn,
+		send:       make(chan []byte, 256),
+		clientType: clientType,
+		id:         id,
+		chatID:     chatID,
+	}
+	
+	// Регистрируем клиента
 	client.hub.register <- client
 
 	// Запускаем горутины для чтения и записи
 	go client.writePump()
 	go client.readPump()
+	
+	// Отправляем подтверждение подключения
+	hub.SendConnectionStatus(client, true)
 }

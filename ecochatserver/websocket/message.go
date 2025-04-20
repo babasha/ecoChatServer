@@ -39,6 +39,26 @@ func NewChatMessage(chat *models.Chat, message *models.Message) ([]byte, error) 
 	return NewMessage("new_message", payload)
 }
 
+// NewWidgetMessage создает сообщение для виджета
+func NewWidgetMessage(message *models.Message) ([]byte, error) {
+	// Упрощенный формат сообщения для виджета
+	payload := struct {
+		ID        string                 `json:"id"`
+		Content   string                 `json:"content"`
+		Sender    string                 `json:"sender"`
+		Timestamp string                 `json:"timestamp"`
+		Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	}{
+		ID:        message.ID,
+		Content:   message.Content,
+		Sender:    message.Sender,
+		Timestamp: message.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		Metadata:  message.Metadata,
+	}
+
+	return NewMessage("message", payload)
+}
+
 // NewChatUpdatedMessage создает сообщение об обновлении чата
 func NewChatUpdatedMessage(chat *models.Chat) ([]byte, error) {
 	return NewMessage("chat_updated", chat)
@@ -58,4 +78,19 @@ func NewErrorMessage(errorText string) ([]byte, error) {
 	}
 
 	return NewMessage("error", payload)
+}
+
+// NewTypingMessage создает сообщение о наборе текста
+func NewTypingMessage(chatID string, isTyping bool, sender string) ([]byte, error) {
+	payload := struct {
+		ChatID   string `json:"chatId"`
+		IsTyping bool   `json:"isTyping"`
+		Sender   string `json:"sender"`
+	}{
+		ChatID:   chatID,
+		IsTyping: isTyping,
+		Sender:   sender,
+	}
+
+	return NewMessage("typing", payload)
 }
