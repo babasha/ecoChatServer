@@ -185,20 +185,25 @@ func setupCORS(r *gin.Engine) {
 	// Логируем настройки CORS
 	log.Printf("CORS настроен для: %v", allowOrigins)
 	
-	// Добавляем глобальный обработчик OPTIONS для упрощения предварительных запросов
-	r.OPTIONS("/*path", func(c *gin.Context) {
+	// Обрабатываем запросы OPTIONS к /api/telegram/webhook особым образом
+	// для улучшения CORS поддержки для webhook
+	r.OPTIONS("/api/telegram/webhook", func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 		
-		// Если источник разрешен или разрешены все источники
-		if config.AllowAllOrigins || contains(allowOrigins, origin) {
+		// Специальная обработка CORS для webhook URL
+		// Это гарантирует, что webhook будет доступен для виджета
+		if origin != "" {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		
-		c.AbortWithStatus(http.StatusOK)
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+		
+		c.Status(http.StatusOK)
 	})
 }
 
@@ -222,25 +227,8 @@ func setupAPIRoutes(r *gin.Engine, hub *websocket.Hub) {
 		// Эндпоинт для Telegram бота (webhook)
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 		
-		// Специальный обработчик OPTIONS для маршрута telegram/webhook
-		api.OPTIONS("/telegram/webhook", func(c *gin.Context) {
-			origin := c.Request.Header.Get("Origin")
-			
-			// Специальная обработка CORS для webhook URL
-			// Это гарантирует, что webhook будет доступен для виджета
-			if origin != "" {
-				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-			}
-			
-			c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Set("Access-Control-Max-Age", "86400")
-			
-			c.Status(http.StatusOK)
-		})
+		// Удалена дублирующая OPTIONS обработка для /api/telegram/webhook
+		// так как она теперь обрабатывается на уровне корневого роутера
 
 		// Защищенные маршруты
 		authorized := api.Group("/")

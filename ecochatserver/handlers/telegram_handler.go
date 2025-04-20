@@ -44,9 +44,13 @@ func TelegramWebhook(c *gin.Context) {
 	
 	// Проверяем, это предварительный запрос OPTIONS
 	if c.Request.Method == "OPTIONS" {
+		handleCORS(c)
 		c.Status(http.StatusOK)
 		return
 	}
+	
+	// Устанавливаем CORS заголовки для всех запросов
+	handleCORS(c)
 	
 	// Проверяем Content-Type
 	contentType := c.GetHeader("Content-Type")
@@ -203,4 +207,21 @@ func TelegramWebhook(c *gin.Context) {
 		"bot_response": botResponseText,
 		"bot_message_id": botMessageID,
 	})
+}
+
+// handleCORS устанавливает CORS заголовки для запроса
+func handleCORS(c *gin.Context) {
+	origin := c.GetHeader("Origin")
+	
+	// Устанавливаем CORS заголовки
+	if origin != "" {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+	
+	c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+	c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+	c.Writer.Header().Set("Access-Control-Max-Age", "86400")
 }
