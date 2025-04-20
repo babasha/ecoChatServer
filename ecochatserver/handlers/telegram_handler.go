@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,23 +36,48 @@ func InitAutoResponder() {
 	log.Println("Автоответчик успешно инициализирован")
 }
 
-// TelegramWebhook обрабатывает входящие запросы от Telegram API
+// TelegramWebhook обрабатывает входящие запросы от Telegram API и веб-виджета
 func TelegramWebhook(c *gin.Context) {
-	var incomingMessage models.IncomingMessage
+	// Логируем информацию о запросе для отладки CORS
+	log.Printf("TelegramWebhook: Получен запрос от %s. Метод: %s, Origin: %s", 
+		c.ClientIP(), c.Request.Method, c.GetHeader("Origin"))
 	
-	if err := c.ShouldBindJSON(&incomingMessage); err != nil {
-		log.Printf("Ошибка парсинга JSON из Telegram webhook: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// Проверяем, это предварительный запрос OPTIONS
+	if c.Request.Method == "OPTIONS" {
+		c.Status(http.StatusOK)
 		return
 	}
 	
-	log.Printf("Получено входящее сообщение от пользователя %s (source: %s)", incomingMessage.UserName, incomingMessage.Source)
-	
-	// Проверяем наличие обязательных полей
-	if incomingMessage.UserID == "" || incomingMessage.ClientID == "" {
-		log.Printf("Ошибка в запросе: отсутствуют обязательные поля UserID или ClientID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "UserID и ClientID обязательны"})
+	// Проверяем Content-Type
+	contentType := c.GetHeader("Content-Type")
+	if contentType != "application/json" && !strings.Contains(contentType, "application/json") {
+		log.Printf("TelegramWebhook: Неверный Content-Type: %s", contentType)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Content-Type должен быть application/json"})
 		return
+	}
+	
+	var incomingMessage models.IncomingMessage
+	
+	if err := c.ShouldBindJSON(&incomingMessage); err != nil {
+		log.Printf("TelegramWebhook: Ошибка парсинга JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка парсинга JSON: " + err.Error()})
+		return
+	}
+	
+	log.Printf("TelegramWebhook: Получено сообщение от пользователя %s (source: %s, content: %s)", 
+		incomingMessage.UserName, incomingMessage.Source, incomingMessage.Content)
+	
+	// Проверяем обязательные поля
+	if incomingMessage.UserID == "" {
+		log.Printf("TelegramWebhook: Отсутствует UserID")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "UserID обязателен"})
+		return
+	}
+	
+	if incomingMessage.ClientID == "" {
+		// Если ClientID не указан, используем тестовое значение для виджета
+		log.Printf("TelegramWebhook: ClientID не указан, используем тестовое значение")
+		incomingMessage.ClientID = "test_client_id"
 	}
 	
 	// Создаем или получаем существующий чат
@@ -64,12 +91,12 @@ func TelegramWebhook(c *gin.Context) {
 		incomingMessage.ClientID,
 	)
 	if err != nil {
-		log.Printf("Ошибка создания/получения чата: %v", err)
+		log.Printf("TelegramWebhook: Ошибка создания/получения чата: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания чата: " + err.Error()})
 		return
 	}
 	
-	log.Printf("Чат получен/создан с ID: %s", chat.ID)
+	log.Printf("TelegramWebhook: Чат получен/создан с ID: %s", chat.ID)
 	
 	// Добавляем новое сообщение в чат
 	messageType := "text"
@@ -86,36 +113,36 @@ func TelegramWebhook(c *gin.Context) {
 		incomingMessage.Metadata,
 	)
 	if err != nil {
-		log.Printf("Ошибка добавления сообщения: %v", err)
+		log.Printf("TelegramWebhook: Ошибка добавления сообщения: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка добавления сообщения: " + err.Error()})
 		return
 	}
 	
-	log.Printf("Добавлено сообщение с ID: %s в чат %s", message.ID, chat.ID)
+	log.Printf("TelegramWebhook: Добавлено сообщение с ID: %s в чат %s", message.ID, chat.ID)
 	
 	// Обновляем чат (получаем первую страницу сообщений)
 	updatedChat, _, err := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
 	if err != nil {
-		log.Printf("Предупреждение: не удалось получить обновленный чат: %v", err)
+		log.Printf("TelegramWebhook: Не удалось получить обновленный чат: %v", err)
 		c.Error(err)
 	} else {
 		// Отправляем уведомление по WebSocket
 		messageData, err := websocket.NewChatMessage(updatedChat, message)
 		if err == nil {
 			WebSocketHub.Broadcast(messageData)
-			log.Printf("Отправлено уведомление по WebSocket")
+			log.Printf("TelegramWebhook: Отправлено уведомление по WebSocket")
 		} else {
-			log.Printf("Ошибка при создании WebSocket сообщения: %v", err)
+			log.Printf("TelegramWebhook: Ошибка при создании WebSocket сообщения: %v", err)
 		}
 	}
 
 	// Если автоответчик включен, генерируем автоматический ответ
 	if AutoResponder != nil && updatedChat != nil {
-		log.Printf("Запуск автоответчика для сообщения %s", message.ID)
+		log.Printf("TelegramWebhook: Запуск автоответчика для сообщения %s", message.ID)
 		
 		botResponse, err := AutoResponder.ProcessMessage(updatedChat, message)
 		if err != nil {
-			log.Printf("Ошибка при генерации автоответа: %v", err)
+			log.Printf("TelegramWebhook: Ошибка при генерации автоответа: %v", err)
 		} else if botResponse != nil {
 			// Добавляем сообщение от бота в базу данных
 			savedBotMessage, err := database.AddMessage(
@@ -128,9 +155,9 @@ func TelegramWebhook(c *gin.Context) {
 			)
 			
 			if err != nil {
-				log.Printf("Ошибка при сохранении автоответа: %v", err)
+				log.Printf("TelegramWebhook: Ошибка при сохранении автоответа: %v", err)
 			} else {
-				log.Printf("Автоответчик успешно создал ответ: %s", savedBotMessage.Content)
+				log.Printf("TelegramWebhook: Автоответчик успешно создал ответ: %s", savedBotMessage.Content)
 				
 				// Получаем обновленный чат еще раз после добавления ответа бота
 				updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
@@ -139,12 +166,19 @@ func TelegramWebhook(c *gin.Context) {
 					botMessageData, err := websocket.NewChatMessage(updatedChat, savedBotMessage)
 					if err == nil {
 						WebSocketHub.Broadcast(botMessageData)
-						log.Printf("Отправлено уведомление с автоответом по WebSocket")
+						log.Printf("TelegramWebhook: Отправлено уведомление с автоответом по WebSocket")
 					}
 				}
 			}
 		}
 	}
 	
-	c.JSON(http.StatusOK, gin.H{"status": "message processed", "message_id": message.ID, "chat_id": chat.ID})
+	// Возвращаем успешный ответ с расширенной информацией
+	c.JSON(http.StatusOK, gin.H{
+		"status": "message processed", 
+		"message_id": message.ID, 
+		"chat_id": chat.ID,
+		"success": true,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }

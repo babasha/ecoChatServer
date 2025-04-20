@@ -6,14 +6,15 @@ import (
 	"ecochatserver/middleware"
 	"ecochatserver/websocket"
 	"log"
+	"net/http"  // Добавлен импорт для http.StatusOK
 	"os"
+	"strings"  // Добавлен импорт для strings.Split
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
-
 func main() {
 	// Настройка логирования
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -109,22 +110,95 @@ func checkEnvironmentVariables() {
 
 // setupCORS настраивает CORS для взаимодействия с фронтендом
 func setupCORS(r *gin.Engine) {
-	allowOrigins := []string{"http://localhost:3000"}
-	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL != "" {
-		allowOrigins = append(allowOrigins, frontendURL)
-	}
+    // Базовые доверенные источники: админ-панель и виджет
+    allowOrigins := []string{
+		"http://localhost:3000",             // Локальная админ-панель
+		"https://ecp-chat-widget.vercel.app", // Виджет на Vercel
+    }
+    
+    // Добавляем URL из переменной окружения FRONTEND_URL
+    frontendURL := os.Getenv("FRONTEND_URL")
+    if frontendURL != "" && !contains(allowOrigins, frontendURL) {
+        allowOrigins = append(allowOrigins, frontendURL)
+    }
+    
+    // Добавляем дополнительные источники из ADDITIONAL_ALLOWED_ORIGINS
+    additionalOrigins := os.Getenv("ADDITIONAL_ALLOWED_ORIGINS")
+    if additionalOrigins != "" {
+        origins := strings.Split(additionalOrigins, ",")
+        for _, origin := range origins {
+            trimmedOrigin := strings.TrimSpace(origin)
+            if trimmedOrigin != "" && !contains(allowOrigins, trimmedOrigin) {
+                allowOrigins = append(allowOrigins, trimmedOrigin)
+            }
+        }
+    }
+    
+    // Для разработки добавляем дополнительные локальные адреса
+    if gin.Mode() == gin.DebugMode {
+        devOrigins := []string{
+            "http://localhost:5000",
+            "http://localhost:5500",
+            "http://localhost:8000",
+            "http://127.0.0.1:5500",
+            "http://127.0.0.1:5000",
+            "http://127.0.0.1:8000",
+        }
+        
+        for _, origin := range devOrigins {
+            if !contains(allowOrigins, origin) {
+                allowOrigins = append(allowOrigins, origin)
+            }
+        }
+    }
+    
+    // Создаем конфигурацию CORS
+    config := cors.Config{
+        AllowOrigins:     allowOrigins,
+        AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+        AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Requested-With"},
+        ExposeHeaders:    []string{"Content-Length", "X-Total-Count", "X-Total-Pages"},
+        AllowCredentials: true,
+        MaxAge:           12 * time.Hour,
+    }
+    
+    // Проверяем переменную ALLOW_ALL_ORIGINS
+    if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
+        config.AllowAllOrigins = true
+        log.Println("ВНИМАНИЕ: CORS настроен для всех источников! Используйте только для отладки.")
+    }
+    
+    // Применяем CORS middleware
+    r.Use(cors.New(config))
+    
+    // Логируем настройки CORS
+    log.Printf("CORS настроен для: %v", allowOrigins)
+    
+    // Добавляем глобальный обработчик OPTIONS для упрощения предварительных запросов
+    r.OPTIONS("/*path", func(c *gin.Context) {
+        origin := c.Request.Header.Get("Origin")
+        
+        // Если источник разрешен или разрешены все источники
+        if config.AllowAllOrigins || contains(allowOrigins, origin) {
+            c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+            c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+            c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+            c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+        }
+        
+        c.AbortWithStatus(http.StatusOK)
+    })
+}
 
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     allowOrigins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length", "X-Total-Count", "X-Total-Pages"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
-
-	log.Printf("CORS настроен для: %v", allowOrigins)
+// Вспомогательная функция для проверки наличия элемента в слайсе
+func contains(slice []string, item string) bool {
+    for _, s := range slice {
+        if s == item {
+            return true
+        }
+    }
+    return false
 }
 
 // setupAPIRoutes настраивает маршруты API (оставляем как было)
