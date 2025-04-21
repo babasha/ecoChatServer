@@ -160,12 +160,3 @@ func CloseDB() {
         _ = DB.Close()
     }
 }
-
-// nullStringToPointer превращает sql.NullString в *string
-func nullStringToPointer(ns sql.NullString) *string {
-    if ns.Valid {
-        s := ns.String
-        return &s
-    }
-    return nil
-}

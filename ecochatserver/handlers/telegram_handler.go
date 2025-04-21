@@ -16,213 +16,148 @@ import (
     "github.com/egor/ecochatserver/websocket"
 )
 
-// Глобальная переменная для автоответчика
+// AutoResponder — единственный экземпляр автоответчика
 var AutoResponder *llm.AutoResponder
 
-// InitAutoResponder инициализирует автоответчик
+// InitAutoResponder инициализирует автоответчик (LLM-клиент + конфиг)
 func InitAutoResponder() {
-	// Проверяем переменную окружения для включения/отключения автоответчика
-	enableAutoResponder := os.Getenv("ENABLE_AUTO_RESPONDER")
-	if enableAutoResponder == "" {
-		enableAutoResponder = "true" // По умолчанию включен
-	}
+    raw := os.Getenv("ENABLE_AUTO_RESPONDER")
+    if raw == "" {
+        raw = "true"
+    }
+    enabled, err := strconv.ParseBool(raw)
+    if err != nil {
+        log.Printf("InitAutoResponder: неверное значение ENABLE_AUTO_RESPONDER=%q: %v — включаем по умолчанию", raw, err)
+        enabled = true
+    }
+    if !enabled {
+        log.Println("Автоответчик отключен в настройках")
+        return
+    }
 
-	enabled, _ := strconv.ParseBool(enableAutoResponder)
-	if !enabled {
-		log.Println("Автоответчик отключен в настройках")
-		return
-	}
-
-	AutoResponder = llm.NewAutoResponder()
-	log.Println("Автоответчик успешно инициализирован")
+    client := llm.NewLLMClient()
+    cfg := llm.GetDefaultConfig()
+    AutoResponder = llm.NewAutoResponder(client, cfg)
+    log.Println("Автоответчик успешно инициализирован")
 }
 
-// TelegramWebhook обрабатывает входящие запросы от Telegram API и веб-виджета
+// TelegramWebhook обрабатывает вебхук Telegram и виджета
 func TelegramWebhook(c *gin.Context) {
-	// Логируем информацию о запросе для отладки CORS
-	log.Printf("TelegramWebhook: Получен запрос от %s. Метод: %s, Origin: %s", 
-		c.ClientIP(), c.Request.Method, c.GetHeader("Origin"))
-	
-	// Проверяем, это предварительный запрос OPTIONS
-	if c.Request.Method == "OPTIONS" {
-		handleCORS(c)
-		c.Status(http.StatusOK)
-		return
-	}
-	
-	// Устанавливаем CORS заголовки для всех запросов
-	handleCORS(c)
-	
-	// Проверяем Content-Type
-	contentType := c.GetHeader("Content-Type")
-	if contentType != "application/json" && !strings.Contains(contentType, "application/json") {
-		log.Printf("TelegramWebhook: Неверный Content-Type: %s", contentType)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Content-Type должен быть application/json"})
-		return
-	}
-	
-	var incomingMessage models.IncomingMessage
-	
-	if err := c.ShouldBindJSON(&incomingMessage); err != nil {
-		log.Printf("TelegramWebhook: Ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ошибка парсинга JSON: " + err.Error()})
-		return
-	}
-	
-	log.Printf("TelegramWebhook: Получено сообщение от пользователя %s (source: %s, content: %s)", 
-		incomingMessage.UserName, incomingMessage.Source, incomingMessage.Content)
-	
-	// Проверяем обязательные поля
-	if incomingMessage.UserID == "" {
-		log.Printf("TelegramWebhook: Отсутствует UserID")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "UserID обязателен"})
-		return
-	}
-	
-	if incomingMessage.ClientID == "" {
-		// Если ClientID не указан, используем тестовое значение для виджета
-		log.Printf("TelegramWebhook: ClientID не указан, используем тестовое значение")
-		incomingMessage.ClientID = "test_client_id"
-	}
-	
-	// Создаем или получаем существующий чат
-	chat, _, err := database.CreateOrGetChat(
-		incomingMessage.UserID,
-		incomingMessage.UserName,
-		incomingMessage.UserEmail,
-		incomingMessage.Source,
-		incomingMessage.UserID,
-		incomingMessage.BotID,
-		incomingMessage.ClientID,
-	)
-	if err != nil {
-		log.Printf("TelegramWebhook: Ошибка создания/получения чата: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания чата: " + err.Error()})
-		return
-	}
-	
-	log.Printf("TelegramWebhook: Чат получен/создан с ID: %s", chat.ID)
-	
-	// Добавляем новое сообщение в чат
-	messageType := "text"
-	if incomingMessage.MessageType != "" {
-		messageType = incomingMessage.MessageType
-	}
-	
-	message, err := database.AddMessage(
-		chat.ID,
-		incomingMessage.Content,
-		"user",
-		incomingMessage.UserID,
-		messageType,
-		incomingMessage.Metadata,
-	)
-	if err != nil {
-		log.Printf("TelegramWebhook: Ошибка добавления сообщения: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка добавления сообщения: " + err.Error()})
-		return
-	}
-	
-	log.Printf("TelegramWebhook: Добавлено сообщение с ID: %s в чат %s", message.ID, chat.ID)
-	
-	// Обновляем чат (получаем первую страницу сообщений)
-	updatedChat, _, err := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
-	if err != nil {
-		log.Printf("TelegramWebhook: Не удалось получить обновленный чат: %v", err)
-		c.Error(err)
-	} else {
-		// Отправляем уведомление по WebSocket
-		messageData, err := websocket.NewChatMessage(updatedChat, message)
-		if err == nil {
-			WebSocketHub.Broadcast(messageData)
-			log.Printf("TelegramWebhook: Отправлено уведомление по WebSocket")
-		} else {
-			log.Printf("TelegramWebhook: Ошибка при создании WebSocket сообщения: %v", err)
-		}
-	}
-	
-	// Переменные для хранения ответа бота
-	var botResponseText string
-	var botMessageID string
-	var savedBotMessage *models.Message
+    log.Printf("TelegramWebhook: %s %s from %s", c.Request.Method, c.FullPath(), c.ClientIP())
 
-	// Если автоответчик включен, генерируем автоматический ответ
-	if AutoResponder != nil && updatedChat != nil {
-		log.Printf("TelegramWebhook: Запуск автоответчика для сообщения %s", message.ID)
-		
-		botResponse, err := AutoResponder.ProcessMessage(updatedChat, message)
-		if err != nil {
-			log.Printf("TelegramWebhook: Ошибка при генерации автоответа: %v", err)
-		} else if botResponse != nil {
-			// Добавляем сообщение от бота в базу данных
-			savedBotMessage, err = database.AddMessage(
-				chat.ID,
-				botResponse.Content,
-				botResponse.Sender,
-				botResponse.SenderID,
-				botResponse.Type,
-				botResponse.Metadata,
-			)
-			
-			if err != nil {
-				log.Printf("TelegramWebhook: Ошибка при сохранении автоответа: %v", err)
-			} else {
-				botResponseText = savedBotMessage.Content
-				botMessageID = savedBotMessage.ID
-				
-				log.Printf("TelegramWebhook: Автоответчик успешно создал ответ: %s", savedBotMessage.Content)
-				
-				// Получаем обновленный чат еще раз после добавления ответа бота
-				updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
-				if updatedChat != nil {
-					// Отправляем уведомление с ответом бота по WebSocket
-					botMessageData, err := websocket.NewChatMessage(updatedChat, savedBotMessage)
-					if err == nil {
-						WebSocketHub.Broadcast(botMessageData)
-						log.Printf("TelegramWebhook: Отправлено уведомление с автоответом по WebSocket")
-					}
-					
-					// Создаем сообщение специально для виджета и отправляем
-					widgetMessage, err := websocket.NewWidgetMessage(savedBotMessage)
-					if err == nil {
-						// Отправляем сообщение всем виджетам, связанным с этим чатом
-						sentCount := WebSocketHub.SendToChat(chat.ID, widgetMessage)
-						if sentCount > 0 {
-							log.Printf("TelegramWebhook: Отправлено сообщение бота %d виджетам через WebSocket", sentCount)
-						}
-					} else {
-						log.Printf("TelegramWebhook: Ошибка при создании сообщения для виджета: %v", err)
-					}
-				}
-			}
-		}
-	}
-	
-	// Возвращаем успешный ответ с расширенной информацией и ответом бота
-	c.JSON(http.StatusOK, gin.H{
-		"status": "message processed", 
-		"message_id": message.ID, 
-		"chat_id": chat.ID,
-		"success": true,
-		"timestamp": time.Now().Format(time.RFC3339),
-		"bot_response": botResponseText,
-		"bot_message_id": botMessageID,
-	})
+    // OPTIONS для CORS
+    if c.Request.Method == http.MethodOptions {
+        handleCORS(c)
+        c.Status(http.StatusOK)
+        return
+    }
+    handleCORS(c)
+
+    // Проверяем Content-Type
+    if !strings.Contains(c.GetHeader("Content-Type"), "application/json") {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Content-Type должен быть application/json"})
+        return
+    }
+
+    // Парсим входящее сообщение
+    var in models.IncomingMessage
+    if err := c.ShouldBindJSON(&in); err != nil {
+        log.Printf("TelegramWebhook: ошибка парсинга JSON: %v", err)
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    if in.UserID == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "UserID обязателен"})
+        return
+    }
+    if in.ClientID == "" {
+        in.ClientID = "test_client_id"
+    }
+
+    // Создаём или получаем чат
+    chat, _, err := database.CreateOrGetChat(
+        in.UserID, in.UserName, in.UserEmail,
+        in.Source, in.UserID, in.BotID, in.ClientID,
+    )
+    if err != nil {
+        log.Printf("TelegramWebhook: CreateOrGetChat: %v", err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    // Добавляем сообщение пользователя
+    msgType := "text"
+    if in.MessageType != "" {
+        msgType = in.MessageType
+    }
+    userMsg, err := database.AddMessage(
+        chat.ID, in.Content, "user", in.UserID, msgType, in.Metadata,
+    )
+    if err != nil {
+        log.Printf("TelegramWebhook: AddMessage: %v", err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    // Отправляем через WebSocket обновление
+    updatedChat, _, _ := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
+    if updatedChat != nil {
+        if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
+            WebSocketHub.Broadcast(data)
+        }
+    }
+
+    // Генерируем автоответ, если включено
+    var botText, botID string
+    if AutoResponder != nil && updatedChat != nil {
+        botMsg, err := AutoResponder.ProcessMessage(c.Request.Context(), updatedChat, userMsg)
+        if err != nil {
+            log.Printf("TelegramWebhook: AutoResponder.ProcessMessage: %v", err)
+        } else if botMsg != nil {
+            saved, err := database.AddMessage(
+                chat.ID, botMsg.Content, botMsg.Sender, botMsg.SenderID, botMsg.Type, botMsg.Metadata,
+            )
+            if err != nil {
+                log.Printf("TelegramWebhook: сохранение автоответа: %v", err)
+            } else {
+                botText = saved.Content
+                botID = saved.ID
+
+                // Обновлённый чат и уведомления по WebSocket
+                updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
+                if updatedChat != nil {
+                    if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
+                        WebSocketHub.Broadcast(data)
+                    }
+                    if widget, err := websocket.NewWidgetMessage(saved); err == nil {
+                        WebSocketHub.SendToChat(chat.ID, widget)
+                    }
+                }
+            }
+        }
+    }
+
+    // Ответ клиенту
+    c.JSON(http.StatusOK, gin.H{
+        "status":          "message processed",
+        "message_id":      userMsg.ID,
+        "chat_id":         chat.ID,
+        "timestamp":       time.Now().Format(time.RFC3339),
+        "bot_response":    botText,
+        "bot_message_id":  botID,
+    })
 }
 
-// handleCORS устанавливает CORS заголовки для запроса
+// handleCORS выставляет стандартные CORS заголовки
 func handleCORS(c *gin.Context) {
-	origin := c.GetHeader("Origin")
-	
-	// Устанавливаем CORS заголовки
-	if origin != "" {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-	} else {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-	}
-	
-	c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
-	c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-	c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+    origin := c.GetHeader("Origin")
+    if origin == "" {
+        origin = "*"
+    }
+    c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+    c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
+    c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+    c.Writer.Header().Set("Access-Control-Max-Age", "86400")
 }

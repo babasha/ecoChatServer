@@ -1,183 +1,182 @@
 package llm
 
 import (
+    "context"
     "database/sql"
     "encoding/json"
-    "log"
+    "fmt"
+    "sync"
     "time"
 
-    // Импорт локального пакета через module path из go.mod
+    "github.com/egor/ecochatserver/database"
     "github.com/egor/ecochatserver/models"
 )
+
+// systemPrompt — первоначальный промпт для LLM
+const systemPrompt = `Ты вежливый и полезный ассистент, который отвечает на вопросы клиентов. Твои ответы должны быть краткими, информативными и дружелюбными.`
+
+// Message — локальный тип для истории диалога с LLM
+type Message struct {
+    Role    string `json:"role"`
+    Content string `json:"content"`
+}
+
+// LLM — интерфейс клиента LLM
+type LLM interface {
+    GenerateResponse(ctx context.Context, input string, history []Message) (string, error)
+}
+
 // AutoResponderConfig содержит настройки автоответчика
 type AutoResponderConfig struct {
-	Enabled         bool   `json:"enabled"`           // Включен ли автоответчик
-	BotName         string `json:"botName"`           // Имя бота в сообщениях
-	DelaySeconds    int    `json:"delaySeconds"`      // Задержка перед ответом (симуляция набора)
-	IdleTimeMinutes int    `json:"idleTimeMinutes"`   // Время ожидания ответа от оператора
+    Enabled         bool   `json:"enabled"`
+    BotName         string `json:"botName"`
+    DelaySeconds    int    `json:"delaySeconds"`
+    IdleTimeMinutes int    `json:"idleTimeMinutes"`
 }
 
-// GetDefaultConfig возвращает настройки автоответчика по умолчанию
+// GetDefaultConfig возвращает конфиг автоответчика по умолчанию
 func GetDefaultConfig() AutoResponderConfig {
-	return AutoResponderConfig{
-		Enabled:         true,
-		BotName:         "Автоответчик",
-		DelaySeconds:    1,
-		IdleTimeMinutes: 5,
-	}
+    return AutoResponderConfig{
+        Enabled:         true,
+        BotName:         "Автоответчик",
+        DelaySeconds:    1,
+        IdleTimeMinutes: 5,
+    }
 }
 
-// AutoResponder представляет собой автоответчик на базе ЛЛМ
+// AutoResponder представляет автоответчик на базе LLM
 type AutoResponder struct {
-	client  *LLMClient
-	config  AutoResponderConfig
-	history map[string][]Message // chatID -> история сообщений
+    client  LLM
+    config  AutoResponderConfig
+    mu      sync.RWMutex
+    history map[string][]Message
 }
 
-// NewAutoResponder создает новый экземпляр автоответчика
-func NewAutoResponder() *AutoResponder {
-	return &AutoResponder{
-		client:  NewLLMClient(),
-		config:  GetDefaultConfig(),
-		history: make(map[string][]Message),
-	}
+// NewAutoResponder создаёт новый экземпляр автоответчика
+func NewAutoResponder(client LLM, cfg AutoResponderConfig) *AutoResponder {
+    return &AutoResponder{
+        client:  client,
+        config:  cfg,
+        history: make(map[string][]Message),
+    }
 }
 
-// ProcessMessage обрабатывает входящее сообщение и возвращает ответ, если нужно
-func (ar *AutoResponder) ProcessMessage(chat *models.Chat, message *models.Message) (*models.Message, error) {
-	// Проверяем, включен ли автоответчик
-	if !ar.config.Enabled {
-		return nil, nil
-	}
+// ProcessMessage обрабатывает входящее сообщение и, при необходимости, генерирует ответ
+func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
+    if !ar.config.Enabled || msg.Sender != "user" {
+        return nil, nil
+    }
+    // Если чат уже назначен оператору, автоответчик не вмешивается
+    if chat.AssignedTo != nil && *chat.AssignedTo != "" {
+        return nil, nil
+    }
 
-	// Отвечаем только на сообщения от пользователя
-	if message.Sender != "user" {
-		return nil, nil
-	}
+    // Получаем существующую историю или инициализируем новую
+    ar.mu.Lock()
+    hist := ar.history[chat.ID]
+    if len(hist) == 0 {
+        hist = []Message{
+            {Role: "system", Content: systemPrompt},
+        }
+    }
+    // Добавляем последнее сообщение пользователя
+    hist = append(hist, Message{Role: "user", Content: msg.Content})
+    ar.history[chat.ID] = hist
+    ar.mu.Unlock()
 
-	// Если чат уже назначен оператору, не отвечаем автоматически
-	if chat.AssignedTo != nil && *chat.AssignedTo != "" {
-		log.Printf("Чат %s назначен оператору, автоответчик не используется", chat.ID)
-		return nil, nil
-	}
+    // Симулируем задержку набора (не блокируя через sleep без select)
+    if ar.config.DelaySeconds > 0 {
+        select {
+        case <-time.After(time.Duration(ar.config.DelaySeconds) * time.Second):
+        case <-ctx.Done():
+            return nil, ctx.Err()
+        }
+    }
 
-	// Получаем или инициализируем историю сообщений для этого чата
-	chatHistory, exists := ar.history[chat.ID]
-	if !exists {
-		// Инициализируем историю с системным сообщением
-		chatHistory = []Message{
-			{
-				Role:    "system",
-				Content: "Ты вежливый и полезный ассистент, который отвечает на вопросы клиентов. Твои ответы должны быть краткими, информативными и дружелюбными, в нашей компании мы начинаем диалог со слов ку епта .",
-			},
-		}
-		ar.history[chat.ID] = chatHistory
-	}
+    // Генерируем ответ с учётом таймаута IdleTimeMinutes
+    genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
+    defer cancel()
+    response, err := ar.client.GenerateResponse(genCtx, msg.Content, hist)
+    if err != nil {
+        return nil, fmt.Errorf("GenerateResponse: %w", err)
+    }
 
-	// Добавляем текущее сообщение пользователя в историю
-	chatHistory = append(chatHistory, Message{
-		Role:    "user",
-		Content: message.Content,
-	})
-	ar.history[chat.ID] = chatHistory
+    now := time.Now()
+    botMsg := &models.Message{
+        ChatID:    chat.ID,
+        Content:   response,
+        Sender:    "admin",
+        SenderID:  "bot",
+        Timestamp: now,
+        Read:      true,
+        Type:      "text",
+        Metadata: map[string]interface{}{
+            "isAutoResponse": true,
+            "botName":        ar.config.BotName,
+        },
+    }
 
-	// Имитируем задержку ответа
-	if ar.config.DelaySeconds > 0 {
-		time.Sleep(time.Duration(ar.config.DelaySeconds) * time.Second)
-	}
+    // Сохраняем ответ бота в локальной истории
+    ar.mu.Lock()
+    ar.history[chat.ID] = append(ar.history[chat.ID], Message{Role: "assistant", Content: response})
+    ar.mu.Unlock()
 
-	// Генерируем ответ с помощью ЛЛМ
-	response, err := ar.client.GenerateResponse(message.Content, chatHistory)
-	if err != nil {
-		log.Printf("Ошибка при генерации ответа: %v", err)
-		return nil, err
-	}
-
-	// Создаем сообщение с ответом
-	now := time.Now()
-	botMessage := &models.Message{
-		ID:        "", // ID будет присвоен при сохранении в БД
-		ChatID:    chat.ID,
-		Content:   response,
-		Sender:    "admin", // Используем тип "admin", чтобы отображалось как ответ оператора
-		SenderID:  "bot",   // Специальный ID для обозначения, что это бот
-		Timestamp: now,
-		Read:      true,
-		Type:      "text",
-		Metadata: map[string]interface{}{
-			"isAutoResponse": true,
-			"botName":        ar.config.BotName,
-		},
-	}
-
-	// Добавляем ответ бота в историю
-	ar.history[chat.ID] = append(ar.history[chat.ID], Message{
-		Role:    "assistant",
-		Content: response,
-	})
-
-	return botMessage, nil
+    return botMsg, nil
 }
 
-// SaveChatHistory сохраняет историю чата с ЛЛМ в метаданные чата
-func (ar *AutoResponder) SaveChatHistory(chatID string, tx *sql.Tx) error {
-	history, exists := ar.history[chatID]
-	if !exists {
-		return nil // Нет истории для сохранения
-	}
+// SaveChatHistory сохраняет историю LLM в поле metadata чата в БД.
+// Если tx != nil — используется транзакция, иначе — прямой запрос.
+func (ar *AutoResponder) SaveChatHistory(ctx context.Context, chatID string, tx *sql.Tx) error {
+    ar.mu.RLock()
+    hist := ar.history[chatID]
+    ar.mu.RUnlock()
+    if len(hist) == 0 {
+        return nil
+    }
+    raw, err := json.Marshal(hist)
+    if err != nil {
+        return fmt.Errorf("SaveChatHistory: marshal: %w", err)
+    }
 
-	// Сериализуем историю в JSON
-	historyJSON, err := json.Marshal(history)
-	if err != nil {
-		return err
-	}
-
-	// Обновляем метаданные чата в БД
-	if tx != nil {
-		_, err = tx.Exec(
-			"UPDATE chats SET metadata = json_set(COALESCE(metadata, '{}'), '$.llmHistory', ?) WHERE id = ?",
-			string(historyJSON), chatID,
-		)
-	} else {
-		// TODO: Добавить сохранение без транзакции, если необходимо
-	}
-
-	return err
+    query := `
+        UPDATE chats
+        SET metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{llmHistory}', $1)
+        WHERE id = $2
+    `
+    if tx != nil {
+        _, err = tx.ExecContext(ctx, query, raw, chatID)
+    } else {
+        _, err = database.DB.ExecContext(ctx, query, raw, chatID)
+    }
+    return err
 }
 
-// LoadChatHistory загружает историю чата с ЛЛМ из метаданных чата
-func (ar *AutoResponder) LoadChatHistory(chatID string, metadata string) error {
-	if metadata == "" {
-		return nil // Нет метаданных для загрузки
-	}
-
-	var metadataMap map[string]interface{}
-	if err := json.Unmarshal([]byte(metadata), &metadataMap); err != nil {
-		return err
-	}
-
-	historyJSON, exists := metadataMap["llmHistory"]
-	if !exists {
-		return nil // Нет истории для загрузки
-	}
-
-	// Преобразуем интерфейс обратно в JSON
-	historyBytes, err := json.Marshal(historyJSON)
-	if err != nil {
-		return err
-	}
-
-	// Десериализуем JSON в историю
-	var history []Message
-	if err := json.Unmarshal(historyBytes, &history); err != nil {
-		return err
-	}
-
-	ar.history[chatID] = history
-	return nil
+// LoadChatHistory загружает историю LLM из metadata чата и сохраняет её в память.
+func (ar *AutoResponder) LoadChatHistory(ctx context.Context, chatID string) error {
+    var raw []byte
+    query := `SELECT metadata->'llmHistory' FROM chats WHERE id = $1`
+    if err := database.DB.QueryRowContext(ctx, query, chatID).Scan(&raw); err != nil {
+        if err == sql.ErrNoRows {
+            return nil
+        }
+        return fmt.Errorf("LoadChatHistory: scan: %w", err)
+    }
+    if len(raw) == 0 {
+        return nil
+    }
+    var hist []Message
+    if err := json.Unmarshal(raw, &hist); err != nil {
+        return fmt.Errorf("LoadChatHistory: unmarshal: %w", err)
+    }
+    ar.mu.Lock()
+    ar.history[chatID] = hist
+    ar.mu.Unlock()
+    return nil
 }
 
-// ClearChatHistory очищает историю чата с ЛЛМ
+// ClearChatHistory очищает локальную историю диалога для данного чата.
 func (ar *AutoResponder) ClearChatHistory(chatID string) {
-	delete(ar.history, chatID)
+    ar.mu.Lock()
+    delete(ar.history, chatID)
+    ar.mu.Unlock()
 }
