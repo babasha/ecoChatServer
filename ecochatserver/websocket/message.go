@@ -1,8 +1,10 @@
 package websocket
 
 import (
-	"encoding/json"
-	"ecochatserver/models"
+    "encoding/json"
+
+    // Внутренний пакет через полный module-path
+    "github.com/egor/ecochatserver/models"
 )
 
 // WebSocketMessage представляет сообщение для WebSocket

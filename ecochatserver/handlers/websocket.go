@@ -1,8 +1,10 @@
 package handlers
 
 import (
-	"ecochatserver/websocket"
-	"log"
+    "log"
+
+    // Внутренний пакет через полный путь модуля
+    "github.com/egor/ecochatserver/websocket"
 )
 
 // WebSocketHub - глобальная переменная для доступа к WebSocket хабу из всех обработчиков

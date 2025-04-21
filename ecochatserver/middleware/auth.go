@@ -1,18 +1,19 @@
 package middleware
 
 import (
-	"errors"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
+    "errors"
+    "fmt"
+    "log"
+    "net/http"
+    "os"
+    "strings"
+    "time"
 
-	"ecochatserver/database"
+    // Путь к локальному пакету должен начинаться с module path из go.mod
+    "github.com/egor/ecochatserver/database"
 
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
+    "github.com/gin-gonic/gin"
+    "github.com/golang-jwt/jwt/v4"
 )
 
 // jwtKey - ключ для подписи JWT токена

@@ -1,18 +1,19 @@
 package handlers
 
 import (
-	"ecochatserver/database"
-	"ecochatserver/llm"
-	"ecochatserver/models"
-	"ecochatserver/websocket"
-	"log"
-	"net/http"
-	"os"
-	"strconv"
-	"strings"
-	"time"
+    "log"
+    "net/http"
+    "os"
+    "strconv"
+    "strings"
+    "time"
 
-	"github.com/gin-gonic/gin"
+    "github.com/gin-gonic/gin"
+
+    "github.com/egor/ecochatserver/database"
+    "github.com/egor/ecochatserver/llm"
+    "github.com/egor/ecochatserver/models"
+    "github.com/egor/ecochatserver/websocket"
 )
 
 // Глобальная переменная для автоответчика

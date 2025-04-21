@@ -1,14 +1,16 @@
 package handlers
 
 import (
-	"ecochatserver/database"
-	"ecochatserver/models"
-	"ecochatserver/websocket"
-	"log"
-	"net/http"
-	"strconv"
+    "log"
+    "net/http"
+    "strconv"
 
-	"github.com/gin-gonic/gin"
+    "github.com/gin-gonic/gin"
+
+    // Внутренние пакеты через полный путь модуля
+    "github.com/egor/ecochatserver/database"
+    "github.com/egor/ecochatserver/models"
+    "github.com/egor/ecochatserver/websocket"
 )
 
 // PaginationResponse стандартная структура ответа с пагинацией

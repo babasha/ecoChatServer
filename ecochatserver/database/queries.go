@@ -1,15 +1,17 @@
 package database
 
 import (
-	"database/sql"
-	"ecochatserver/models"
-	"encoding/json"
-	"errors"
-	"log"
-	"time"
+    "database/sql"
+    "encoding/json"
+    "errors"
+    "log"
+    "time"
 
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
+    "github.com/google/uuid"
+    "golang.org/x/crypto/bcrypt"
+
+    // Внутренний пакет через полный путь модуля
+    "github.com/egor/ecochatserver/models"
 )
 
 // Параметры пагинации по умолчанию

@@ -1,13 +1,14 @@
 package llm
 
 import (
-	"database/sql"
-	"ecochatserver/models"
-	"encoding/json"
-	"log"
-	"time"
-)
+    "database/sql"
+    "encoding/json"
+    "log"
+    "time"
 
+    // Импорт локального пакета через module path из go.mod
+    "github.com/egor/ecochatserver/models"
+)
 // AutoResponderConfig содержит настройки автоответчика
 type AutoResponderConfig struct {
 	Enabled         bool   `json:"enabled"`           // Включен ли автоответчик

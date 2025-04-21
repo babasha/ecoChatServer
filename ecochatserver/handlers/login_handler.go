@@ -1,12 +1,14 @@
 package handlers
 
 import (
-	"ecochatserver/database"
-	"ecochatserver/middleware"
-	"log"
-	"net/http"
+    "log"
+    "net/http"
 
-	"github.com/gin-gonic/gin"
+    "github.com/gin-gonic/gin"
+
+    // Внутренние пакеты через полный путь модуля
+    "github.com/egor/ecochatserver/database"
+    "github.com/egor/ecochatserver/middleware"
 )
 
 // Login обрабатывает авторизацию админов
