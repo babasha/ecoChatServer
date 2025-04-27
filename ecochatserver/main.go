@@ -1,4 +1,3 @@
-// cmd/ecochat/main.go
 package main
 
 import (
@@ -40,6 +39,9 @@ func main() {
 	hub := websocket.NewHub()
 	go hub.Run()
 	handlers.SetWebSocketHub(hub)
+	
+	// ─── Инициализация автоответчика ────────────────────────────────────────
+	handlers.InitAutoResponder()
 
 	// ─── REST API ────────────────────────────────────────────────────────────
 	setupAPIRoutes(r, hub)
