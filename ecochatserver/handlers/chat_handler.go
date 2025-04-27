@@ -6,6 +6,7 @@ import (
     "strconv"
 
     "github.com/gin-gonic/gin"
+    "github.com/google/uuid"
 
     // Внутренние пакеты через полный путь модуля
     "github.com/egor/ecochatserver/database"
@@ -25,12 +26,27 @@ type PaginationResponse struct {
 // GetChats возвращает список всех чатов для админа
 func GetChats(c *gin.Context) {
 	// Получаем ID админа и клиента из токена аутентификации
-	adminID := c.GetString("adminID")
-	clientID := c.GetString("clientID")
+	adminIDStr := c.GetString("adminID")
+	clientIDStr := c.GetString("clientID")
 	
-	if adminID == "" || clientID == "" {
+	if adminIDStr == "" || clientIDStr == "" {
 		log.Printf("Ошибка авторизации: adminID или clientID отсутствуют")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходима авторизация"})
+		return
+	}
+
+	// Преобразуем строковые ID в UUID
+	adminID, err := uuid.Parse(adminIDStr)
+	if err != nil {
+		log.Printf("Ошибка преобразования adminID в UUID: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат ID администратора"})
+		return
+	}
+
+	clientID, err := uuid.Parse(clientIDStr)
+	if err != nil {
+		log.Printf("Ошибка преобразования clientID в UUID: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат ID клиента"})
 		return
 	}
 
@@ -39,12 +55,12 @@ func GetChats(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", strconv.Itoa(database.DefaultPageSize)))
 
 	log.Printf("Запрос на получение чатов от admin: %s, client: %s (страница: %d, размер: %d)", 
-		adminID, clientID, page, pageSize)
+		adminIDStr, clientIDStr, page, pageSize)
 
 	// Получаем список чатов из базы данных
 	chats, totalItems, err := database.GetChats(clientID, adminID, page, pageSize)
 	if err != nil {
-		log.Printf("Ошибка получения чатов для admin: %s, client: %s: %v", adminID, clientID, err)
+		log.Printf("Ошибка получения чатов для admin: %s, client: %s: %v", adminIDStr, clientIDStr, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения чатов: " + err.Error()})
 		return
 	}
@@ -65,18 +81,26 @@ func GetChats(c *gin.Context) {
 	}
 
 	log.Printf("Успешно получено %d чатов для admin: %s (страница %d из %d)", 
-		len(chats), adminID, page, totalPages)
+		len(chats), adminIDStr, page, totalPages)
 	c.JSON(http.StatusOK, response)
 }
 
 // GetChatByID возвращает информацию о конкретном чате и его сообщениях
 func GetChatByID(c *gin.Context) {
-	chatID := c.Param("id")
-	adminID := c.GetString("adminID")
+	chatIDStr := c.Param("id")
+	adminIDStr := c.GetString("adminID")
 	
-	if adminID == "" {
-		log.Printf("Ошибка авторизации при получении чата %s: adminID отсутствует", chatID)
+	if adminIDStr == "" {
+		log.Printf("Ошибка авторизации при получении чата %s: adminID отсутствует", chatIDStr)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходима авторизация"})
+		return
+	}
+	
+	// Преобразуем строковый ID чата в UUID
+	chatID, err := uuid.Parse(chatIDStr)
+	if err != nil {
+		log.Printf("Ошибка преобразования chatID в UUID: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат ID чата"})
 		return
 	}
 	
@@ -85,12 +109,12 @@ func GetChatByID(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", strconv.Itoa(database.DefaultPageSize)))
 	
 	log.Printf("Запрос на получение чата %s от admin: %s (страница: %d, размер: %d)", 
-		chatID, adminID, page, pageSize)
+		chatIDStr, adminIDStr, page, pageSize)
 	
 	// Получаем информацию о чате из базы данных
 	chat, totalMessages, err := database.GetChatByID(chatID, page, pageSize)
 	if err != nil {
-		log.Printf("Ошибка получения чата %s: %v", chatID, err)
+		log.Printf("Ошибка получения чата %s: %v", chatIDStr, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден: " + err.Error()})
 		return
 	}
@@ -125,22 +149,38 @@ func GetChatByID(c *gin.Context) {
 	}
 	
 	log.Printf("Успешно получен чат %s с %d сообщениями (страница %d из %d)", 
-		chatID, len(chat.Messages), page, totalPages)
+		chatIDStr, len(chat.Messages), page, totalPages)
 	c.JSON(http.StatusOK, response)
 }
 
 // SendMessage отправляет сообщение в чат
 func SendMessage(c *gin.Context) {
-	chatID := c.Param("id")
-	adminID := c.GetString("adminID")
+	chatIDStr := c.Param("id")
+	adminIDStr := c.GetString("adminID")
 	
-	if adminID == "" {
-		log.Printf("Ошибка авторизации при отправке сообщения в чат %s: adminID отсутствует", chatID)
+	if adminIDStr == "" {
+		log.Printf("Ошибка авторизации при отправке сообщения в чат %s: adminID отсутствует", chatIDStr)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Необходима авторизация"})
 		return
 	}
 	
-	log.Printf("Запрос на отправку сообщения в чат %s от admin: %s", chatID, adminID)
+	// Преобразуем строковый ID чата в UUID
+	chatID, err := uuid.Parse(chatIDStr)
+	if err != nil {
+		log.Printf("Ошибка преобразования chatID в UUID: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат ID чата"})
+		return
+	}
+	
+	// Преобразуем строковый ID админа в UUID
+	adminID, err := uuid.Parse(adminIDStr)
+	if err != nil {
+		log.Printf("Ошибка преобразования adminID в UUID: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат ID администратора"})
+		return
+	}
+	
+	log.Printf("Запрос на отправку сообщения в чат %s от admin: %s", chatIDStr, adminIDStr)
 	
 	// Получаем данные сообщения
 	var messageData struct {

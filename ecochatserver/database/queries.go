@@ -173,7 +173,13 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
 	); err != nil {
 		return nil, 0, err
 	}
-	chat.AssignedTo = nullStringToPointer(assignedNull)
+	
+	// Исправление: использование NullUUIDToPointer вместо nullStringToPointer
+	assignedUUID, err := NullUUIDToPointer(assignedNull)
+	if err != nil {
+		return nil, 0, fmt.Errorf("ошибка при парсинге assigned_to UUID: %w", err)
+	}
+	chat.AssignedTo = assignedUUID
 
 	// 2) пользователь
 	var (

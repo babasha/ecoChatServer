@@ -9,6 +9,7 @@ import (
     "time"
 
     "github.com/gin-gonic/gin"
+    "github.com/google/uuid"
 
     "github.com/egor/ecochatserver/database"
     "github.com/egor/ecochatserver/llm"
@@ -79,28 +80,37 @@ func TelegramWebhook(c *gin.Context) {
     }
 
     // Создаём или получаем чат
-    chat, _, err := database.CreateOrGetChat(
+    chat, err := database.GetOrCreateChat(
         in.UserID, in.UserName, in.UserEmail,
         in.Source, in.UserID, in.BotID, in.ClientID,
     )
     if err != nil {
-        log.Printf("TelegramWebhook: CreateOrGetChat: %v", err)
+        log.Printf("TelegramWebhook: GetOrCreateChat: %v", err)
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
+    
     // Получаем строковое представление UUID чата
-    chatID := chat.ID.String()
+    chatID := chat.ID
+
+    // Создаем UUID для отправителя
+    userUUID, err := uuid.Parse(in.UserID)
+    if err != nil {
+        userUUID = uuid.New() // Если не удалось преобразовать, создаем новый UUID
+        log.Printf("Не удалось преобразовать UserID в UUID, создан новый: %s", userUUID.String())
+    }
 
     // Добавляем сообщение пользователя
     msgType := "text"
     if in.MessageType != "" {
         msgType = in.MessageType
     }
+    
     userMsg, err := database.AddMessage(
         chatID,
         in.Content,
         "user",
-        in.UserID,
+        userUUID,
         msgType,
         in.Metadata,
     )
@@ -114,7 +124,7 @@ func TelegramWebhook(c *gin.Context) {
     updatedChat, _, _ := database.GetChatByID(chatID, 1, database.DefaultPageSize)
     if updatedChat != nil {
         if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
-            websocket.WebSocketHub.Broadcast(data)
+            WebSocketHub.Broadcast(data) // Используем WebSocketHub из handlers, а не из websocket
         }
     }
 
@@ -129,11 +139,13 @@ func TelegramWebhook(c *gin.Context) {
         if err != nil {
             log.Printf("TelegramWebhook: AutoResponder.ProcessMessage: %v", err)
         } else if botMsg != nil {
+            botUUID := botMsg.SenderID // Используем UUID уже установленный в botMsg
+            
             saved, err := database.AddMessage(
                 chatID,
                 botMsg.Content,
                 botMsg.Sender,
-                botMsg.SenderID.String(), // конвертация uuid.UUID в string
+                botUUID,
                 botMsg.Type,
                 botMsg.Metadata,
             )
@@ -147,10 +159,10 @@ func TelegramWebhook(c *gin.Context) {
                 updatedChat, _, _ = database.GetChatByID(chatID, 1, database.DefaultPageSize)
                 if updatedChat != nil {
                     if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
-                        websocket.WebSocketHub.Broadcast(data)
+                        WebSocketHub.Broadcast(data) // Используем WebSocketHub из handlers, а не из websocket
                     }
                     if widget, err := websocket.NewWidgetMessage(saved); err == nil {
-                        websocket.WebSocketHub.SendToChat(chatID, widget)
+                        WebSocketHub.SendToChat(chatID.String(), widget) // Преобразуем UUID в string
                     }
                 }
             }
@@ -160,8 +172,8 @@ func TelegramWebhook(c *gin.Context) {
     // Ответ клиенту
     c.JSON(http.StatusOK, gin.H{
         "status":          "message processed",
-        "message_id":      userMsg.ID.String(), // если ID — uuid.UUID
-        "chat_id":         chatID,
+        "message_id":      userMsg.ID.String(),
+        "chat_id":         chatID.String(),
         "timestamp":       time.Now().Format(time.RFC3339),
         "bot_response":    botText,
         "bot_message_id":  botID,
