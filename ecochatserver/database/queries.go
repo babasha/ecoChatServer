@@ -340,3 +340,127 @@ func MarkMessagesAsRead(chatID uuid.UUID) error {
 	}
 	return nil
 }
+
+// ─────────────────────────── GetOrCreateChat
+
+// GetOrCreateChat создаёт новый чат или возвращает существующий
+func GetOrCreateChat(
+    userID, userName, userEmail string,
+    source, sourceID, botID, clientID string,
+) (*models.Chat, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+    defer cancel()
+
+    tx, err := DB.BeginTx(ctx, nil)
+    if err != nil {
+        return nil, fmt.Errorf("GetOrCreateChat: begin transaction: %w", err)
+    }
+    defer tx.Rollback()
+
+    // Шаг 1: Получаем или создаем пользователя
+    user, err := getOrCreateUser(ctx, tx, userID, userName, userEmail, source, sourceID)
+    if err != nil {
+        return nil, fmt.Errorf("GetOrCreateChat: getOrCreateUser: %w", err)
+    }
+
+    // Шаг 2: Получаем clientID в формате UUID
+    clientUUID, err := uuid.Parse(clientID)
+    if err != nil {
+        return nil, fmt.Errorf("GetOrCreateChat: parse clientID: %w", err)
+    }
+
+    // Шаг 3: Проверяем, существует ли чат
+    var chatID uuid.UUID
+    err = tx.QueryRowContext(ctx, `
+        SELECT id FROM chats 
+        WHERE user_id = $1 AND source = $2 AND bot_id = $3 AND client_id = $4
+        LIMIT 1
+    `, user.ID, source, botID, clientUUID).Scan(&chatID)
+
+    if err != nil && err != sql.ErrNoRows {
+        return nil, fmt.Errorf("GetOrCreateChat: query chat: %w", err)
+    }
+
+    // Если чат не существует, создаем новый
+    if err == sql.ErrNoRows {
+        now := time.Now()
+        chatID = uuid.New()
+        
+        _, err = tx.ExecContext(ctx, `
+            INSERT INTO chats 
+                (id, user_id, created_at, updated_at, status, source, bot_id, client_id) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, chatID, user.ID, now, now, "active", source, botID, clientUUID)
+        
+        if err != nil {
+            return nil, fmt.Errorf("GetOrCreateChat: insert chat: %w", err)
+        }
+    }
+
+    if err = tx.Commit(); err != nil {
+        return nil, fmt.Errorf("GetOrCreateChat: commit: %w", err)
+    }
+
+    // Шаг 4: Получаем полную информацию о чате
+    chat, _, err := GetChatByID(chatID, 1, DefaultPageSize)
+    if err != nil {
+        return nil, fmt.Errorf("GetOrCreateChat: GetChatByID: %w", err)
+    }
+
+    return chat, nil
+}
+
+// getOrCreateUser получает или создает пользователя в транзакции
+func getOrCreateUser(
+    ctx context.Context, tx *sql.Tx, 
+    userID, userName, userEmail string,
+    source, sourceID string,
+) (*models.User, error) {
+    var user models.User
+    var avatarNull sql.NullString
+
+    // Пытаемся найти пользователя по source и sourceID
+    err := tx.QueryRowContext(ctx, `
+        SELECT id, name, email, avatar, source, source_id 
+        FROM users 
+        WHERE source = $1 AND source_id = $2
+        LIMIT 1
+    `, source, sourceID).Scan(
+        &user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
+    )
+
+    if err != nil && err != sql.ErrNoRows {
+        return nil, fmt.Errorf("getOrCreateUser: query: %w", err)
+    }
+
+    // Если пользователь существует, возвращаем его
+    if err == nil {
+        user.Avatar = nullStringToPointer(avatarNull)
+        return &user, nil
+    }
+
+    // Создаем нового пользователя
+    user.ID = uuid.New()
+    if userID != "" {
+        parsedID, err := uuid.Parse(userID)
+        if err == nil {
+            user.ID = parsedID
+        }
+    }
+    user.Name = userName
+    user.Email = userEmail
+    user.Source = source
+    user.SourceID = sourceID
+
+    // Вставляем нового пользователя
+    _, err = tx.ExecContext(ctx, `
+        INSERT INTO users (id, name, email, source, source_id, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6)
+    `, user.ID, user.Name, user.Email, user.Source, user.SourceID, time.Now())
+
+    if err != nil {
+        return nil, fmt.Errorf("getOrCreateUser: insert: %w", err)
+    }
+
+    return &user, nil
+}

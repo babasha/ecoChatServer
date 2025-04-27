@@ -90,9 +90,6 @@ func TelegramWebhook(c *gin.Context) {
         return
     }
     
-    // Получаем строковое представление UUID чата
-    chatID := chat.ID
-
     // Создаем UUID для отправителя
     userUUID, err := uuid.Parse(in.UserID)
     if err != nil {
@@ -107,7 +104,7 @@ func TelegramWebhook(c *gin.Context) {
     }
     
     userMsg, err := database.AddMessage(
-        chatID,
+        chat.ID,
         in.Content,
         "user",
         userUUID,
@@ -121,10 +118,10 @@ func TelegramWebhook(c *gin.Context) {
     }
 
     // Отправляем через WebSocket обновление списка сообщений
-    updatedChat, _, _ := database.GetChatByID(chatID, 1, database.DefaultPageSize)
+    updatedChat, _, _ := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
     if updatedChat != nil {
         if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
-            WebSocketHub.Broadcast(data) // Используем WebSocketHub из handlers, а не из websocket
+            WebSocketHub.Broadcast(data)
         }
     }
 
@@ -142,7 +139,7 @@ func TelegramWebhook(c *gin.Context) {
             botUUID := botMsg.SenderID // Используем UUID уже установленный в botMsg
             
             saved, err := database.AddMessage(
-                chatID,
+                chat.ID,
                 botMsg.Content,
                 botMsg.Sender,
                 botUUID,
@@ -156,13 +153,13 @@ func TelegramWebhook(c *gin.Context) {
                 botID = saved.ID.String()
 
                 // Обновлённый чат и уведомления по WebSocket
-                updatedChat, _, _ = database.GetChatByID(chatID, 1, database.DefaultPageSize)
+                updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
                 if updatedChat != nil {
                     if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
-                        WebSocketHub.Broadcast(data) // Используем WebSocketHub из handlers, а не из websocket
+                        WebSocketHub.Broadcast(data)
                     }
                     if widget, err := websocket.NewWidgetMessage(saved); err == nil {
-                        WebSocketHub.SendToChat(chatID.String(), widget) // Преобразуем UUID в string
+                        WebSocketHub.SendToChat(chat.ID.String(), widget)
                     }
                 }
             }
@@ -173,7 +170,7 @@ func TelegramWebhook(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{
         "status":          "message processed",
         "message_id":      userMsg.ID.String(),
-        "chat_id":         chatID.String(),
+        "chat_id":         chat.ID.String(),
         "timestamp":       time.Now().Format(time.RFC3339),
         "bot_response":    botText,
         "bot_message_id":  botID,
