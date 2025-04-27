@@ -90,11 +90,18 @@ func TelegramWebhook(c *gin.Context) {
         return
     }
     
-    // Создаем UUID для отправителя
-    userUUID, err := uuid.Parse(in.UserID)
-    if err != nil {
-        userUUID = uuid.New() // Если не удалось преобразовать, создаем новый UUID
-        log.Printf("Не удалось преобразовать UserID в UUID, создан новый: %s", userUUID.String())
+    // ИЗМЕНЕНО: Создаем детерминированный UUID для отправителя
+    // на основе userID, что гарантирует, что один и тот же пользователь 
+    // всегда будет иметь один и тот же UUID
+    var userUUID uuid.UUID
+    if parsedUUID, err := uuid.Parse(in.UserID); err == nil {
+        // Если userID уже является валидным UUID, используем его
+        userUUID = parsedUUID
+        log.Printf("UserID %s уже является валидным UUID", in.UserID)
+    } else {
+        // Иначе создаем детерминированный UUID на основе userID
+        userUUID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(in.UserID))
+        log.Printf("Создан детерминированный UUID для userID %s: %s", in.UserID, userUUID.String())
     }
 
     // Добавляем сообщение пользователя

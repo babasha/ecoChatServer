@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -343,10 +344,41 @@ func MarkMessagesAsRead(chatID uuid.UUID) error {
 
 // ─────────────────────────── GetOrCreateChat
 
+// getClientUUIDByAPIKey преобразует API-ключ клиента в UUID
+func getClientUUIDByAPIKey(ctx context.Context, tx *sql.Tx, apiKey string) (uuid.UUID, error) {
+    // Сначала проверяем, может это уже UUID
+    if u, err := uuid.Parse(apiKey); err == nil {
+        return u, nil
+    }
+    
+    // Ищем клиента по его API ключу
+    var clientID uuid.UUID
+    err := tx.QueryRowContext(ctx, `
+        SELECT id FROM clients WHERE api_key = $1
+    `, apiKey).Scan(&clientID)
+    
+    if err == sql.ErrNoRows {
+        // Если клиента с таким API ключом не существует, создаем нового
+        clientID = uuid.New()
+        _, err = tx.ExecContext(ctx, `
+            INSERT INTO clients (id, name, api_key, subscription, active, created_at)
+            VALUES ($1, $2, $3, 'free', true, $4)
+        `, clientID, "Клиент "+apiKey, apiKey, time.Now())
+        if err != nil {
+            return uuid.Nil, fmt.Errorf("создание нового клиента: %w", err)
+        }
+        log.Printf("Создан новый клиент с ID %s для API ключа %s", clientID.String(), apiKey)
+    } else if err != nil {
+        return uuid.Nil, fmt.Errorf("поиск клиента по API ключу: %w", err)
+    }
+    
+    return clientID, nil
+}
+
 // GetOrCreateChat создаёт новый чат или возвращает существующий
 func GetOrCreateChat(
     userID, userName, userEmail string,
-    source, sourceID, botID, clientID string,
+    source, sourceID, botID, clientAPIKey string,
 ) (*models.Chat, error) {
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()
@@ -363,10 +395,10 @@ func GetOrCreateChat(
         return nil, fmt.Errorf("GetOrCreateChat: getOrCreateUser: %w", err)
     }
 
-    // Шаг 2: Получаем clientID в формате UUID
-    clientUUID, err := uuid.Parse(clientID)
+    // Шаг 2: Получаем clientID в формате UUID из API ключа
+    clientUUID, err := getClientUUIDByAPIKey(ctx, tx, clientAPIKey)
     if err != nil {
-        return nil, fmt.Errorf("GetOrCreateChat: parse clientID: %w", err)
+        return nil, fmt.Errorf("GetOrCreateChat: getClientUUIDByAPIKey: %w", err)
     }
 
     // Шаг 3: Проверяем, существует ли чат
@@ -395,6 +427,9 @@ func GetOrCreateChat(
         if err != nil {
             return nil, fmt.Errorf("GetOrCreateChat: insert chat: %w", err)
         }
+        
+        log.Printf("Создан новый чат с ID %s для пользователя %s и клиента %s", 
+                  chatID.String(), userID, clientUUID.String())
     }
 
     if err = tx.Commit(); err != nil {
@@ -461,6 +496,59 @@ func getOrCreateUser(
     if err != nil {
         return nil, fmt.Errorf("getOrCreateUser: insert: %w", err)
     }
+    
+    log.Printf("Создан новый пользователь с ID %s, имя: %s, источник: %s", 
+              user.ID.String(), user.Name, user.Source)
 
     return &user, nil
+}
+
+// EnsureClientWithAPIKey проверяет существование клиента с заданным API ключом
+// или создает нового, если такого клиента нет
+func EnsureClientWithAPIKey(apiKey string, clientName string) (uuid.UUID, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+    defer cancel()
+
+    tx, err := DB.BeginTx(ctx, nil)
+    if err != nil {
+        return uuid.Nil, fmt.Errorf("EnsureClientWithAPIKey: начало транзакции: %w", err)
+    }
+    defer tx.Rollback()
+
+    // Проверяем наличие клиента
+    var clientID uuid.UUID
+    err = tx.QueryRowContext(ctx, `
+        SELECT id FROM clients WHERE api_key = $1
+    `, apiKey).Scan(&clientID)
+
+    if err != nil {
+        if err == sql.ErrNoRows {
+            // Создаем нового клиента
+            clientID = uuid.New()
+            
+            // Если имя не указано, используем "Клиент " + apiKey
+            if clientName == "" {
+                clientName = "Клиент " + apiKey
+            }
+            
+            _, err = tx.ExecContext(ctx, `
+                INSERT INTO clients (id, name, api_key, subscription, active, created_at)
+                VALUES ($1, $2, $3, 'free', true, $4)
+            `, clientID, clientName, apiKey, time.Now())
+            
+            if err != nil {
+                return uuid.Nil, fmt.Errorf("EnsureClientWithAPIKey: создание клиента: %w", err)
+            }
+            
+            log.Printf("Создан новый клиент: ID=%s, Name=%s, APIKey=%s", clientID, clientName, apiKey)
+        } else {
+            return uuid.Nil, fmt.Errorf("EnsureClientWithAPIKey: ошибка запроса: %w", err)
+        }
+    }
+
+    if err = tx.Commit(); err != nil {
+        return uuid.Nil, fmt.Errorf("EnsureClientWithAPIKey: коммит транзакции: %w", err)
+    }
+
+    return clientID, nil
 }
