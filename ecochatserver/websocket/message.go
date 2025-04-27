@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "time"
 
+    "github.com/google/uuid"
     "github.com/egor/ecochatserver/models"
 )
 
@@ -28,13 +29,16 @@ func NewChatMessage(chat *models.Chat, message *models.Message) ([]byte, error) 
     payload := struct {
         Chat    *models.Chat    `json:"chat"`
         Message *models.Message `json:"message"`
-    }{Chat: chat, Message: message}
+    }{
+        Chat:    chat,
+        Message: message,
+    }
     return NewMessage("new_message", payload)
 }
 
 func NewWidgetMessage(message *models.Message) ([]byte, error) {
     payload := struct {
-        ID        string                 `json:"id"`
+        ID        uuid.UUID              `json:"id"`
         Content   string                 `json:"content"`
         Sender    string                 `json:"sender"`
         Timestamp string                 `json:"timestamp"`
@@ -60,7 +64,9 @@ func NewChatListMessage(chats []models.ChatResponse) ([]byte, error) {
 func NewErrorMessage(errorText string) ([]byte, error) {
     payload := struct {
         Error string `json:"error"`
-    }{Error: errorText}
+    }{
+        Error: errorText,
+    }
     return NewMessage("error", payload)
 }
 

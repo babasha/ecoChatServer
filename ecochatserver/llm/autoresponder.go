@@ -8,6 +8,7 @@ import (
     "sync"
     "time"
 
+    "github.com/google/uuid"
     "github.com/egor/ecochatserver/database"
     "github.com/egor/ecochatserver/models"
 )
@@ -67,13 +68,16 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
         return nil, nil
     }
     // Если чат уже назначен оператору, автоответчик не вмешивается
-    if chat.AssignedTo != nil && *chat.AssignedTo != "" {
+    if chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil {
         return nil, nil
     }
 
+    // Используем строковое представление chat.ID как ключ для истории
+    chatKey := chat.ID.String()
+
     // Получаем существующую историю или инициализируем новую
     ar.mu.Lock()
-    hist := ar.history[chat.ID]
+    hist := ar.history[chatKey]
     if len(hist) == 0 {
         hist = []Message{
             {Role: "system", Content: systemPrompt},
@@ -81,7 +85,7 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
     }
     // Добавляем последнее сообщение пользователя
     hist = append(hist, Message{Role: "user", Content: msg.Content})
-    ar.history[chat.ID] = hist
+    ar.history[chatKey] = hist
     ar.mu.Unlock()
 
     // Симулируем задержку набора (не блокируя через sleep без select)
@@ -103,10 +107,10 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
     now := time.Now()
     botMsg := &models.Message{
-        ChatID:    chat.ID,
+        ChatID:    chat.ID,           // uuid.UUID
         Content:   response,
         Sender:    "admin",
-        SenderID:  "bot",
+        SenderID:  uuid.Nil,          // пустой UUID
         Timestamp: now,
         Read:      true,
         Type:      "text",
@@ -118,7 +122,7 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
     // Сохраняем ответ бота в локальной истории
     ar.mu.Lock()
-    ar.history[chat.ID] = append(ar.history[chat.ID], Message{Role: "assistant", Content: response})
+    ar.history[chatKey] = append(ar.history[chatKey], Message{Role: "assistant", Content: response})
     ar.mu.Unlock()
 
     return botMsg, nil

@@ -27,7 +27,10 @@ func InitAutoResponder() {
     }
     enabled, err := strconv.ParseBool(raw)
     if err != nil {
-        log.Printf("InitAutoResponder: неверное значение ENABLE_AUTO_RESPONDER=%q: %v — включаем по умолчанию", raw, err)
+        log.Printf(
+            "InitAutoResponder: неверное значение ENABLE_AUTO_RESPONDER=%q: %v — включаем по умолчанию",
+            raw, err,
+        )
         enabled = true
     }
     if !enabled {
@@ -85,6 +88,8 @@ func TelegramWebhook(c *gin.Context) {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
+    // Получаем строковое представление UUID чата
+    chatID := chat.ID.String()
 
     // Добавляем сообщение пользователя
     msgType := "text"
@@ -92,7 +97,12 @@ func TelegramWebhook(c *gin.Context) {
         msgType = in.MessageType
     }
     userMsg, err := database.AddMessage(
-        chat.ID, in.Content, "user", in.UserID, msgType, in.Metadata,
+        chatID,
+        in.Content,
+        "user",
+        in.UserID,
+        msgType,
+        in.Metadata,
     )
     if err != nil {
         log.Printf("TelegramWebhook: AddMessage: %v", err)
@@ -100,38 +110,47 @@ func TelegramWebhook(c *gin.Context) {
         return
     }
 
-    // Отправляем через WebSocket обновление
-    updatedChat, _, _ := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
+    // Отправляем через WebSocket обновление списка сообщений
+    updatedChat, _, _ := database.GetChatByID(chatID, 1, database.DefaultPageSize)
     if updatedChat != nil {
         if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
-            WebSocketHub.Broadcast(data)
+            websocket.WebSocketHub.Broadcast(data)
         }
     }
 
     // Генерируем автоответ, если включено
     var botText, botID string
     if AutoResponder != nil && updatedChat != nil {
-        botMsg, err := AutoResponder.ProcessMessage(c.Request.Context(), updatedChat, userMsg)
+        botMsg, err := AutoResponder.ProcessMessage(
+            c.Request.Context(),
+            updatedChat,
+            userMsg,
+        )
         if err != nil {
             log.Printf("TelegramWebhook: AutoResponder.ProcessMessage: %v", err)
         } else if botMsg != nil {
             saved, err := database.AddMessage(
-                chat.ID, botMsg.Content, botMsg.Sender, botMsg.SenderID, botMsg.Type, botMsg.Metadata,
+                chatID,
+                botMsg.Content,
+                botMsg.Sender,
+                botMsg.SenderID.String(), // конвертация uuid.UUID в string
+                botMsg.Type,
+                botMsg.Metadata,
             )
             if err != nil {
                 log.Printf("TelegramWebhook: сохранение автоответа: %v", err)
             } else {
                 botText = saved.Content
-                botID = saved.ID
+                botID = saved.ID.String()
 
                 // Обновлённый чат и уведомления по WebSocket
-                updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
+                updatedChat, _, _ = database.GetChatByID(chatID, 1, database.DefaultPageSize)
                 if updatedChat != nil {
                     if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
-                        WebSocketHub.Broadcast(data)
+                        websocket.WebSocketHub.Broadcast(data)
                     }
                     if widget, err := websocket.NewWidgetMessage(saved); err == nil {
-                        WebSocketHub.SendToChat(chat.ID, widget)
+                        websocket.WebSocketHub.SendToChat(chatID, widget)
                     }
                 }
             }
@@ -141,8 +160,8 @@ func TelegramWebhook(c *gin.Context) {
     // Ответ клиенту
     c.JSON(http.StatusOK, gin.H{
         "status":          "message processed",
-        "message_id":      userMsg.ID,
-        "chat_id":         chat.ID,
+        "message_id":      userMsg.ID.String(), // если ID — uuid.UUID
+        "chat_id":         chatID,
         "timestamp":       time.Now().Format(time.RFC3339),
         "bot_response":    botText,
         "bot_message_id":  botID,

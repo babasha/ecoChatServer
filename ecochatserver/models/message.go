@@ -2,15 +2,16 @@ package models
 
 import (
 	"time"
+	"github.com/google/uuid"
 )
 
 // Message представляет собой структуру сообщения
 type Message struct {
-	ID        string    `json:"id"`
-	ChatID    string    `json:"chatId"`
+	ID        uuid.UUID `json:"id"`
+	ChatID    uuid.UUID `json:"chatId"`
 	Content   string    `json:"content"`
 	Sender    string    `json:"sender"` // "user" или "admin"
-	SenderID  string    `json:"senderId,omitempty"`
+	SenderID  uuid.UUID `json:"senderId,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 	Read      bool      `json:"read"`
 	Type      string    `json:"type,omitempty"` // "text", "image", "file", etc.
