@@ -20,7 +20,7 @@ import (
 // AutoResponder — единственный экземпляр автоответчика
 var AutoResponder *llm.AutoResponder
 
-// InitAutoResponder инициализирует автоответчик (LLM-клиент + конфиг)
+// InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
     raw := os.Getenv("ENABLE_AUTO_RESPONDER")
     if raw == "" {
