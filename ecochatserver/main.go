@@ -78,7 +78,7 @@ func setupCORS(r *gin.Engine) {
 	conf := cors.Config{
 		AllowOrigins:     allow,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}
@@ -109,6 +109,12 @@ func setupAPIRoutes(r *gin.Engine, hub *websocket.Hub) {
 		})
 		api.POST("/auth/login",       handlers.Login)
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
+
+		// API для виджета
+		widget := api.Group("/widget")
+		{
+			widget.GET("/chat/:id/messages", handlers.GetWidgetChatMessages)
+		}
 
 		auth := api.Group("/")
 		auth.Use(middleware.AuthMiddleware())
