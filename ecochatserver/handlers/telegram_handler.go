@@ -59,6 +59,7 @@ func TelegramWebhook(c *gin.Context) {
 
     // Проверяем Content-Type
     if !strings.Contains(c.GetHeader("Content-Type"), "application/json") {
+        log.Printf("TelegramWebhook: неверный Content-Type: %s", c.GetHeader("Content-Type"))
         c.JSON(http.StatusBadRequest, gin.H{"error": "Content-Type должен быть application/json"})
         return
     }
@@ -70,38 +71,46 @@ func TelegramWebhook(c *gin.Context) {
         c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
         return
     }
+    
+    log.Printf("TelegramWebhook: получено сообщение: %+v", in)
 
     if in.UserID == "" {
+        log.Printf("TelegramWebhook: отсутствует UserID")
         c.JSON(http.StatusBadRequest, gin.H{"error": "UserID обязателен"})
         return
     }
     if in.ClientID == "" {
         in.ClientID = "test_client_id"
+        log.Printf("TelegramWebhook: ClientID не указан, используем: %s", in.ClientID)
+    } else {
+        log.Printf("TelegramWebhook: используем ClientID: %s", in.ClientID)
     }
 
     // Создаём или получаем чат
+    log.Printf("TelegramWebhook: создаем/получаем чат для user=%s, source=%s, botID=%s, clientID=%s", 
+        in.UserID, in.Source, in.BotID, in.ClientID)
+    
     chat, err := database.GetOrCreateChat(
         in.UserID, in.UserName, in.UserEmail,
         in.Source, in.UserID, in.BotID, in.ClientID,
     )
     if err != nil {
-        log.Printf("TelegramWebhook: GetOrCreateChat: %v", err)
+        log.Printf("TelegramWebhook: GetOrCreateChat error: %v", err)
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
     
-    // ИЗМЕНЕНО: Создаем детерминированный UUID для отправителя
-    // на основе userID, что гарантирует, что один и тот же пользователь 
-    // всегда будет иметь один и тот же UUID
+    log.Printf("TelegramWebhook: получен чат: ID=%s, ClientID=%s, UserID=%s", 
+        chat.ID, chat.ClientID, chat.User.ID)
+    
+    // Создаем детерминированный UUID для отправителя
     var userUUID uuid.UUID
     if parsedUUID, err := uuid.Parse(in.UserID); err == nil {
-        // Если userID уже является валидным UUID, используем его
         userUUID = parsedUUID
-        log.Printf("UserID %s уже является валидным UUID", in.UserID)
+        log.Printf("TelegramWebhook: UserID %s уже является валидным UUID", in.UserID)
     } else {
-        // Иначе создаем детерминированный UUID на основе userID
         userUUID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(in.UserID))
-        log.Printf("Создан детерминированный UUID для userID %s: %s", in.UserID, userUUID.String())
+        log.Printf("TelegramWebhook: создан детерминированный UUID для userID %s: %s", in.UserID, userUUID.String())
     }
 
     // Добавляем сообщение пользователя
@@ -109,6 +118,8 @@ func TelegramWebhook(c *gin.Context) {
     if in.MessageType != "" {
         msgType = in.MessageType
     }
+    
+    log.Printf("TelegramWebhook: добавляем сообщение в чат %s от пользователя %s", chat.ID, userUUID)
     
     userMsg, err := database.AddMessage(
         chat.ID,
@@ -119,31 +130,42 @@ func TelegramWebhook(c *gin.Context) {
         in.Metadata,
     )
     if err != nil {
-        log.Printf("TelegramWebhook: AddMessage: %v", err)
+        log.Printf("TelegramWebhook: AddMessage error: %v", err)
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
+    
+    log.Printf("TelegramWebhook: сообщение добавлено: ID=%s", userMsg.ID)
 
     // Отправляем через WebSocket обновление списка сообщений
-    updatedChat, _, _ := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
-    if updatedChat != nil {
+    log.Printf("TelegramWebhook: получаем обновленный чат для WebSocket")
+    updatedChat, _, err := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
+    if err != nil {
+        log.Printf("TelegramWebhook: ошибка при получении обновленного чата: %v", err)
+    } else if updatedChat != nil {
+        log.Printf("TelegramWebhook: отправляем WebSocket уведомление для чата %s", updatedChat.ID)
         if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
             WebSocketHub.Broadcast(data)
+            log.Printf("TelegramWebhook: WebSocket уведомление отправлено")
+        } else {
+            log.Printf("TelegramWebhook: ошибка создания WebSocket сообщения: %v", err)
         }
     }
 
     // Генерируем автоответ, если включено
     var botText, botID string
     if AutoResponder != nil && updatedChat != nil {
+        log.Printf("TelegramWebhook: генерируем автоответ")
         botMsg, err := AutoResponder.ProcessMessage(
             c.Request.Context(),
             updatedChat,
             userMsg,
         )
         if err != nil {
-            log.Printf("TelegramWebhook: AutoResponder.ProcessMessage: %v", err)
+            log.Printf("TelegramWebhook: AutoResponder.ProcessMessage error: %v", err)
         } else if botMsg != nil {
-            botUUID := botMsg.SenderID // Используем UUID уже установленный в botMsg
+            log.Printf("TelegramWebhook: автоответ сгенерирован, сохраняем в БД")
+            botUUID := botMsg.SenderID
             
             saved, err := database.AddMessage(
                 chat.ID,
@@ -154,34 +176,43 @@ func TelegramWebhook(c *gin.Context) {
                 botMsg.Metadata,
             )
             if err != nil {
-                log.Printf("TelegramWebhook: сохранение автоответа: %v", err)
+                log.Printf("TelegramWebhook: ошибка сохранения автоответа: %v", err)
             } else {
                 botText = saved.Content
                 botID = saved.ID.String()
+                log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botID)
 
                 // Обновлённый чат и уведомления по WebSocket
                 updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
                 if updatedChat != nil {
                     if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
                         WebSocketHub.Broadcast(data)
+                        log.Printf("TelegramWebhook: WebSocket уведомление об автоответе отправлено")
                     }
                     if widget, err := websocket.NewWidgetMessage(saved); err == nil {
                         WebSocketHub.SendToChat(chat.ID.String(), widget)
+                        log.Printf("TelegramWebhook: WebSocket сообщение виджету отправлено")
                     }
                 }
             }
+        } else {
+            log.Printf("TelegramWebhook: автоответ не сгенерирован (botMsg == nil)")
         }
+    } else {
+        log.Printf("TelegramWebhook: автоответчик не активен или чат не найден")
     }
 
     // Ответ клиенту
-    c.JSON(http.StatusOK, gin.H{
+    response := gin.H{
         "status":          "message processed",
         "message_id":      userMsg.ID.String(),
         "chat_id":         chat.ID.String(),
         "timestamp":       time.Now().Format(time.RFC3339),
         "bot_response":    botText,
         "bot_message_id":  botID,
-    })
+    }
+    log.Printf("TelegramWebhook: отправляем ответ: %+v", response)
+    c.JSON(http.StatusOK, response)
 }
 
 // handleCORS выставляет стандартные CORS заголовки
