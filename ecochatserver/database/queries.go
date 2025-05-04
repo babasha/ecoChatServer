@@ -8,11 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/egor/ecochatserver/models"
@@ -37,20 +35,6 @@ func nullUUIDToPointer(ns sql.NullString) (*uuid.UUID, error) {
 		return nil, err
 	}
 	return &u, nil
-}
-
-// isPartitionDDLConflict — true если SQLSTATE 55006
-func isPartitionDDLConflict(err error) bool {
-	if err == nil {
-		return false
-	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "55006" {
-		return true
-	}
-	return strings.Contains(err.Error(), "55006") ||
-		strings.Contains(err.Error(), "PARTITION OF") ||
-		strings.Contains(err.Error(), "is being used by active queries")
 }
 
 /*────────────────────────── GetAdmin */
@@ -283,39 +267,8 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
 	return &chat, total, nil
 }
 
-/*────────────────────────── ensurePartitionExists */
+/*────────────────────────── AddMessage - УПРОЩЕННАЯ ВЕРСИЯ */
 
-func ensurePartitionExists(ts time.Time) error {
-	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
-	defer cancel()
-
-	weekStart := ts.AddDate(0, 0, -int(ts.Weekday())+1)
-	partition := fmt.Sprintf("messages_week_%s", weekStart.Format("2006_01_02"))
-
-	var exists bool
-	if err := DB.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM pg_class WHERE relname=$1 AND relkind='r')",
-		partition,
-	).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	conn, err := DB.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	_, err = conn.ExecContext(ctx, "SELECT public.create_future_partitions(8)")
-	return err
-}
-
-/*────────────────────────── AddMessage + retry */
-// AddMessage пытается вставить сообщение, создавая недостающую
-// недельную партицию и перезапуская попытку в новом соединении.
 func AddMessage(
 	chatID uuid.UUID,
 	content, sender string,
@@ -323,105 +276,53 @@ func AddMessage(
 	msgType string,
 	meta map[string]any,
 ) (*models.Message, error) {
-
-	now := time.Now()
-
-	// Шаг 1 — гарантируем, что нужная партиция уже есть
-	if err := ensurePartitionExists(now); err != nil {
-		log.Printf("ensurePartitionExists warning: %v", err)
-	}
-
-	// Шаг 2 — до трёх попыток вставки
-	const maxRetries = 3
-	var lastErr error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-
-		// ▸▸▸ каждая попытка — В НОВОМ соединении
-		ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
-		conn, err := DB.Conn(ctx)
-		if err != nil {
-			cancel()
-			return nil, fmt.Errorf("get conn: %w", err)
-		}
-
-		msg, err := tryAddMessage(conn, chatID, content, sender, senderID, msgType, meta, now)
-
-		conn.Close() // всегда возвращаем соединение в пул
-		cancel()
-		// ◂◂◂
-
-		if err == nil {
-			return msg, nil // успех
-		}
-		lastErr = err
-
-		if isPartitionDDLConflict(err) && attempt < maxRetries {
-			log.Printf("partition conflict (attempt %d/%d)", attempt, maxRetries)
-			time.Sleep(time.Duration(200*attempt) * time.Millisecond)
-			continue
-		}
-		break
-	}
-
-	return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
-}
-
-/*────────────────────────── tryAddMessage */
-
-
-// tryAddMessage выполняет вставку, работая через переданное соединение.
-func tryAddMessage(
-	conn *sql.Conn,
-	chatID uuid.UUID,
-	content, sender string,
-	senderID uuid.UUID,
-	msgType string,
-	meta map[string]any,
-	ts time.Time,
-) (*models.Message, error) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
+	// Проверяем, существует ли чат
 	var ok bool
 	if err := tx.QueryRowContext(ctx,
 		"SELECT EXISTS(SELECT 1 FROM chats WHERE id=$1)", chatID,
 	).Scan(&ok); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("проверка чата: %w", err)
 	}
 	if !ok {
 		return nil, errors.New("chat not found")
 	}
 
+	now := time.Now()
 	msgID := uuid.New()
 	var metaJSON []byte
 	if meta != nil {
 		metaJSON, _ = json.Marshal(meta)
 	}
 
+	// Вставляем сообщение
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO messages
 		       (id,chat_id,content,sender,sender_id,
 		        timestamp,read,type,metadata)
 		VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8)`,
-		msgID, chatID, content, sender, senderID, ts, msgType, metaJSON); err != nil {
-		return nil, err
+		msgID, chatID, content, sender, senderID, now, msgType, metaJSON,
+	); err != nil {
+		return nil, fmt.Errorf("вставка сообщения: %w", err)
 	}
 
+	// Обновляем время последнего изменения чата
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE chats SET updated_at=$1 WHERE id=$2", ts, chatID); err != nil {
-		return nil, err
+		"UPDATE chats SET updated_at=$1 WHERE id=$2", now, chatID,
+	); err != nil {
+		return nil, fmt.Errorf("обновление чата: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 
 	return &models.Message{
@@ -430,7 +331,7 @@ func tryAddMessage(
 		Content:   content,
 		Sender:    sender,
 		SenderID:  senderID,
-		Timestamp: ts,
+		Timestamp: now,
 		Read:      false,
 		Type:      msgType,
 		Metadata:  meta,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,53 @@ func Init() error {
 	}
 
 	log.Println("[database] PostgreSQL connected ✓")
+	
+	// Создаем партиции заранее
+	if err := initializePartitions(); err != nil {
+		log.Printf("Warning: не удалось создать партиции: %v", err)
+		// Не прерываем запуск сервера из-за партиций
+	}
+	
+	return nil
+}
+
+// initializePartitions создает партиции заранее
+func initializePartitions() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := DB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("get conn: %w", err)
+	}
+	defer conn.Close()
+
+	// Создаем партиции на 8 недель вперед
+	_, err = conn.ExecContext(ctx, "SELECT public.create_future_partitions(8)")
+	if err != nil {
+		return fmt.Errorf("create partitions: %w", err)
+	}
+
+	log.Println("[database] Партиции успешно созданы")
+	return nil
+}
+
+// RefreshPartitions обновляет партиции
+func RefreshPartitions() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := DB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("get conn: %w", err)
+	}
+	defer conn.Close()
+
+	_, err = conn.ExecContext(ctx, "SELECT public.create_future_partitions(8)")
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return fmt.Errorf("refresh partitions: %w", err)
+	}
+
 	return nil
 }
 

@@ -28,6 +28,18 @@ func main() {
 		log.Fatalf("db init: %v", err)
 	}
 	defer database.Close()
+	
+	// Периодически проверяем и создаем партиции
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			if err := database.RefreshPartitions(); err != nil {
+				log.Printf("Error refreshing partitions: %v", err)
+			}
+		}
+	}()
 
 	// ─── Gin & middleware ───────────────────────────────────────────────────
 	gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
