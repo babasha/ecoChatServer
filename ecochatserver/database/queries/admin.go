@@ -6,11 +6,10 @@ import (
     "fmt"
     
     "golang.org/x/crypto/bcrypt"
-    "github.com/egor/ecochatserver/database"
     "github.com/egor/ecochatserver/models"
 )
 
-func GetAdmin(email string) (*models.Admin, error) {
+func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()
 
@@ -21,7 +20,7 @@ func GetAdmin(email string) (*models.Admin, error) {
         SELECT id,name,email,password_hash,avatar,role,client_id,active
           FROM admins
          WHERE email=$1`
-    if err := database.DB.QueryRowContext(ctx, q, email).Scan(
+    if err := db.QueryRowContext(ctx, q, email).Scan(
         &admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash,
         &avatarNull, &admin.Role, &admin.ClientID, &admin.Active,
     ); err != nil {

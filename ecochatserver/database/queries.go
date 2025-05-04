@@ -14,7 +14,7 @@ const (
 
 // Прокси-функции для внешнего использования
 func GetAdmin(email string) (*models.Admin, error) {
-    return queries.GetAdmin(email)
+    return queries.GetAdmin(DB, email)
 }
 
 func VerifyPassword(pw, hash string) error {
@@ -22,11 +22,11 @@ func VerifyPassword(pw, hash string) error {
 }
 
 func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatResponse, int, error) {
-    return queries.GetChats(clientID, adminID, page, size)
+    return queries.GetChats(DB, clientID, adminID, page, size)
 }
 
 func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
-    return queries.GetChatByID(chatID, page, size)
+    return queries.GetChatByID(DB, chatID, page, size)
 }
 
 func AddMessage(
@@ -36,19 +36,19 @@ func AddMessage(
     msgType string,
     meta map[string]any,
 ) (*models.Message, error) {
-    return queries.AddMessage(chatID, content, sender, senderID, msgType, meta)
+    return queries.AddMessage(DB, chatID, content, sender, senderID, msgType, meta)
 }
 
 func MarkMessagesAsRead(chatID uuid.UUID) error {
-    return queries.MarkMessagesAsRead(chatID)
+    return queries.MarkMessagesAsRead(DB, chatID)
 }
 
 func GetOrCreateChat(
     userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 ) (*models.Chat, error) {
-    return queries.GetOrCreateChat(userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+    return queries.GetOrCreateChat(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
 }
 
 func EnsureClientWithAPIKey(apiKey, clientName string) (uuid.UUID, error) {
-    return queries.EnsureClientWithAPIKey(apiKey, clientName)
+    return queries.EnsureClientWithAPIKey(DB, apiKey, clientName)
 }

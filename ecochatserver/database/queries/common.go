@@ -1,7 +1,6 @@
 package queries
 
 import (
-    "context"
     "time"
 )
 
