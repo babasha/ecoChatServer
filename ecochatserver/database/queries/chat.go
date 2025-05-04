@@ -7,11 +7,10 @@ import (
     "time"
 
     "github.com/google/uuid"
-    "github.com/egor/ecochatserver/database"
     "github.com/egor/ecochatserver/models"
 )
 
-func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatResponse, int, error) {
+func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models.ChatResponse, int, error) {
     if page < 1 {
         page = 1
     }
@@ -22,7 +21,7 @@ func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatRespons
     defer cancel()
 
     var total int
-    if err := database.DB.QueryRowContext(ctx, `
+    if err := db.QueryRowContext(ctx, `
         SELECT COUNT(*) FROM chats
         WHERE client_id=$1 AND (assigned_to=$2 OR assigned_to IS NULL)`,
         clientID, adminID,
@@ -51,7 +50,7 @@ func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatRespons
       ORDER BY c.updated_at DESC
       LIMIT $3 OFFSET $4
     `
-    rows, err := database.DB.QueryContext(ctx, q, clientID, adminID, size, (page-1)*size)
+    rows, err := db.QueryContext(ctx, q, clientID, adminID, size, (page-1)*size)
     if err != nil {
         return nil, 0, err
     }
@@ -92,7 +91,7 @@ func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatRespons
     return list, total, rows.Err()
 }
 
-func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
+func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
     if page < 1 {
         page = 1
     }
@@ -107,7 +106,7 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
         userID       uuid.UUID
         assignedNull sql.NullString
     )
-    if err := database.DB.QueryRowContext(ctx, `
+    if err := db.QueryRowContext(ctx, `
         SELECT id,created_at,updated_at,status,user_id,
                source,bot_id,client_id,assigned_to
           FROM chats WHERE id=$1`,
@@ -129,7 +128,7 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
         user       models.User
         avatarNull sql.NullString
     )
-    if err := database.DB.QueryRowContext(ctx, `
+    if err := db.QueryRowContext(ctx, `
         SELECT id,name,email,avatar,source,source_id
           FROM users WHERE id=$1`,
         userID,
@@ -141,7 +140,7 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
 
     // total messages
     var total int
-    if err := database.DB.QueryRowContext(ctx,
+    if err := db.QueryRowContext(ctx,
         "SELECT COUNT(*) FROM messages WHERE chat_id=$1",
         chatID,
     ).Scan(&total); err != nil {
@@ -149,7 +148,7 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
     }
 
     // fetch messages
-    rows, err := database.DB.QueryContext(ctx, `
+    rows, err := db.QueryContext(ctx, `
         SELECT id,content,sender,sender_id,timestamp,read,type,metadata
           FROM messages
          WHERE chat_id=$1
@@ -184,7 +183,7 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
     // last message
     var last models.Message
     var raw []byte
-    err = database.DB.QueryRowContext(ctx, `
+    err = db.QueryRowContext(ctx, `
         SELECT id,content,sender,sender_id,timestamp,read,type,metadata
           FROM messages
          WHERE chat_id=$1
@@ -208,12 +207,13 @@ func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
 }
 
 func GetOrCreateChat(
+    db *sql.DB,
     userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 ) (*models.Chat, error) {
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()
 
-    tx, err := database.DB.BeginTx(ctx, nil)
+    tx, err := db.BeginTx(ctx, nil)
     if err != nil {
         return nil, err
     }
@@ -252,6 +252,6 @@ func GetOrCreateChat(
         return nil, err
     }
 
-    chat, _, err := GetChatByID(chatID, 1, DefaultPageSize)
+    chat, _, err := GetChatByID(db, chatID, 1, DefaultPageSize)
     return chat, err
 }

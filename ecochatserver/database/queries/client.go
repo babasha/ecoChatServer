@@ -7,7 +7,6 @@ import (
     "time"
 
     "github.com/google/uuid"
-    "github.com/egor/ecochatserver/database"
 )
 
 func getClientUUIDByAPIKey(ctx context.Context, tx *sql.Tx, apiKey string) (uuid.UUID, error) {
@@ -33,11 +32,11 @@ func getClientUUIDByAPIKey(ctx context.Context, tx *sql.Tx, apiKey string) (uuid
     return clientID, nil
 }
 
-func EnsureClientWithAPIKey(apiKey, clientName string) (uuid.UUID, error) {
+func EnsureClientWithAPIKey(db *sql.DB, apiKey, clientName string) (uuid.UUID, error) {
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()
 
-    tx, err := database.DB.BeginTx(ctx, nil)
+    tx, err := db.BeginTx(ctx, nil)
     if err != nil {
         return uuid.Nil, err
     }

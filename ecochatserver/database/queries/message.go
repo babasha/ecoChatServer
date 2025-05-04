@@ -2,17 +2,18 @@ package queries
 
 import (
     "context"
+    "database/sql"
     "encoding/json"
     "errors"
     "fmt"
     "time"
 
     "github.com/google/uuid"
-    "github.com/egor/ecochatserver/database"
     "github.com/egor/ecochatserver/models"
 )
 
 func AddMessage(
+    db *sql.DB,
     chatID uuid.UUID,
     content, sender string,
     senderID uuid.UUID,
@@ -22,7 +23,7 @@ func AddMessage(
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()
 
-    tx, err := database.DB.BeginTx(ctx, nil)
+    tx, err := db.BeginTx(ctx, nil)
     if err != nil {
         return nil, fmt.Errorf("begin tx: %w", err)
     }
@@ -81,11 +82,11 @@ func AddMessage(
     }, nil
 }
 
-func MarkMessagesAsRead(chatID uuid.UUID) error {
+func MarkMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()
 
-    _, err := database.DB.ExecContext(ctx,
+    _, err := db.ExecContext(ctx,
         "UPDATE messages SET read=true WHERE chat_id=$1 AND sender='user' AND read=false",
         chatID,
     )
