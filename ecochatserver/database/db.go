@@ -4,14 +4,12 @@ package database
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	// pgx-драйвер в режиме database/sql
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -116,41 +114,4 @@ func env(k, def string) string {
 		return v
 	}
 	return def
-}
-
-// ─────────────────────────────── UUID-утилиты
-
-func StringToUUID(s string) (uuid.UUID, error) {
-	if s == "" {
-		return uuid.Nil, errors.New("empty UUID string")
-	}
-	return uuid.Parse(s)
-}
-
-func UUIDToString(u uuid.UUID) string {
-	if u == uuid.Nil {
-		return ""
-	}
-	return u.String()
-}
-
-func NullUUIDToPointer(ns sql.NullString) (*uuid.UUID, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	u, err := uuid.Parse(ns.String)
-	if err != nil {
-		return nil, err
-	}
-	return &u, nil
-}
-
-func UUIDPointerToNullString(u *uuid.UUID) sql.NullString {
-	if u == nil {
-		return sql.NullString{Valid: false}
-	}
-	return sql.NullString{
-		String: u.String(),
-		Valid:  true,
-	}
-}
+} 

@@ -6,8 +6,9 @@ import (
     "github.com/google/uuid"
 )
 
-// nullStringToPointer превращает sql.NullString → *string.
-func nullStringToPointer(ns sql.NullString) *string {
+// NullStringToPointer превращает sql.NullString → *string.
+// Функция экспортируется для использования в других пакетах
+func NullStringToPointer(ns sql.NullString) *string {
     if ns.Valid {
         s := ns.String
         return &s
