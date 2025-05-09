@@ -48,7 +48,7 @@ func NewChatMessage(chat *models.Chat, message *models.Message) ([]byte, error) 
 }
 
 func NewWidgetMessage(message *models.Message) ([]byte, error) {
-    // Проверяем, что у сообщения установлен правильный ChatID
+    // Проверяем, что у сообщения установлен правильный 
     if message.ChatID == uuid.Nil {
         log.Printf("WebSocket: NewWidgetMessage: предупреждение - у сообщения ID=%s отсутствует ChatID", message.ID)
     }
