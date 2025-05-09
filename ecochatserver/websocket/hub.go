@@ -1,19 +1,28 @@
 package websocket
 
 import (
-    "encoding/json"
-    "log"
+    "sync"
 )
 
+const (
+    ClientTypeAdmin  = "admin"
+    ClientTypeWidget = "widget"
+)
+
+// Hub отвечает за регистрацию клиентов и вещание сообщений.
 type Hub struct {
     clients     map[*Client]bool
     adminsByID  map[string]*Client
     widgetsByID map[string]map[*Client]bool
-    broadcast   chan []byte
-    register    chan *Client
-    unregister  chan *Client
+
+    broadcast  chan []byte
+    register   chan *Client
+    unregister chan *Client
+
+    mu sync.RWMutex
 }
 
+// NewHub создаёт и инициализирует Hub.
 func NewHub() *Hub {
     return &Hub{
         clients:     make(map[*Client]bool),
@@ -25,146 +34,109 @@ func NewHub() *Hub {
     }
 }
 
+// Run слушает события регистрации, отключения и широковещания.
 func (h *Hub) Run() {
     for {
         select {
-        case client := <-h.register:
-            h.clients[client] = true
-            if client.clientType == ClientTypeAdmin {
-                h.adminsByID[client.id] = client
-                log.Printf("Admin registered: %s (total %d)", client.id, len(h.adminsByID))
+        case c := <-h.register:
+            h.mu.Lock()
+            h.clients[c] = true
+            if c.clientType == ClientTypeAdmin {
+                h.adminsByID[c.id.String()] = c
             } else {
-                chatID := client.chatID
-                if chatID == "" {
-                    chatID = client.id
+                // для виджетов группируем по chatID
+                if _, ok := h.widgetsByID[c.chatID.String()]; !ok {
+                    h.widgetsByID[c.chatID.String()] = make(map[*Client]bool)
                 }
-                if _, ok := h.widgetsByID[chatID]; !ok {
-                    h.widgetsByID[chatID] = make(map[*Client]bool)
-                }
-                h.widgetsByID[chatID][client] = true
-                log.Printf("Widget registered: %s for chat %s (widgets %d)", client.id, chatID, countWidgets(h.widgetsByID))
+                h.widgetsByID[c.chatID.String()][c] = true
             }
-            log.Printf("Client connected: total %d", len(h.clients))
+            h.mu.Unlock()
 
-        case client := <-h.unregister:
-            if _, ok := h.clients[client]; ok {
-                delete(h.clients, client)
-                close(client.send)
-                if client.clientType == ClientTypeAdmin {
-                    delete(h.adminsByID, client.id)
-                    log.Printf("Admin disconnected: %s", client.id)
-                } else {
-                    chatID := client.chatID
-                    if chatID == "" {
-                        chatID = client.id
+        case c := <-h.unregister:
+            h.mu.Lock()
+            delete(h.clients, c)
+            if c.clientType == ClientTypeAdmin {
+                delete(h.adminsByID, c.id.String())
+            } else {
+                if widgets, ok := h.widgetsByID[c.chatID.String()]; ok {
+                    delete(widgets, c)
+                    if len(widgets) == 0 {
+                        delete(h.widgetsByID, c.chatID.String())
                     }
-                    if widgets, ok := h.widgetsByID[chatID]; ok {
-                        delete(widgets, client)
-                        if len(widgets) == 0 {
-                            delete(h.widgetsByID, chatID)
-                        }
-                    }
-                    log.Printf("Widget disconnected: %s for chat %s", client.id, chatID)
                 }
-                log.Printf("Client disconnected: total %d", len(h.clients))
             }
+            close(c.send)
+            h.mu.Unlock()
 
-        case message := <-h.broadcast:
+        case msg := <-h.broadcast:
+            h.mu.RLock()
             for client := range h.clients {
                 select {
-                case client.send <- message:
+                case client.send <- msg:
                 default:
+                    // «мёртвый» клиент
                     close(client.send)
                     delete(h.clients, client)
                 }
             }
+            h.mu.RUnlock()
         }
     }
 }
 
+// Broadcast шлёт сообщение всем подключённым.
 func (h *Hub) Broadcast(message []byte) {
     h.broadcast <- message
 }
 
+// SendToAdmin пытается отправить сообщение конкретному админу.
 func (h *Hub) SendToAdmin(adminID string, message []byte) bool {
-    admin, ok := h.adminsByID[adminID]
-    if !ok {
-        return false
-    }
-    select {
-    case admin.send <- message:
-        return true
-    default:
-        close(admin.send)
-        delete(h.clients, admin)
-        delete(h.adminsByID, adminID)
-        return false
-    }
-}
-
-func (h *Hub) SendToChat(chatID string, message []byte) int {
-    widgets, ok := h.widgetsByID[chatID]
-    if !ok {
-        return 0
-    }
-    sent := 0
-    for w := range widgets {
+    h.mu.RLock()
+    defer h.mu.RUnlock()
+    if c, ok := h.adminsByID[adminID]; ok {
         select {
-        case w.send <- message:
-            sent++
+        case c.send <- message:
+            return true
         default:
-            close(w.send)
-            delete(h.clients, w)
-            delete(widgets, w)
+            close(c.send)
+            delete(h.clients, c)
         }
     }
-    if len(widgets) == 0 {
-        delete(h.widgetsByID, chatID)
+    return false
+}
+
+// SendToWidgets вещает сообщение всем виджетам одного чата.
+func (h *Hub) SendToWidgets(chatID string, message []byte) int {
+    h.mu.RLock()
+    defer h.mu.RUnlock()
+    sent := 0
+    if pool, ok := h.widgetsByID[chatID]; ok {
+        for c := range pool {
+            select {
+            case c.send <- message:
+                sent++
+            default:
+                close(c.send)
+                delete(h.clients, c)
+            }
+        }
     }
     return sent
 }
 
-func (h *Hub) SendConnectionStatus(client *Client, connected bool) {
-    status := "connected"
-    if !connected {
-        status = "disconnected"
-    }
-    data, err := json.Marshal(struct {
-        Type    string `json:"type"`
-        Payload struct {
-            Status string `json:"status"`
-        } `json:"payload"`
+// SendConnectionStatus уведомляет о подключении/отключении (по вашему протоколу).
+func (h *Hub) SendConnectionStatus(c *Client, online bool) {
+    payload := struct {
+        ClientType string `json:"clientType"`
+        ID         string `json:"id"`
+        ChatID     string `json:"chatId,omitempty"`
+        Online     bool   `json:"online"`
     }{
-        Type: "connection",
-        Payload: struct {
-            Status string `json:"status"`
-        }{Status: status},
-    })
-    if err != nil {
-        log.Printf("Error creating connection status: %v", err)
-        return
+        ClientType: c.clientType,
+        ID:         c.id.String(),
+        ChatID:     c.chatID.String(),
+        Online:     online,
     }
-    select {
-    case client.send <- data:
-    default:
-        log.Printf("Failed to send connection status")
-    }
-}
-
-func (h *Hub) BroadcastToChatAndAdmin(chatID, adminID string, message []byte) {
-    sent := h.SendToChat(chatID, message)
-    if sent > 0 {
-        log.Printf("Message sent to %d widgets for chat %s", sent, chatID)
-    }
-    if adminID != "" && h.SendToAdmin(adminID, message) {
-        log.Printf("Message sent to admin %s", adminID)
-    }
-}
-
-func countWidgets(m map[string]map[*Client]bool) int {
-    total := 0
-    for _, widgets := range m {
-        total += len(widgets)
-    }
-    return total
+    msg, _ := NewMessage("connection_status", payload)
+    h.Broadcast(msg)
 }
