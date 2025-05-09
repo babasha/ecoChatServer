@@ -150,8 +150,10 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
                 Content:   lastCont.String,
                 Sender:    lastSender.String,
                 Timestamp: lastTime.Time,
+                ChatID:    chat.ID, // Добавляем ChatID для правильной связи
             }
-            log.Printf("GetChats: чат %d имеет последнее сообщение ID=%s", rowNum, lastID.String)
+            log.Printf("GetChats: чат %d имеет последнее сообщение ID=%s, ChatID=%s", 
+                rowNum, lastID.String, chat.ID)
         } else {
             log.Printf("GetChats: чат %d не имеет сообщений", rowNum)
         }
@@ -324,8 +326,8 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
             _ = json.Unmarshal(raw, &last.Metadata)
         }
         chat.LastMessage = &last
-        log.Printf("GetChatByID: последнее сообщение: ID=%s, sender=%s, content='%s', timestamp=%v", 
-            last.ID, last.Sender, last.Content, last.Timestamp)
+        log.Printf("GetChatByID: последнее сообщение: ID=%s, sender=%s, content='%s', timestamp=%v, ChatID=%s", 
+            last.ID, last.Sender, last.Content, last.Timestamp, last.ChatID)
     } else if err != sql.ErrNoRows {
         log.Printf("GetChatByID: ошибка получения последнего сообщения: %v", err)
         return nil, 0, fmt.Errorf("ошибка получения последнего сообщения: %w", err)
