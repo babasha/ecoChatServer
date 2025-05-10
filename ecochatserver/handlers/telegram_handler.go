@@ -1,11 +1,13 @@
 package handlers
 
 import (
+    "fmt"
     "log"
     "net/http"
     "os"
     "strconv"
     "strings"
+    "sync"
     "time"
 
     "github.com/gin-gonic/gin"
@@ -20,6 +22,12 @@ import (
 
 // AutoResponder — единственный экземпляр автоответчика
 var AutoResponder *llm.AutoResponder
+
+// Простое хранилище для дедупликации в памяти
+var (
+    recentMessages sync.Map // key: messageHash, value: time.Time
+    messageCleanup sync.Once
+)
 
 // InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
@@ -44,6 +52,42 @@ func InitAutoResponder() {
     cfg := llm.GetDefaultConfig()
     AutoResponder = llm.NewAutoResponder(client, cfg)
     log.Println("Автоответчик успешно инициализирован")
+}
+
+// Функции для дедупликации
+func isRecentMessage(hash string) bool {
+    if val, exists := recentMessages.Load(hash); exists {
+        if timestamp, ok := val.(time.Time); ok {
+            return time.Since(timestamp) < 5*time.Second
+        }
+    }
+    return false
+}
+
+func registerMessage(hash string) {
+    recentMessages.Store(hash, time.Now())
+    
+    // Запускаем очистку только один раз
+    messageCleanup.Do(func() {
+        go cleanupRecentMessages()
+    })
+}
+
+func cleanupRecentMessages() {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        now := time.Now()
+        recentMessages.Range(func(key, value interface{}) bool {
+            if timestamp, ok := value.(time.Time); ok {
+                if now.Sub(timestamp) > 10*time.Second {
+                    recentMessages.Delete(key)
+                }
+            }
+            return true
+        })
+    }
 }
 
 // TelegramWebhook обрабатывает вебхук Telegram и виджета
@@ -86,6 +130,25 @@ func TelegramWebhook(c *gin.Context) {
     } else {
         log.Printf("TelegramWebhook: используем ClientID: %s", in.ClientID)
     }
+
+    // ПРОСТОЕ РЕШЕНИЕ: Создаем уникальный ID для сообщения
+    messageHash := fmt.Sprintf("%s_%s_%d", 
+        in.UserID, 
+        in.Content, 
+        time.Now().Unix()/10) // группируем по 10-секундным интервалам
+    
+    // Проверяем, было ли такое сообщение недавно
+    if isRecentMessage(messageHash) {
+        log.Printf("TelegramWebhook: дублирующее сообщение пропущено")
+        c.JSON(http.StatusOK, gin.H{
+            "status": "duplicate_ignored",
+            "message": "Сообщение уже обработано",
+        })
+        return
+    }
+    
+    // Регистрируем сообщение как обработанное
+    registerMessage(messageHash)
 
     // Создаём или получаем чат
     log.Printf("TelegramWebhook: создаем/получаем чат для user=%s, source=%s, botID=%s, clientID=%s", 
@@ -142,17 +205,9 @@ func TelegramWebhook(c *gin.Context) {
     if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
         log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
     }
-    
-    // Отправляем легковесное обновление
-    if data, err := websocket.NewLightMessage(chat.ID, userMsg); err == nil {
-        WebSocketHub.BroadcastMessage(data)
-        log.Printf("TelegramWebhook: WebSocket уведомление отправлено")
-    } else {
-        log.Printf("TelegramWebhook: ошибка создания WebSocket сообщения: %v", err)
-    }
 
     // Генерируем автоответ, если включено
-    var botText, botID string
+    var botMsg *models.Message
     if AutoResponder != nil {
         log.Printf("TelegramWebhook: генерируем автоответ")
         
@@ -163,7 +218,7 @@ func TelegramWebhook(c *gin.Context) {
             lightChat = chat // Используем уже загруженный чат
         }
         
-        botMsg, err := AutoResponder.ProcessMessage(
+        botMsg, err = AutoResponder.ProcessMessage(
             c.Request.Context(),
             lightChat,
             userMsg,
@@ -185,24 +240,12 @@ func TelegramWebhook(c *gin.Context) {
             if err != nil {
                 log.Printf("TelegramWebhook: ошибка сохранения автоответа: %v", err)
             } else {
-                botText = saved.Content
-                botID = saved.ID.String()
-                log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botID)
+                botMsg = saved
+                log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botMsg.ID)
 
                 // Обновляем время чата
                 if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
                     log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
-                }
-                
-                // Отправляем легковесные обновления
-                if data, err := websocket.NewLightMessage(chat.ID, saved); err == nil {
-                    WebSocketHub.BroadcastMessage(data)
-                    log.Printf("TelegramWebhook: WebSocket уведомление об автоответе отправлено")
-                }
-                
-                if widgetMsg, err := websocket.NewWidgetMessage(saved); err == nil {
-                    WebSocketHub.SendToChat(chat.ID.String(), widgetMsg)
-                    log.Printf("TelegramWebhook: WebSocket сообщение виджету отправлено")
                 }
             }
         } else {
@@ -212,17 +255,58 @@ func TelegramWebhook(c *gin.Context) {
         log.Printf("TelegramWebhook: автоответчик не активен")
     }
 
+    // ВАЖНО: Отправляем только ОДНО комплексное WebSocket сообщение
+    if userMsg != nil {
+        notification := createChatNotification(chat.ID, userMsg, botMsg)
+        WebSocketHub.SendToChat(chat.ID.String(), notification)
+        log.Printf("TelegramWebhook: комплексное WebSocket уведомление отправлено")
+    }
+
     // Ответ клиенту
     response := gin.H{
         "status":          "message processed",
         "message_id":      userMsg.ID.String(),
         "chat_id":         chat.ID.String(),
         "timestamp":       time.Now().Format(time.RFC3339),
-        "bot_response":    botText,
-        "bot_message_id":  botID,
     }
+    
+    if botMsg != nil {
+        response["bot_response"] = botMsg.Content
+        response["bot_message_id"] = botMsg.ID.String()
+    }
+    
     log.Printf("TelegramWebhook: отправляем ответ: %+v", response)
     c.JSON(http.StatusOK, response)
+}
+
+// createChatNotification создает комплексное уведомление для WebSocket
+func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) []byte {
+    payload := map[string]interface{}{
+        "type":      "chat_update",
+        "chatId":    chatID.String(),
+        "userMessage": map[string]interface{}{
+            "id":        userMsg.ID.String(),
+            "content":   userMsg.Content,
+            "sender":    userMsg.Sender,
+            "timestamp": userMsg.Timestamp.Format(time.RFC3339),
+            "type":      userMsg.Type,
+        },
+        "timestamp": time.Now().Format(time.RFC3339),
+    }
+    
+    if botMsg != nil {
+        payload["botMessage"] = map[string]interface{}{
+            "id":        botMsg.ID.String(),
+            "content":   botMsg.Content,
+            "sender":    botMsg.Sender,
+            "timestamp": botMsg.Timestamp.Format(time.RFC3339),
+            "type":      botMsg.Type,
+            "metadata":  botMsg.Metadata,
+        }
+    }
+    
+    msg, _ := websocket.NewMessage("chat_update", payload)
+    return msg
 }
 
 // handleCORS выставляет стандартные CORS заголовки

@@ -25,7 +25,7 @@ var recentChats sync.Map
 func main() {
     // Логи по файлу и строке
     log.SetFlags(log.LstdFlags | log.Lshortfile)
-    log.Println("EcoChat server starting with optimizations…")
+    log.Println("EcoChat server starting with anti-duplication optimizations…")
 
     // Загружаем .env (только для dev)
     if err := godotenv.Load(); err != nil {
@@ -58,6 +58,10 @@ func main() {
     gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
     r := gin.New()
     r.Use(gin.Recovery(), middleware.Logger())
+    
+    // Простой middleware для дедупликации HTTP запросов
+    r.Use(SimpleDeduplicationMiddleware())
+    
     setupCORS(r)
 
     // ─── WebSocket hub ───────────────────────────────────────────────────────
@@ -95,6 +99,41 @@ func main() {
     }
 }
 
+// SimpleDeduplicationMiddleware простой middleware для дедупликации HTTP запросов
+func SimpleDeduplicationMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // Только для POST запросов
+        if c.Request.Method != http.MethodPost {
+            c.Next()
+            return
+        }
+        
+        // Исключаем некоторые пути из дедупликации
+        if strings.Contains(c.Request.URL.Path, "/auth/login") ||
+           strings.Contains(c.Request.URL.Path, "/health") {
+            c.Next()
+            return
+        }
+        
+        // Простой хеш из IP + path + timestamp (округлен до секунды)
+        hash := fmt.Sprintf("%s_%s_%d", 
+            c.ClientIP(), 
+            c.Request.URL.Path,
+            time.Now().Unix())
+        
+        if handlers.IsRecentMessage(hash) {
+            c.JSON(http.StatusTooManyRequests, gin.H{
+                "error": "Слишком частые запросы, пожалуйста подождите",
+            })
+            c.Abort()
+            return
+        }
+        
+        handlers.RegisterMessage(hash)
+        c.Next()
+    }
+}
+
 // startStatsServer запускает отдельный сервер для статистики WebSocket
 func startStatsServer(hub *websocket.Hub) {
     if os.Getenv("ENABLE_STATS_SERVER") != "true" {
@@ -118,6 +157,9 @@ func startStatsServer(hub *websocket.Hub) {
             "stats":         stats,
             "activeClients": activeClients,
             "timestamp":     time.Now().Format(time.RFC3339),
+            "optimizations": gin.H{
+                "deduplication": "active",
+            },
         })
     })
     
@@ -204,6 +246,7 @@ func setupAPIRoutes(r *gin.Engine) {
                     "auto_responder",
                     "partitioning",
                     "light_loading",
+                    "simple_deduplication",
                 },
                 "websocket": gin.H{
                     "activeConnections": stats.ActiveConnections,
@@ -277,6 +320,11 @@ func setupAPIRoutes(r *gin.Engine) {
                 "websocket": "/ws",
                 "health":    "/api/health",
                 "login":     "/api/auth/login",
+            },
+            "features": []string{
+                "message_deduplication",
+                "auto_responder",
+                "chat_management",
             },
         })
     })

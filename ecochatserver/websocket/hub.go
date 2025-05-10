@@ -26,6 +26,9 @@ type Hub struct {
     
     // Статистика для мониторинга
     stats HubStats
+    
+    // Дедупликация сообщений
+    sentMessages sync.Map // key: messageHash, value: time.Time
 }
 
 type HubStats struct {
@@ -38,7 +41,7 @@ type HubStats struct {
 
 // NewHub создаёт и инициализирует Hub.
 func NewHub() *Hub {
-    return &Hub{
+    hub := &Hub{
         clients:     make(map[*Client]bool),
         adminsByID:  make(map[string]*Client),
         widgetsByID: make(map[string]map[*Client]bool),
@@ -46,6 +49,29 @@ func NewHub() *Hub {
         Broadcast:   make(chan []byte),
         Register:    make(chan *Client),
         Unregister:  make(chan *Client),
+    }
+    
+    // Запускаем очистку старых сообщений
+    go hub.cleanupOldMessages()
+    
+    return hub
+}
+
+// cleanupOldMessages периодически очищает старые записи дедупликации
+func (h *Hub) cleanupOldMessages() {
+    ticker := time.NewTicker(1 * time.Minute)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        now := time.Now()
+        h.sentMessages.Range(func(key, value interface{}) bool {
+            if timestamp, ok := value.(time.Time); ok {
+                if now.Sub(timestamp) > 5*time.Minute {
+                    h.sentMessages.Delete(key)
+                }
+            }
+            return true
+        })
     }
 }
 
@@ -216,6 +242,10 @@ func (h *Hub) SendToChat(chatID string, message []byte) int {
         }
     }
     h.mu.RUnlock()
+    
+    if len(clients) == 0 {
+        return 0
+    }
     
     sent := 0
     for _, c := range clients {
