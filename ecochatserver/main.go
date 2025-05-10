@@ -59,6 +59,9 @@ func main() {
     
     // Устанавливаем хаб для использования в обработчиках
     handlers.WebSocketHub = hub
+    
+    // Запускаем веб-сервер для статистики WebSocket (опционально)
+    go startStatsServer(hub)
 
     // ─── Автоответчик (если используется) ───────────────────────────────────
     handlers.InitAutoResponder()
@@ -85,6 +88,38 @@ func main() {
     }
 }
 
+// startStatsServer запускает отдельный сервер для статистики WebSocket
+func startStatsServer(hub *websocket.Hub) {
+    if os.Getenv("ENABLE_STATS_SERVER") != "true" {
+        return
+    }
+    
+    statsPort := getEnv("STATS_PORT", "8081")
+    statsRouter := gin.New()
+    statsRouter.Use(gin.Recovery())
+    
+    // Добавляем middleware для базовой аутентификации
+    statsRouter.Use(gin.BasicAuth(gin.Accounts{
+        "admin": getEnv("STATS_PASSWORD", "password"),
+    }))
+    
+    statsRouter.GET("/stats", func(c *gin.Context) {
+        stats := hub.GetStats()
+        activeClients := hub.GetActiveClients()
+        
+        c.JSON(http.StatusOK, gin.H{
+            "stats":         stats,
+            "activeClients": activeClients,
+            "timestamp":     time.Now().Format(time.RFC3339),
+        })
+    })
+    
+    log.Printf("Статистический сервер запускается на порту %s", statsPort)
+    if err := statsRouter.Run(":" + statsPort); err != nil {
+        log.Printf("Ошибка запуска статистического сервера: %v", err)
+    }
+}
+
 // getEnv возвращает значение или дефолт
 func getEnv(k, def string) string {
     if v := os.Getenv(k); v != "" {
@@ -93,7 +128,7 @@ func getEnv(k, def string) string {
     return def
 }
 
-// setupCORS настраивает CORS по FRONTEND_URL и т.п.
+// setupCORS настраивает CORS с улучшенной логикой
 func setupCORS(r *gin.Engine) {
     allow := []string{"http://localhost:3000"}
     
@@ -115,7 +150,7 @@ func setupCORS(r *gin.Engine) {
         AllowOrigins:     allow,
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
-        ExposeHeaders:    []string{"Content-Length"},
+        ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
         AllowCredentials: true,
         MaxAge:           12 * time.Hour,
     }
@@ -127,6 +162,12 @@ func setupCORS(r *gin.Engine) {
     }
     
     r.Use(cors.New(conf))
+    
+    // Добавляем Request ID middleware
+    r.Use(func(c *gin.Context) {
+        c.Header("X-Request-ID", c.GetString("requestId"))
+        c.Next()
+    })
 }
 
 func contains(slice []string, val string) bool {
@@ -145,14 +186,20 @@ func setupAPIRoutes(r *gin.Engine) {
     {
         // Health-check для проверки работоспособности
         api.GET("/health", func(c *gin.Context) {
+            stats := handlers.WebSocketHub.GetStats()
             c.JSON(http.StatusOK, gin.H{
                 "status":  "ok",
                 "time":    time.Now().Format(time.RFC3339),
-                "version": "1.1.0",
+                "version": "1.2.0",
                 "features": []string{
                     "websocket",
                     "live_chat",
                     "auto_responder",
+                    "partitioning",
+                },
+                "websocket": gin.H{
+                    "activeConnections": stats.ActiveConnections,
+                    "totalMessages":     stats.TotalMessages,
                 },
             })
         })
@@ -164,18 +211,45 @@ func setupAPIRoutes(r *gin.Engine) {
         api.POST("/telegram/webhook", handlers.TelegramWebhook)
         
         // Виджетный API (публичный, для iframe/web widget)
+        // Оставляем для обратной совместимости, но рекомендуем использовать WebSocket
         widget := api.Group("/widget")
         {
-            // Получение сообщений для виджета
+            // Получение информации о подключении к WebSocket
             widget.GET("/chat/:id/messages", handlers.GetWidgetChatMessages)
+            
+            // Добавляем новые эндпоинты для миграции на WebSocket
+            widget.GET("/info", func(c *gin.Context) {
+                c.JSON(http.StatusOK, gin.H{
+                    "websocket": gin.H{
+                        "url": "/ws",
+                        "params": gin.H{
+                            "type":    "widget",
+                            "chat_id": "CHAT_ID",
+                            "token":   "optional",
+                        },
+                    },
+                    "message": "Все функции чата доступны через WebSocket",
+                })
+            })
         }
 
         // Защищенные API-маршруты (требуется токен)
         auth := api.Group("/")
         auth.Use(middleware.AuthMiddleware())
         {
-            // Если нужны HTTP эндпоинты для обратной совместимости,
-            // можно добавить их в будущем. Пока используем только WebSocket
+            // Статистика для администраторов
+            auth.GET("/admin/stats", func(c *gin.Context) {
+                stats := handlers.WebSocketHub.GetStats()
+                activeClients := handlers.WebSocketHub.GetActiveClients()
+                
+                c.JSON(http.StatusOK, gin.H{
+                    "websocket": gin.H{
+                        "stats":         stats,
+                        "activeClients": activeClients,
+                    },
+                    "timestamp": time.Now().Format(time.RFC3339),
+                })
+            })
         }
     }
 
@@ -185,4 +259,17 @@ func setupAPIRoutes(r *gin.Engine) {
     
     // Для обратной совместимости
     r.GET("/api/ws", handlers.ServeWs)
+    
+    // Статический контент для теста соединения
+    r.GET("/", func(c *gin.Context) {
+        c.JSON(http.StatusOK, gin.H{
+            "service": "EcoChat WebSocket Server",
+            "version": "1.2.0",
+            "endpoints": gin.H{
+                "websocket": "/ws",
+                "health":    "/api/health",
+                "login":     "/api/auth/login",
+            },
+        })
+    })
 }
