@@ -13,6 +13,7 @@ import (
     "github.com/gorilla/websocket"
 
     "github.com/egor/ecochatserver/database"
+    "github.com/egor/ecochatserver/database/queries"
     "github.com/egor/ecochatserver/middleware"
     "github.com/egor/ecochatserver/models"
     websocketpkg "github.com/egor/ecochatserver/websocket"
@@ -270,20 +271,17 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
         return
     }
 
-    // Получаем обновленный чат для отправки в WebSocket
-    chat, _, err := database.GetChatByID(chatID, 1, 1)
-    if err != nil {
-        log.Printf("processSendMessage: ошибка получения чата: %v", err)
+    // Быстро обновляем время чата
+    if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
+        log.Printf("processSendMessage: ошибка обновления времени: %v", err)
     }
 
-    // Подготавливаем сообщение для рассылки всем клиентам
-    broadcastData, err := websocketpkg.NewChatMessage(chat, message)
-    if err != nil {
-        log.Printf("processSendMessage: ошибка формирования WS сообщения: %v", err)
+    // Отправляем легковесное обновление
+    if data, err := websocketpkg.NewLightMessage(chatID, message); err == nil {
+        WebSocketHub.BroadcastMessage(data)
+    } else {
+        log.Printf("processSendMessage: ошибка создания обновления: %v", err)
     }
-    
-    // Отправляем всем подключенным клиентам
-    WebSocketHub.BroadcastMessage(broadcastData)
     
     // Специальное сообщение для виджета этого чата
     if sender == "admin" {
@@ -293,8 +291,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
     }
     
     // ОБРАБОТКА АВТООТВЕТЧИКА
-    if sender == "user" && AutoResponder != nil && chat != nil {
-        go processAutoResponse(ginCtx.Request.Context(), chat, message)
+    if sender == "user" && AutoResponder != nil {
+        go processAutoResponse(ginCtx.Request.Context(), chatID, message)
     }
     
     log.Printf("processSendMessage: сообщение успешно отправлено (ID=%s)", message.ID)
@@ -315,8 +313,15 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 }
 
 // processAutoResponse обрабатывает автоответчик асинхронно
-func processAutoResponse(ctx context.Context, chat *models.Chat, userMsg *models.Message) {
-    log.Printf("processAutoResponse: генерируем автоответ для чата %s", chat.ID)
+func processAutoResponse(ctx context.Context, chatID uuid.UUID, userMsg *models.Message) {
+    log.Printf("processAutoResponse: генерируем автоответ для чата %s", chatID)
+    
+    // Загружаем минимальную информацию о чате
+    chat, err := queries.GetChatLightweight(database.DB, chatID)
+    if err != nil {
+        log.Printf("processAutoResponse: ошибка загрузки чата: %v", err)
+        return
+    }
     
     botMsg, err := AutoResponder.ProcessMessage(ctx, chat, userMsg)
     if err != nil {
@@ -331,9 +336,9 @@ func processAutoResponse(ctx context.Context, chat *models.Chat, userMsg *models
     
     log.Printf("processAutoResponse: автоответ сгенерирован, сохраняем в БД")
     
-    // Сохраняем автоответ в базу данных
+    // Сохраняем автоответ в базе данных
     saved, err := database.AddMessage(
-        chat.ID,
+        chatID,
         botMsg.Content,
         botMsg.Sender,
         botMsg.SenderID,
@@ -345,28 +350,26 @@ func processAutoResponse(ctx context.Context, chat *models.Chat, userMsg *models
         return
     }
     
-    // Получаем обновленный чат
-    updatedChat, _, err := database.GetChatByID(chat.ID, 1, 1)
-    if err != nil {
-        log.Printf("processAutoResponse: ошибка получения обновленного чата: %v", err)
-        updatedChat = chat // Используем исходный чат
+    // Обновляем время чата
+    if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
+        log.Printf("processAutoResponse: ошибка обновления времени: %v", err)
     }
     
-    // Отправляем автоответ всем клиентам
-    if broadcastData, err := websocketpkg.NewChatMessage(updatedChat, saved); err == nil {
-        WebSocketHub.BroadcastMessage(broadcastData)
+    // Отправляем легковесное обновление
+    if data, err := websocketpkg.NewLightMessage(chatID, saved); err == nil {
+        WebSocketHub.BroadcastMessage(data)
         log.Printf("processAutoResponse: автоответ отправлен всем клиентам")
     }
     
     // Отправляем виджету
     if widgetMsg, err := websocketpkg.NewWidgetMessage(saved); err == nil {
-        WebSocketHub.SendToChat(chat.ID.String(), widgetMsg)
+        WebSocketHub.SendToChat(chatID.String(), widgetMsg)
         log.Printf("processAutoResponse: автоответ отправлен виджету")
     }
     
     // Проверяем необходимость эскалации
     if needEscalation, ok := saved.Metadata["needEscalation"].(bool); ok && needEscalation {
-        escalateChat(chat.ID, saved.Metadata)
+        escalateChat(chatID, saved.Metadata)
     }
 }
 

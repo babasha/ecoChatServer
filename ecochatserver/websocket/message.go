@@ -2,6 +2,7 @@ package websocket
 
 import (
     "encoding/json"
+    "time"
     "github.com/google/uuid"
     "github.com/egor/ecochatserver/models"
 )
@@ -98,4 +99,19 @@ func NewErrorMessage(code, text string) ([]byte, error) {
         Text: text,
     }
     return NewMessage("error", payload)
+}
+
+// NewLightMessage - легковесное сообщение без полной загрузки чата
+func NewLightMessage(chatID uuid.UUID, message *models.Message) ([]byte, error) {
+    payload := struct {
+        ChatID    string          `json:"chatId"`
+        Message   *models.Message `json:"message"`
+        Timestamp string          `json:"timestamp"`
+    }{
+        ChatID:    chatID.String(),
+        Message:   message,
+        Timestamp: time.Now().Format(time.RFC3339),
+    }
+    
+    return NewMessage("chat_update", payload)
 }

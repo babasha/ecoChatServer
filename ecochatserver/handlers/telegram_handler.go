@@ -12,6 +12,7 @@ import (
     "github.com/google/uuid"
 
     "github.com/egor/ecochatserver/database"
+    "github.com/egor/ecochatserver/database/queries"
     "github.com/egor/ecochatserver/llm"
     "github.com/egor/ecochatserver/models"
     "github.com/egor/ecochatserver/websocket"
@@ -45,7 +46,6 @@ func InitAutoResponder() {
     log.Println("Автоответчик успешно инициализирован")
 }
 
-// TelegramWebhook обрабатывает вебхук Telegram и виджета
 // TelegramWebhook обрабатывает вебхук Telegram и виджета
 func TelegramWebhook(c *gin.Context) {
     log.Printf("TelegramWebhook: %s %s from %s", c.Request.Method, c.FullPath(), c.ClientIP())
@@ -138,29 +138,34 @@ func TelegramWebhook(c *gin.Context) {
     
     log.Printf("TelegramWebhook: сообщение добавлено: ID=%s", userMsg.ID)
 
-    // Отправляем через WebSocket обновление списка сообщений
-    log.Printf("TelegramWebhook: получаем обновленный чат для WebSocket")
-    updatedChat, _, err := database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
-    if err != nil {
-        log.Printf("TelegramWebhook: ошибка при получении обновленного чата: %v", err)
-    } else if updatedChat != nil {
-        log.Printf("TelegramWebhook: отправляем WebSocket уведомление для чата %s", updatedChat.ID)
-        // Исправленный вызов
-        if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
-            WebSocketHub.BroadcastMessage(data) // Исправлено: используем BroadcastMessage
-            log.Printf("TelegramWebhook: WebSocket уведомление отправлено")
-        } else {
-            log.Printf("TelegramWebhook: ошибка создания WebSocket сообщения: %v", err)
-        }
+    // Быстро обновляем время чата
+    if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
+        log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
+    }
+    
+    // Отправляем легковесное обновление
+    if data, err := websocket.NewLightMessage(chat.ID, userMsg); err == nil {
+        WebSocketHub.BroadcastMessage(data)
+        log.Printf("TelegramWebhook: WebSocket уведомление отправлено")
+    } else {
+        log.Printf("TelegramWebhook: ошибка создания WebSocket сообщения: %v", err)
     }
 
     // Генерируем автоответ, если включено
     var botText, botID string
-    if AutoResponder != nil && updatedChat != nil {
+    if AutoResponder != nil {
         log.Printf("TelegramWebhook: генерируем автоответ")
+        
+        // Загружаем минимальную информацию о чате для автоответчика
+        lightChat, err := queries.GetChatLightweight(database.DB, chat.ID)
+        if err != nil {
+            log.Printf("TelegramWebhook: ошибка загрузки чата: %v", err)
+            lightChat = chat // Используем уже загруженный чат
+        }
+        
         botMsg, err := AutoResponder.ProcessMessage(
             c.Request.Context(),
-            updatedChat,
+            lightChat,
             userMsg,
         )
         if err != nil {
@@ -184,25 +189,27 @@ func TelegramWebhook(c *gin.Context) {
                 botID = saved.ID.String()
                 log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botID)
 
-                // Обновлённый чат и уведомления по WebSocket
-                updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
-                if updatedChat != nil {
-                    // Исправленный вызов
-                    if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
-                        WebSocketHub.BroadcastMessage(data) // Исправлено: используем BroadcastMessage
-                        log.Printf("TelegramWebhook: WebSocket уведомление об автоответе отправлено")
-                    }
-                    if widget, err := websocket.NewWidgetMessage(saved); err == nil {
-                        WebSocketHub.SendToChat(chat.ID.String(), widget)
-                        log.Printf("TelegramWebhook: WebSocket сообщение виджету отправлено")
-                    }
+                // Обновляем время чата
+                if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
+                    log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
+                }
+                
+                // Отправляем легковесные обновления
+                if data, err := websocket.NewLightMessage(chat.ID, saved); err == nil {
+                    WebSocketHub.BroadcastMessage(data)
+                    log.Printf("TelegramWebhook: WebSocket уведомление об автоответе отправлено")
+                }
+                
+                if widgetMsg, err := websocket.NewWidgetMessage(saved); err == nil {
+                    WebSocketHub.SendToChat(chat.ID.String(), widgetMsg)
+                    log.Printf("TelegramWebhook: WebSocket сообщение виджету отправлено")
                 }
             }
         } else {
             log.Printf("TelegramWebhook: автоответ не сгенерирован (botMsg == nil)")
         }
     } else {
-        log.Printf("TelegramWebhook: автоответчик не активен или чат не найден")
+        log.Printf("TelegramWebhook: автоответчик не активен")
     }
 
     // Ответ клиенту

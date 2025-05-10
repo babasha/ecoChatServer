@@ -6,6 +6,7 @@ import (
     "net/http"
     "os"
     "strings"
+    "sync"
     "time"
 
     "github.com/gin-contrib/cors"
@@ -18,10 +19,13 @@ import (
     "github.com/egor/ecochatserver/websocket"
 )
 
+// Простой in-memory кэш для последних чатов
+var recentChats sync.Map
+
 func main() {
     // Логи по файлу и строке
     log.SetFlags(log.LstdFlags | log.Lshortfile)
-    log.Println("EcoChat server starting…")
+    log.Println("EcoChat server starting with optimizations…")
 
     // Загружаем .env (только для dev)
     if err := godotenv.Load(); err != nil {
@@ -33,6 +37,9 @@ func main() {
         log.Fatalf("Ошибка инициализации базы данных: %v", err)
     }
     defer database.Close()
+
+    // Простое кэширование инициализировано
+    log.Println("Простое кэширование инициализировано")
 
     // Периодически обновляем партиции
     go func() {
@@ -190,12 +197,13 @@ func setupAPIRoutes(r *gin.Engine) {
             c.JSON(http.StatusOK, gin.H{
                 "status":  "ok",
                 "time":    time.Now().Format(time.RFC3339),
-                "version": "1.2.0",
+                "version": "1.2.0-optimized",
                 "features": []string{
                     "websocket",
                     "live_chat",
                     "auto_responder",
                     "partitioning",
+                    "light_loading",
                 },
                 "websocket": gin.H{
                     "activeConnections": stats.ActiveConnections,
@@ -264,7 +272,7 @@ func setupAPIRoutes(r *gin.Engine) {
     r.GET("/", func(c *gin.Context) {
         c.JSON(http.StatusOK, gin.H{
             "service": "EcoChat WebSocket Server",
-            "version": "1.2.0",
+            "version": "1.2.0-optimized",
             "endpoints": gin.H{
                 "websocket": "/ws",
                 "health":    "/api/health",
