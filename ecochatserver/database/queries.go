@@ -52,3 +52,12 @@ func GetOrCreateChat(
 func EnsureClientWithAPIKey(apiKey, clientName string) (uuid.UUID, error) {
     return queries.EnsureClientWithAPIKey(DB, apiKey, clientName)
 }
+
+// Экспортируем новые оптимизированные функции
+func GetChatLightweight(chatID uuid.UUID) (*models.Chat, error) {
+    return queries.GetChatLightweight(DB, chatID)
+}
+
+func UpdateChatTimestamp(chatID uuid.UUID) error {
+    return queries.UpdateChatTimestamp(DB, chatID)
+}
