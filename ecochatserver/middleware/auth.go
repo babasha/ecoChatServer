@@ -96,7 +96,12 @@ func GenerateToken(adminID, clientID, role string) (string, error) {
     return tokenString, nil
 }
 
-// ValidateToken проверяет и парсит JWT токен
+// ValidateToken проверяет и парсит JWT токен (экспортированная версия)
+func ValidateToken(tokenString string) (*JWTClaims, error) {
+    return validateToken(tokenString)
+}
+
+// validateToken проверяет и парсит JWT токен (приватная версия)
 func validateToken(tokenString string) (*JWTClaims, error) {
     token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
         // Проверяем, что используется правильный алгоритм подписи

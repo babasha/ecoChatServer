@@ -24,11 +24,13 @@ func main() {
     log.Println("EcoChat server starting…")
 
     // Загружаем .env (только для dev)
-    _ = godotenv.Load()
+    if err := godotenv.Load(); err != nil {
+        log.Println("Примечание: файл .env не найден или не загружен, используем переменные окружения")
+    }
 
     // ─── PostgreSQL ──────────────────────────────────────────────────────────
     if err := database.Init(); err != nil {
-        log.Fatalf("db init: %v", err)
+        log.Fatalf("Ошибка инициализации базы данных: %v", err)
     }
     defer database.Close()
 
@@ -38,7 +40,9 @@ func main() {
         defer ticker.Stop()
         for range ticker.C {
             if err := database.RefreshPartitions(); err != nil {
-                log.Printf("Error refreshing partitions: %v", err)
+                log.Printf("Ошибка обновления партиций: %v", err)
+            } else {
+                log.Println("Успешное обновление партиций")
             }
         }
     }()
@@ -52,19 +56,32 @@ func main() {
     // ─── WebSocket hub ───────────────────────────────────────────────────────
     hub := websocket.NewHub()
     go hub.Run()
-    handlers.SetWebSocketHub(hub)
+    
+    // Устанавливаем хаб для использования в обработчиках
+    handlers.WebSocketHub = hub
 
     // ─── Автоответчик (если используется) ───────────────────────────────────
     handlers.InitAutoResponder()
+    log.Println("Автоответчик инициализирован")
 
     // ─── REST API & WebSocket ───────────────────────────────────────────────
     setupAPIRoutes(r)
+    log.Println("API маршруты настроены")
 
     // ─── HTTP-server ─────────────────────────────────────────────────────────
     addr := ":" + getEnv("PORT", "8080")
-    log.Printf("HTTP listen %s", addr)
-    if err := r.Run(addr); err != nil {
-        log.Fatalf("server: %v", err)
+    log.Printf("HTTP сервер запускается на %s", addr)
+    
+    server := &http.Server{
+        Addr:         addr,
+        Handler:      r,
+        ReadTimeout:  15 * time.Second,
+        WriteTimeout: 15 * time.Second,
+        IdleTimeout:  60 * time.Second,
+    }
+    
+    if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        log.Fatalf("Ошибка запуска HTTP сервера: %v", err)
     }
 }
 
@@ -79,6 +96,8 @@ func getEnv(k, def string) string {
 // setupCORS настраивает CORS по FRONTEND_URL и т.п.
 func setupCORS(r *gin.Engine) {
     allow := []string{"http://localhost:3000"}
+    
+    // Добавляем адреса из переменных окружения
     for _, key := range []string{"FRONTEND_URL", "ADDITIONAL_ALLOWED_ORIGINS"} {
         if v := os.Getenv(key); v != "" {
             for _, u := range strings.Split(v, ",") {
@@ -89,16 +108,24 @@ func setupCORS(r *gin.Engine) {
             }
         }
     }
+    
+    log.Printf("CORS настроен для доменов: %v", allow)
+    
     conf := cors.Config{
         AllowOrigins:     allow,
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
+        ExposeHeaders:    []string{"Content-Length"},
         AllowCredentials: true,
         MaxAge:           12 * time.Hour,
     }
+    
+    // Если разрешены все источники
     if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
         conf.AllowAllOrigins = true
+        log.Println("ВНИМАНИЕ: Разрешены все источники CORS (ALLOW_ALL_ORIGINS=true)")
     }
+    
     r.Use(cors.New(conf))
 }
 
@@ -113,37 +140,49 @@ func contains(slice []string, val string) bool {
 
 // setupAPIRoutes регистрирует и REST, и WebSocket
 func setupAPIRoutes(r *gin.Engine) {
+    // API-группа для HTTP-запросов
     api := r.Group("/api")
     {
-        // Health-check
+        // Health-check для проверки работоспособности
         api.GET("/health", func(c *gin.Context) {
             c.JSON(http.StatusOK, gin.H{
                 "status":  "ok",
-                "time":    time.Now(),
+                "time":    time.Now().Format(time.RFC3339),
                 "version": "1.1.0",
+                "features": []string{
+                    "websocket",
+                    "live_chat",
+                    "auto_responder",
+                },
             })
         })
 
-        // Авторизация и вебхук Telegram
+        // Авторизация через HTTP
         api.POST("/auth/login", handlers.Login)
+        
+        // Webhook для Telegram и других внешних сервисов
         api.POST("/telegram/webhook", handlers.TelegramWebhook)
-
-        // Виджет (на случай iframe/web widget)
+        
+        // Виджетный API (публичный, для iframe/web widget)
         widget := api.Group("/widget")
         {
+            // Получение сообщений для виджета
             widget.GET("/chat/:id/messages", handlers.GetWidgetChatMessages)
         }
 
-        // Остальные API требуют авторизации
+        // Защищенные API-маршруты (требуется токен)
         auth := api.Group("/")
         auth.Use(middleware.AuthMiddleware())
         {
-            // HTTP-для чатов убраны → используем только /ws
-            // сюда можно добавить другие защищённые эндпойнты
+            // Если нужны HTTP эндпоинты для обратной совместимости,
+            // можно добавить их в будущем. Пока используем только WebSocket
         }
     }
 
-    // Точка входа для WebSocket
-    // Клиенты подключаются к ws://yourhost/ws
+    // WebSocket точка подключения - основной механизм взаимодействия с сервером
     r.GET("/ws", handlers.ServeWs)
+    log.Println("WebSocket эндпоинт настроен: /ws")
+    
+    // Для обратной совместимости
+    r.GET("/api/ws", handlers.ServeWs)
 }

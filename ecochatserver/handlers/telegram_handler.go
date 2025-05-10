@@ -46,6 +46,7 @@ func InitAutoResponder() {
 }
 
 // TelegramWebhook обрабатывает вебхук Telegram и виджета
+// TelegramWebhook обрабатывает вебхук Telegram и виджета
 func TelegramWebhook(c *gin.Context) {
     log.Printf("TelegramWebhook: %s %s from %s", c.Request.Method, c.FullPath(), c.ClientIP())
 
@@ -144,8 +145,9 @@ func TelegramWebhook(c *gin.Context) {
         log.Printf("TelegramWebhook: ошибка при получении обновленного чата: %v", err)
     } else if updatedChat != nil {
         log.Printf("TelegramWebhook: отправляем WebSocket уведомление для чата %s", updatedChat.ID)
+        // Исправленный вызов
         if data, err := websocket.NewChatMessage(updatedChat, userMsg); err == nil {
-            WebSocketHub.Broadcast(data)
+            WebSocketHub.BroadcastMessage(data) // Исправлено: используем BroadcastMessage
             log.Printf("TelegramWebhook: WebSocket уведомление отправлено")
         } else {
             log.Printf("TelegramWebhook: ошибка создания WebSocket сообщения: %v", err)
@@ -185,8 +187,9 @@ func TelegramWebhook(c *gin.Context) {
                 // Обновлённый чат и уведомления по WebSocket
                 updatedChat, _, _ = database.GetChatByID(chat.ID, 1, database.DefaultPageSize)
                 if updatedChat != nil {
+                    // Исправленный вызов
                     if data, err := websocket.NewChatMessage(updatedChat, saved); err == nil {
-                        WebSocketHub.Broadcast(data)
+                        WebSocketHub.BroadcastMessage(data) // Исправлено: используем BroadcastMessage
                         log.Printf("TelegramWebhook: WebSocket уведомление об автоответе отправлено")
                     }
                     if widget, err := websocket.NewWidgetMessage(saved); err == nil {
