@@ -43,7 +43,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
         // Обрабатываем токен
         tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
-        claims, err := validateToken(tokenString)
+        claims, err := ValidateToken(tokenString)
         if err != nil {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "неверный или устаревший токен"})
             c.Abort()
@@ -96,13 +96,8 @@ func GenerateToken(adminID, clientID, role string) (string, error) {
     return tokenString, nil
 }
 
-// ValidateToken проверяет и парсит JWT токен (экспортированная версия)
+// ValidateToken проверяет и парсит JWT токен
 func ValidateToken(tokenString string) (*JWTClaims, error) {
-    return validateToken(tokenString)
-}
-
-// validateToken проверяет и парсит JWT токен (приватная версия)
-func validateToken(tokenString string) (*JWTClaims, error) {
     token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
         // Проверяем, что используется правильный алгоритм подписи
         if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
