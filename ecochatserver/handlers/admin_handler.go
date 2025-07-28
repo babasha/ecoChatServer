@@ -22,9 +22,10 @@ func GetChats(c *gin.Context) {
 		size = 50
 	}
 
-	// Получаем ID клиента и админа из контекста
-	clientID := uuid.Nil // Для админки получаем все чаты
-	adminID := uuid.Nil  // TODO: получить из токена
+	// Для админки получаем ВСЕ чаты всех клиентов
+	// Используем специальное значение для обозначения "все клиенты"
+	var clientID uuid.UUID // будет nil UUID (00000000-0000-0000-0000-000000000000)
+	adminID := uuid.Nil    // TODO: получить из токена
 
 	chats, total, err := database.GetChats(clientID, adminID, page-1, size)
 	if err != nil {

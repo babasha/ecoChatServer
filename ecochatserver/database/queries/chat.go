@@ -31,14 +31,22 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 
     // Подсчитываем общее количество чатов
     var total int
-    countQuery := `
-        SELECT COUNT(*) FROM chats
-        WHERE client_id=$1 AND (assigned_to=$2 OR assigned_to IS NULL)`
+    var countQuery string
+    var countArgs []interface{}
+    
+    // Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки)
+    if clientID == uuid.Nil {
+        countQuery = `SELECT COUNT(*) FROM chats WHERE (assigned_to=$1 OR assigned_to IS NULL)`
+        countArgs = []interface{}{adminID}
+    } else {
+        countQuery = `SELECT COUNT(*) FROM chats WHERE client_id=$1 AND (assigned_to=$2 OR assigned_to IS NULL)`
+        countArgs = []interface{}{clientID, adminID}
+    }
     
     log.Printf("GetChats: выполняем запрос подсчета: %s", countQuery)
     log.Printf("GetChats: параметры подсчета: clientID=%s, adminID=%s", clientID, adminID)
     
-    if err := db.QueryRowContext(ctx, countQuery, clientID, adminID).Scan(&total); err != nil {
+    if err := db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
         log.Printf("GetChats: ошибка подсчета: %v", err)
         return nil, 0, fmt.Errorf("ошибка подсчета чатов: %w", err)
     }
@@ -102,16 +110,28 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
          ORDER BY timestamp DESC
          LIMIT 1
       ) l ON TRUE
-      WHERE c.client_id=$1 AND (c.assigned_to=$2 OR c.assigned_to IS NULL)
+      WHERE %s
       GROUP BY c.id,u.id,l.id,l.content,l.sender,l.timestamp
       ORDER BY c.updated_at DESC
-      LIMIT $3 OFFSET $4
+      LIMIT $%d OFFSET $%d
     `
     
+    var mainQuery string
+    var mainArgs []interface{}
     offset := (page - 1) * size
+    
+    // Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки)
+    if clientID == uuid.Nil {
+        mainQuery = fmt.Sprintf(q, "(c.assigned_to=$1 OR c.assigned_to IS NULL)", 2, 3)
+        mainArgs = []interface{}{adminID, size, offset}
+    } else {
+        mainQuery = fmt.Sprintf(q, "c.client_id=$1 AND (c.assigned_to=$2 OR c.assigned_to IS NULL)", 3, 4)
+        mainArgs = []interface{}{clientID, adminID, size, offset}
+    }
+    
     log.Printf("GetChats: выполняем основной запрос с LIMIT=%d OFFSET=%d", size, offset)
     
-    rows, err := db.QueryContext(ctx, q, clientID, adminID, size, offset)
+    rows, err := db.QueryContext(ctx, mainQuery, mainArgs...)
     if err != nil {
         log.Printf("GetChats: ошибка основного запроса: %v", err)
         return nil, 0, fmt.Errorf("ошибка получения чатов: %w", err)
