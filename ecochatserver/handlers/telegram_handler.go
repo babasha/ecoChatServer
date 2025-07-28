@@ -228,31 +228,50 @@ func TelegramWebhook(c *gin.Context) {
 
 // createChatNotification создает комплексное уведомление для WebSocket
 func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) []byte {
+    // Формируем структуру, совместимую с admin interface
     payload := map[string]interface{}{
-        "type":      "chat_update",
-        "chatId":    chatID.String(),
-        "userMessage": map[string]interface{}{
+        "chat": map[string]interface{}{
+            "id": chatID.String(),
+        },
+        "message": map[string]interface{}{
             "id":        userMsg.ID.String(),
+            "chatId":    chatID.String(),
             "content":   userMsg.Content,
             "sender":    userMsg.Sender,
             "timestamp": userMsg.Timestamp.Format(time.RFC3339),
+            "read":      false,
             "type":      userMsg.Type,
         },
         "timestamp": time.Now().Format(time.RFC3339),
     }
     
+    // Если есть автоответ бота, отправляем его отдельно
     if botMsg != nil {
-        payload["botMessage"] = map[string]interface{}{
-            "id":        botMsg.ID.String(),
-            "content":   botMsg.Content,
-            "sender":    botMsg.Sender,
-            "timestamp": botMsg.Timestamp.Format(time.RFC3339),
-            "type":      botMsg.Type,
-            "metadata":  botMsg.Metadata,
+        // Для ответа бота создаем отдельное уведомление
+        botPayload := map[string]interface{}{
+            "chat": map[string]interface{}{
+                "id": chatID.String(),
+            },
+            "message": map[string]interface{}{
+                "id":        botMsg.ID.String(),
+                "chatId":    chatID.String(),
+                "content":   botMsg.Content,
+                "sender":    botMsg.Sender,
+                "timestamp": botMsg.Timestamp.Format(time.RFC3339),
+                "read":      false,
+                "type":      botMsg.Type,
+                "metadata":  botMsg.Metadata,
+            },
+            "timestamp": time.Now().Format(time.RFC3339),
         }
+        
+        // Отправляем уведомление о боте отдельно
+        botNotification, _ := websocket.NewMessage("new_message", botPayload)
+        WebSocketHub.SendToChat(chatID.String(), botNotification)
+        log.Printf("TelegramWebhook: отправлено WebSocket уведомление о сообщении бота")
     }
     
-    msg, _ := websocket.NewMessage("chat_update", payload)
+    msg, _ := websocket.NewMessage("new_message", payload)
     return msg
 }
 

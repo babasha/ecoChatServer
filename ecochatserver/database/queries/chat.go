@@ -36,8 +36,8 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
     
     // Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки)
     if clientID == uuid.Nil {
-        countQuery = `SELECT COUNT(*) FROM chats WHERE (assigned_to=$1 OR assigned_to IS NULL)`
-        countArgs = []interface{}{adminID}
+        countQuery = `SELECT COUNT(*) FROM chats`
+        countArgs = []interface{}{}
     } else {
         countQuery = `SELECT COUNT(*) FROM chats WHERE client_id=$1 AND (assigned_to=$2 OR assigned_to IS NULL)`
         countArgs = []interface{}{clientID, adminID}
@@ -122,8 +122,8 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
     
     // Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки)
     if clientID == uuid.Nil {
-        mainQuery = fmt.Sprintf(q, "(c.assigned_to=$1 OR c.assigned_to IS NULL)", 2, 3)
-        mainArgs = []interface{}{adminID, size, offset}
+        mainQuery = fmt.Sprintf(q, "TRUE", 1, 2)
+        mainArgs = []interface{}{size, offset}
     } else {
         mainQuery = fmt.Sprintf(q, "c.client_id=$1 AND (c.assigned_to=$2 OR c.assigned_to IS NULL)", 3, 4)
         mainArgs = []interface{}{clientID, adminID, size, offset}
@@ -278,14 +278,18 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
     
     log.Printf("GetChatByID: всего сообщений в чате: %d", total)
 
-    // Получаем сообщения с пагинацией
+    // Получаем последние сообщения в правильном порядке (старые сверху, новые снизу)
     offset := (page - 1) * size
     messagesQuery := `
         SELECT id,content,sender,sender_id,timestamp,read,type,metadata
-          FROM messages
-         WHERE chat_id=$1
-         ORDER BY timestamp ASC
-         LIMIT $2 OFFSET $3`
+          FROM (
+            SELECT id,content,sender,sender_id,timestamp,read,type,metadata
+              FROM messages
+             WHERE chat_id=$1
+             ORDER BY timestamp DESC
+             LIMIT $2 OFFSET $3
+          ) AS recent_messages
+         ORDER BY timestamp ASC`
     
     log.Printf("GetChatByID: получаем сообщения с LIMIT=%d OFFSET=%d", size, offset)
     
