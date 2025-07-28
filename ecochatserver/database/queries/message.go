@@ -82,6 +82,77 @@ func AddMessage(
     }, nil
 }
 
+// AddMessageWithID добавляет сообщение с заданным ID и временной меткой (идемпотентная операция)
+func AddMessageWithID(
+    db *sql.DB,
+    messageID uuid.UUID,
+    chatID uuid.UUID,
+    content, sender string,
+    senderID uuid.UUID,
+    timestamp time.Time,
+    msgType string,
+    meta map[string]any,
+) (*models.Message, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+    defer cancel()
+
+    tx, err := db.BeginTx(ctx, nil)
+    if err != nil {
+        return nil, fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
+
+    // Проверяем, существует ли чат
+    var ok bool
+    if err := tx.QueryRowContext(ctx,
+        "SELECT EXISTS(SELECT 1 FROM chats WHERE id=$1)", chatID,
+    ).Scan(&ok); err != nil {
+        return nil, fmt.Errorf("проверка чата: %w", err)
+    }
+    if !ok {
+        return nil, errors.New("chat not found")
+    }
+
+    var metaJSON []byte
+    if meta != nil {
+        metaJSON, _ = json.Marshal(meta)
+    }
+
+    // Используем безопасную функцию вставки из миграции
+    var resultMessageID uuid.UUID
+    err = tx.QueryRowContext(ctx, `
+        SELECT insert_message_safe($1, $2, $3, $4, $5, $6, $7, $8)`,
+        messageID, chatID, content, sender, senderID, timestamp, msgType, metaJSON,
+    ).Scan(&resultMessageID)
+
+    if err != nil {
+        return nil, fmt.Errorf("вставка сообщения: %w", err)
+    }
+
+    // Обновляем время последнего изменения чата
+    if _, err := tx.ExecContext(ctx,
+        "UPDATE chats SET updated_at=$1 WHERE id=$2", timestamp, chatID,
+    ); err != nil {
+        return nil, fmt.Errorf("обновление чата: %w", err)
+    }
+
+    if err := tx.Commit(); err != nil {
+        return nil, fmt.Errorf("commit tx: %w", err)
+    }
+
+    return &models.Message{
+        ID:        resultMessageID,
+        ChatID:    chatID,
+        Content:   content,
+        Sender:    sender,
+        SenderID:  senderID,
+        Timestamp: timestamp,
+        Read:      false,
+        Type:      msgType,
+        Metadata:  meta,
+    }, nil
+}
+
 func MarkMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
     ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
     defer cancel()

@@ -1,6 +1,8 @@
 package database
 
 import (
+    "time"
+    
     "github.com/egor/ecochatserver/database/queries"
     "github.com/egor/ecochatserver/models"
     "github.com/google/uuid"
@@ -37,6 +39,19 @@ func AddMessage(
     meta map[string]any,
 ) (*models.Message, error) {
     return queries.AddMessage(DB, chatID, content, sender, senderID, msgType, meta)
+}
+
+// AddMessageWithID добавляет сообщение с заданным ID и временной меткой
+func AddMessageWithID(
+    messageID uuid.UUID,
+    chatID uuid.UUID,
+    content, sender string,
+    senderID uuid.UUID,
+    timestamp time.Time,
+    msgType string,
+    meta map[string]any,
+) (*models.Message, error) {
+    return queries.AddMessageWithID(DB, messageID, chatID, content, sender, senderID, timestamp, msgType, meta)
 }
 
 func MarkMessagesAsRead(chatID uuid.UUID) error {

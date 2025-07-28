@@ -1,13 +1,11 @@
 package handlers
 
 import (
-    "fmt"
     "log"
     "net/http"
     "os"
     "strconv"
     "strings"
-    "sync"
     "time"
 
     "github.com/gin-gonic/gin"
@@ -23,11 +21,6 @@ import (
 // AutoResponder — единственный экземпляр автоответчика
 var AutoResponder *llm.AutoResponder
 
-// Простое хранилище для дедупликации в памяти
-var (
-    recentMessages sync.Map // key: messageHash, value: time.Time
-    messageCleanup sync.Once
-)
 
 // InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
@@ -54,41 +47,6 @@ func InitAutoResponder() {
     log.Println("Автоответчик успешно инициализирован")
 }
 
-// Функции для дедупликации
-func isRecentMessage(hash string) bool {
-    if val, exists := recentMessages.Load(hash); exists {
-        if timestamp, ok := val.(time.Time); ok {
-            return time.Since(timestamp) < 5*time.Second
-        }
-    }
-    return false
-}
-
-func registerMessage(hash string) {
-    recentMessages.Store(hash, time.Now())
-    
-    // Запускаем очистку только один раз
-    messageCleanup.Do(func() {
-        go cleanupRecentMessages()
-    })
-}
-
-func cleanupRecentMessages() {
-    ticker := time.NewTicker(30 * time.Second)
-    defer ticker.Stop()
-    
-    for range ticker.C {
-        now := time.Now()
-        recentMessages.Range(func(key, value interface{}) bool {
-            if timestamp, ok := value.(time.Time); ok {
-                if now.Sub(timestamp) > 10*time.Second {
-                    recentMessages.Delete(key)
-                }
-            }
-            return true
-        })
-    }
-}
 
 // TelegramWebhook обрабатывает вебхук Telegram и виджета
 func TelegramWebhook(c *gin.Context) {
@@ -131,24 +89,7 @@ func TelegramWebhook(c *gin.Context) {
         log.Printf("TelegramWebhook: используем ClientID: %s", in.ClientID)
     }
 
-    // ПРОСТОЕ РЕШЕНИЕ: Создаем уникальный ID для сообщения
-    messageHash := fmt.Sprintf("%s_%s_%d", 
-        in.UserID, 
-        in.Content, 
-        time.Now().Unix()/10) // группируем по 10-секундным интервалам
-    
-    // Проверяем, было ли такое сообщение недавно
-    if isRecentMessage(messageHash) {
-        log.Printf("TelegramWebhook: дублирующее сообщение пропущено")
-        c.JSON(http.StatusOK, gin.H{
-            "status": "duplicate_ignored",
-            "message": "Сообщение уже обработано",
-        })
-        return
-    }
-    
-    // Регистрируем сообщение как обработанное
-    registerMessage(messageHash)
+    messageTime := time.Now()
 
     // Создаём или получаем чат
     log.Printf("TelegramWebhook: создаем/получаем чат для user=%s, source=%s, botID=%s, clientID=%s", 
@@ -177,19 +118,25 @@ func TelegramWebhook(c *gin.Context) {
         log.Printf("TelegramWebhook: создан детерминированный UUID для userID %s: %s", in.UserID, userUUID.String())
     }
 
-    // Добавляем сообщение пользователя
+    // Создаем детерминированный ID для сообщения (дедупликация)
+    messageID := generateMessageID(chat.ID, userUUID, in.Content, messageTime)
+    
+    // Добавляем сообщение пользователя с детерминированным ID
     msgType := "text"
     if in.MessageType != "" {
         msgType = in.MessageType
     }
     
-    log.Printf("TelegramWebhook: добавляем сообщение в чат %s от пользователя %s", chat.ID, userUUID)
+    log.Printf("TelegramWebhook: добавляем сообщение в чат %s от пользователя %s с ID %s", 
+        chat.ID, userUUID, messageID)
     
-    userMsg, err := database.AddMessage(
+    userMsg, err := database.AddMessageWithID(
+        messageID,
         chat.ID,
         in.Content,
         "user",
         userUUID,
+        messageTime,
         msgType,
         in.Metadata,
     )

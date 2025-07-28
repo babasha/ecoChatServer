@@ -25,13 +25,22 @@ type Hub struct {
     mu sync.RWMutex
     
     // Статистика для мониторинга
-    stats HubStats
+    stats hubStatsInternal
     
     // Дедупликация сообщений
     sentMessages sync.Map // key: messageHash, value: time.Time
 }
 
+// HubStats содержит статистику работы хаба (для чтения, без мьютекса)
 type HubStats struct {
+    TotalConnections    int64
+    ActiveConnections   int64
+    TotalMessages       int64
+    DisconnectedClients int64
+}
+
+// hubStatsInternal содержит статистику с мьютексом (для записи)
+type hubStatsInternal struct {
     TotalConnections    int64
     ActiveConnections   int64
     TotalMessages       int64
@@ -285,11 +294,13 @@ func (h *Hub) GetStats() HubStats {
     h.stats.mu.RLock()
     defer h.stats.mu.RUnlock()
     
+    // Копируем только данные, без мьютекса
     return HubStats{
         TotalConnections:    h.stats.TotalConnections,
         ActiveConnections:   h.stats.ActiveConnections,
         TotalMessages:       h.stats.TotalMessages,
         DisconnectedClients: h.stats.DisconnectedClients,
+        // mu не копируем - это избегает проблемы с go vet
     }
 }
 

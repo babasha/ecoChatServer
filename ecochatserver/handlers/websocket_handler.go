@@ -1,9 +1,7 @@
 package handlers
 
 import (
-    "context"
     "encoding/json"
-    "fmt"
     "log"
     "net/http"
     "os"
@@ -20,6 +18,7 @@ import (
     "github.com/egor/ecochatserver/models"
     websocketpkg "github.com/egor/ecochatserver/websocket"
 )
+
 
 // wsUpgrader апгрейдит HTTP→WebSocket с улучшенной проверкой Origin
 var wsUpgrader = websocket.Upgrader{
@@ -255,43 +254,44 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
         sender = "user"
     }
 
-    // Простая дедупликация для WebSocket
-    messageHash := fmt.Sprintf("%s_%s_%s_%d", 
-        client.ID, 
-        p.ChatID, 
-        p.Content,
-        time.Now().Unix())
+    messageTime := time.Now()
     
-    if isRecentMessage(messageHash) {
-        log.Printf("processSendMessage: дублирующее сообщение от клиента %s", client.ID)
-        // Отправляем подтверждение, но не обрабатываем повторно
-        response := map[string]interface{}{
-            "type": "messageDuplicate",
-            "payload": map[string]interface{}{
-                "chatID": p.ChatID,
-                "status": "ignored",
-            },
-        }
-        client.SendJSON(response)
-        return
-    }
-    registerMessage(messageHash)
+    // Создаем детерминированный ID для сообщения (дедупликация)
+    messageID := generateMessageID(chatID, senderID, p.Content, messageTime)
 
-    // Добавляем сообщение в базу
-    log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s): %s", 
-        chatID, sender, senderID, p.Content)
+    // Добавляем сообщение в базу с детерминированным ID
+    log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s) с ID %s: %s", 
+        chatID, sender, senderID, messageID, p.Content)
         
-    message, err := database.AddMessage(
+    message, err := database.AddMessageWithID(
+        messageID,
         chatID, 
         p.Content, 
         sender, 
         senderID, 
+        messageTime,
         p.Type, 
         p.Metadata,
     )
     if err != nil {
+        // Проверяем, не является ли это ошибкой дублирования
+        if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+            log.Printf("processSendMessage: сообщение уже существует в базе: %s", messageID)
+            // Отправляем подтверждение о том, что сообщение уже обработано
+            response := map[string]interface{}{
+                "type": "messageDuplicate",
+                "payload": map[string]interface{}{
+                    "messageID": messageID.String(),
+                    "chatID":    p.ChatID,
+                    "status":    "already_exists",
+                },
+            }
+            client.SendJSON(response)
+            return
+        }
+        
         log.Printf("processSendMessage: ошибка добавления сообщения: %v", err)
-        client.SendError("db_error", "Ошибка при отправке сообщения: "+err.Error())
+        client.SendError("db_error", "Ошибка сохранения сообщения")
         return
     }
 
@@ -301,7 +301,6 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
     }
     
     // ОБРАБОТКА АВТООТВЕТЧИКА
-    var botMsg *models.Message
     if sender == "user" && AutoResponder != nil {
         go func() {
             // Асинхронная обработка автоответчика

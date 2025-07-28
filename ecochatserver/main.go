@@ -115,21 +115,8 @@ func SimpleDeduplicationMiddleware() gin.HandlerFunc {
             return
         }
         
-        // Простой хеш из IP + path + timestamp (округлен до секунды)
-        hash := fmt.Sprintf("%s_%s_%d", 
-            c.ClientIP(), 
-            c.Request.URL.Path,
-            time.Now().Unix())
-        
-        if handlers.IsRecentMessage(hash) {
-            c.JSON(http.StatusTooManyRequests, gin.H{
-                "error": "Слишком частые запросы, пожалуйста подождите",
-            })
-            c.Abort()
-            return
-        }
-        
-        handlers.RegisterMessage(hash)
+        // Пропускаем дедупликацию для main.go пока функции не перенесены
+        // TODO: Перенести логику дедупликации из telegram_handler в общий пакет
         c.Next()
     }
 }
@@ -288,6 +275,12 @@ func setupAPIRoutes(r *gin.Engine) {
         auth := api.Group("/")
         auth.Use(middleware.AuthMiddleware())
         {
+            // Получение списка чатов для админки
+            auth.GET("/chats", handlers.GetChats)
+            
+            // Получение конкретного чата с сообщениями
+            auth.GET("/chats/:id", handlers.GetChatByID)
+            
             // Статистика для администраторов
             auth.GET("/admin/stats", func(c *gin.Context) {
                 stats := handlers.WebSocketHub.GetStats()

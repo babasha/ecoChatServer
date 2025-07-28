@@ -3,15 +3,25 @@ package queries
 import (
     "database/sql"
     "github.com/google/uuid"
-    "github.com/egor/ecochatserver/database"
 )
 
-// nullStringToPointer использует общую функцию из database пакета
+// nullStringToPointer преобразует sql.NullString в *string
 func nullStringToPointer(ns sql.NullString) *string {
-    return database.NullStringToPointer(ns)
+    if ns.Valid {
+        s := ns.String
+        return &s
+    }
+    return nil
 }
 
-// nullUUIDToPointer использует общую функцию из database пакета
+// nullUUIDToPointer преобразует sql.NullString в *uuid.UUID
 func nullUUIDToPointer(ns sql.NullString) (*uuid.UUID, error) {
-    return database.NullUUIDToPointer(ns)
+    if !ns.Valid {
+        return nil, nil
+    }
+    u, err := uuid.Parse(ns.String)
+    if err != nil {
+        return nil, err
+    }
+    return &u, nil
 }
