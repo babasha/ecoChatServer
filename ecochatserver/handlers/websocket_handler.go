@@ -338,14 +338,14 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
                     
                     // Отправляем ОДНО комплексное сообщение
                     notification := createChatNotification(chatID, message, botMsg)
-                    WebSocketHub.SendToChat(chatID.String(), notification)
+                    WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
                 }
             }
         }()
     } else {
         // Отправляем только сообщение пользователя
         notification := createChatNotification(chatID, message, nil)
-        WebSocketHub.SendToChat(chatID.String(), notification)
+        WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
     }
     
     log.Printf("processSendMessage: сообщение успешно отправлено (ID=%s)", message.ID)

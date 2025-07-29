@@ -281,6 +281,9 @@ func setupAPIRoutes(r *gin.Engine) {
             // Получение конкретного чата с сообщениями
             auth.GET("/chats/:id", handlers.GetChatByID)
             
+            // Отправка сообщения в чат от админа
+            auth.POST("/chats/:id/messages", handlers.SendMessageToChat)
+            
             // Статистика для администраторов
             auth.GET("/admin/stats", func(c *gin.Context) {
                 stats := handlers.WebSocketHub.GetStats()

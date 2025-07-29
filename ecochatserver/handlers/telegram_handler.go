@@ -205,8 +205,9 @@ func TelegramWebhook(c *gin.Context) {
     // ВАЖНО: Отправляем только ОДНО комплексное WebSocket сообщение
     if userMsg != nil {
         notification := createChatNotification(chat.ID, userMsg, botMsg)
-        WebSocketHub.SendToChat(chat.ID.String(), notification)
-        log.Printf("TelegramWebhook: комплексное WebSocket уведомление отправлено")
+        // Отправляем уведомление как виджету, так и всем админам
+        totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), notification)
+        log.Printf("TelegramWebhook: комплексное WebSocket уведомление отправлено %d клиентам", totalSent)
     }
 
     // Ответ клиенту
@@ -229,10 +230,9 @@ func TelegramWebhook(c *gin.Context) {
 // createChatNotification создает комплексное уведомление для WebSocket
 func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) []byte {
     // Формируем структуру, совместимую с admin interface
+    // Админка ожидает chatId и message на верхнем уровне
     payload := map[string]interface{}{
-        "chat": map[string]interface{}{
-            "id": chatID.String(),
-        },
+        "chatId": chatID.String(),
         "message": map[string]interface{}{
             "id":        userMsg.ID.String(),
             "chatId":    chatID.String(),
@@ -242,16 +242,13 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
             "read":      false,
             "type":      userMsg.Type,
         },
-        "timestamp": time.Now().Format(time.RFC3339),
     }
     
     // Если есть автоответ бота, отправляем его отдельно
     if botMsg != nil {
         // Для ответа бота создаем отдельное уведомление
         botPayload := map[string]interface{}{
-            "chat": map[string]interface{}{
-                "id": chatID.String(),
-            },
+            "chatId": chatID.String(),
             "message": map[string]interface{}{
                 "id":        botMsg.ID.String(),
                 "chatId":    chatID.String(),
@@ -262,12 +259,11 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
                 "type":      botMsg.Type,
                 "metadata":  botMsg.Metadata,
             },
-            "timestamp": time.Now().Format(time.RFC3339),
         }
         
         // Отправляем уведомление о боте отдельно
         botNotification, _ := websocket.NewMessage("new_message", botPayload)
-        WebSocketHub.SendToChat(chatID.String(), botNotification)
+        WebSocketHub.SendToChatAndAdmins(chatID.String(), botNotification)
         log.Printf("TelegramWebhook: отправлено WebSocket уведомление о сообщении бота")
     }
     

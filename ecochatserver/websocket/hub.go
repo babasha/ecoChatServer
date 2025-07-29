@@ -320,6 +320,40 @@ func (h *Hub) logStats() {
     }
 }
 
+// SendToAllAdmins отправляет сообщение всем подключенным админам
+func (h *Hub) SendToAllAdmins(message []byte) int {
+    h.mu.RLock()
+    admins := make([]*Client, 0, len(h.adminsByID))
+    for _, admin := range h.adminsByID {
+        admins = append(admins, admin)
+    }
+    h.mu.RUnlock()
+    
+    if len(admins) == 0 {
+        return 0
+    }
+    
+    sent := 0
+    for _, admin := range admins {
+        select {
+        case admin.send <- message:
+            sent++
+        default:
+            go h.cleanupClient(admin)
+        }
+    }
+    
+    log.Printf("Отправлено %d сообщений всем админам", sent)
+    return sent
+}
+
+// SendToChatAndAdmins отправляет сообщение как в чат, так и всем админам
+func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
+    chatSent := h.SendToChat(chatID, message)
+    adminSent := h.SendToAllAdmins(message)
+    return chatSent + adminSent
+}
+
 // GetActiveClients возвращает текущее количество активных клиентов
 func (h *Hub) GetActiveClients() map[string]int {
     h.mu.RLock()

@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/database/queries"
+	"github.com/egor/ecochatserver/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -87,4 +91,79 @@ func GetChatByID(c *gin.Context) {
 			"pages":    (total + size - 1) / size,
 		},
 	})
+}
+
+// SendMessageToChat отправляет сообщение от админа в чат
+func SendMessageToChat(c *gin.Context) {
+	chatIDStr := c.Param("id")
+	chatID, err := uuid.Parse(chatIDStr)
+	if err != nil {
+		log.Printf("SendMessageToChat: неверный UUID чата: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
+		return
+	}
+
+	// Парсим тело запроса
+	var request struct {
+		Content string `json:"content"`
+	}
+	
+	if err := c.ShouldBindJSON(&request); err != nil {
+		log.Printf("SendMessageToChat: ошибка парсинга JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+		return
+	}
+
+	if request.Content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Содержимое сообщения не может быть пустым"})
+		return
+	}
+
+	log.Printf("SendMessageToChat: отправка сообщения в чат %s от админа", chatIDStr)
+
+	// TODO: Получить реальный ID админа из JWT токена
+	adminID := uuid.MustParse("22222222-2222-2222-2222-222222222222") // Временный ID админа
+
+	// Добавляем сообщение в базу данных
+	message, err := database.AddMessage(
+		chatID,
+		request.Content,
+		"admin",
+		adminID,
+		"text",
+		nil, // metadata
+	)
+	if err != nil {
+		log.Printf("SendMessageToChat: ошибка добавления сообщения: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения сообщения"})
+		return
+	}
+
+	log.Printf("SendMessageToChat: сообщение сохранено: ID=%s", message.ID)
+
+	// Обновляем время чата
+	if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
+		log.Printf("SendMessageToChat: ошибка обновления времени чата: %v", err)
+	}
+
+	// Отправляем WebSocket уведомление
+	payload := map[string]interface{}{
+		"chatId": chatID.String(),
+		"message": map[string]interface{}{
+			"id":        message.ID.String(),
+			"chatId":    chatID.String(),
+			"content":   message.Content,
+			"sender":    message.Sender,
+			"timestamp": message.Timestamp.Format(time.RFC3339),
+			"read":      false,
+			"type":      message.Type,
+		},
+	}
+
+	wsMessage, _ := websocket.NewMessage("new_message", payload)
+	totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), wsMessage)
+	log.Printf("SendMessageToChat: WebSocket уведомление отправлено %d клиентам", totalSent)
+
+	// Возвращаем созданное сообщение
+	c.JSON(http.StatusOK, message)
 }
