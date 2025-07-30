@@ -218,9 +218,10 @@ func TelegramWebhook(c *gin.Context) {
         "timestamp":       time.Now().Format(time.RFC3339),
     }
     
-    if botMsg != nil {
-        response["bot_response"] = botMsg.Content
-        response["bot_message_id"] = botMsg.ID.String()
+    // Возвращаем только статус успеха
+    response = gin.H{
+        "success": true,
+        "message": "Сообщение обработано",
     }
     
     log.Printf("TelegramWebhook: отправляем ответ: %+v", response)

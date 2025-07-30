@@ -146,17 +146,21 @@ func SendMessageToChat(c *gin.Context) {
 		log.Printf("SendMessageToChat: ошибка обновления времени чата: %v", err)
 	}
 
-	// Отправляем WebSocket уведомление
+	// Отправляем WebSocket уведомление в формате совместимом с виджетом и админкой
 	payload := map[string]interface{}{
-		"chatId": chatID.String(),
+		"chatId": chatID.String(), // для админки
 		"message": map[string]interface{}{
 			"id":        message.ID.String(),
 			"chatId":    chatID.String(),
 			"content":   message.Content,
 			"sender":    message.Sender,
+			"senderId":  message.SenderID.String(),
 			"timestamp": message.Timestamp.Format(time.RFC3339),
 			"read":      false,
 			"type":      message.Type,
+		},
+		"chat": map[string]interface{}{ // для виджета
+			"id": chatID.String(),
 		},
 	}
 
@@ -164,6 +168,9 @@ func SendMessageToChat(c *gin.Context) {
 	totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), wsMessage)
 	log.Printf("SendMessageToChat: WebSocket уведомление отправлено %d клиентам", totalSent)
 
-	// Возвращаем созданное сообщение
-	c.JSON(http.StatusOK, message)
+	// Возвращаем только статус успеха
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Сообщение отправлено",
+	})
 }
