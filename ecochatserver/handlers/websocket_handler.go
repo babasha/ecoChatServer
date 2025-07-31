@@ -300,6 +300,12 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
         log.Printf("processSendMessage: ошибка обновления времени: %v", err)
     }
     
+    // Если это сообщение от админа, очищаем состояние эскалации
+    if sender == "admin" && AutoResponder != nil {
+        AutoResponder.ClearEscalation(chatID.String())
+        log.Printf("processSendMessage: очищена эскалация для чата %s (ответ админа)", chatID)
+    }
+    
     // ОБРАБОТКА АВТООТВЕТЧИКА
     if sender == "user" && AutoResponder != nil {
         go func() {

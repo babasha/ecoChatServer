@@ -44,6 +44,17 @@ func InitAutoResponder() {
     client := llm.NewLLMClient()
     cfg := llm.GetDefaultConfig()
     AutoResponder = llm.NewAutoResponder(client, cfg)
+    
+    // Устанавливаем callback для отправки сообщений извинения
+    AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {
+        // Отправляем WebSocket уведомление о сообщении извинения
+        notification := createChatNotification(chatID, message, nil)
+        if WebSocketHub != nil {
+            totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
+            log.Printf("TelegramWebhook: уведомление о сообщении извинения отправлено %d клиентам", totalSent)
+        }
+    })
+    
     log.Println("Автоответчик успешно инициализирован")
 }
 
@@ -194,6 +205,15 @@ func TelegramWebhook(c *gin.Context) {
                 if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
                     log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
                 }
+                
+                // Проверяем нужна ли эскалация
+                if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok && needEscalation {
+                    log.Printf("TelegramWebhunk: требуется эскалация для чата %s", chat.ID)
+                    // Отправляем уведомление админам об эскалации
+                    escalationNotification := createEscalationNotification(chat.ID, userMsg)
+                    totalSent := WebSocketHub.SendToAllAdmins(escalationNotification)
+                    log.Printf("TelegramWebhook: уведомление об эскалации отправлено %d админам", totalSent)
+                }
             }
         } else {
             log.Printf("TelegramWebhook: автоответ не сгенерирован (botMsg == nil)")
@@ -255,6 +275,9 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
                 "type":      botMsg.Type,
                 "metadata":  botMsg.Metadata,
             },
+            "chat": map[string]interface{}{
+                "id": chatID.String(),
+            },
         }
         
         // Отправляем уведомление о боте отдельно
@@ -264,6 +287,25 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
     }
     
     msg, _ := websocket.NewMessage("new_message", payload)
+    return msg
+}
+
+// createEscalationNotification создает уведомление об эскалации для админов
+func createEscalationNotification(chatID uuid.UUID, userMsg *models.Message) []byte {
+    payload := map[string]interface{}{
+        "type": "escalation",
+        "chatId": chatID.String(),
+        "message": map[string]interface{}{
+            "id":      userMsg.ID.String(),
+            "content": userMsg.Content,
+            "sender":  userMsg.Sender,
+            "timestamp": userMsg.Timestamp.Format(time.RFC3339),
+        },
+        "sound": "notification", // Флаг для звукового уведомления
+        "urgent": true,
+    }
+    
+    msg, _ := websocket.NewMessage("escalation_alert", payload)
     return msg
 }
 

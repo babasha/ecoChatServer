@@ -93,7 +93,7 @@ func (c *LLMClient) GenerateResponse(
 
     // Формируем тело запроса
     reqBody := ChatCompletionRequest{
-        Model:       "gemma",
+        Model:       "gemma-3-4b-it-qat",
         Messages:    chatHistory,
         Temperature: 0.7,
         MaxTokens:   1000,
