@@ -208,19 +208,31 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	}
 	
 	if escalate {
-		// Если текст уже содержит сообщение об эскалации, оставляем его
-		if !strings.Contains(clean, "#эскалация") {
-			clean = "Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏"
-		}
-		
-		// Сохраняем состояние эскалации
+		// Проверяем, не эскалирован ли уже этот чат
 		ar.mu.Lock()
-		ar.escalations[chatKey] = &EscalationState{
-			EscalatedAt:   time.Now(),
-			AdminNotified: true,
-			ReturnedAt:    nil,
-		}
+		existingEscalation := ar.escalations[chatKey]
 		ar.mu.Unlock()
+		
+		if existingEscalation != nil && existingEscalation.ReturnedAt == nil {
+			// Чат уже эскалирован и LLM еще не вернулся
+			log.Printf("ProcessMessage: чат %s уже эскалирован, пропускаем повторную эскалацию", chatKey)
+			escalate = false // Не эскалируем повторно
+			clean = "Ваш запрос уже передан нашему специалисту. Ожидайте ответа."
+		} else {
+			// Если текст уже содержит сообщение об эскалации, оставляем его
+			if !strings.Contains(clean, "#эскалация") {
+				clean = "Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏"
+			}
+			
+			// Сохраняем состояние эскалации
+			ar.mu.Lock()
+			ar.escalations[chatKey] = &EscalationState{
+				EscalatedAt:   time.Now(),
+				AdminNotified: true,
+				ReturnedAt:    nil,
+			}
+			ar.mu.Unlock()
+		}
 	}
 
 	// ── формируем сообщение ──────────────────────────────────
