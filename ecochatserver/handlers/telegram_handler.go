@@ -212,16 +212,11 @@ func TelegramWebhook(c *gin.Context) {
 
     // Ответ клиенту
     response := gin.H{
-        "status":          "message processed",
-        "message_id":      userMsg.ID.String(),
-        "chat_id":         chat.ID.String(),
-        "timestamp":       time.Now().Format(time.RFC3339),
-    }
-    
-    // Возвращаем только статус успеха
-    response = gin.H{
-        "success": true,
-        "message": "Сообщение обработано",
+        "success":    true,
+        "message":    "Сообщение обработано",
+        "message_id": userMsg.ID.String(),
+        "chat_id":    chat.ID.String(),
+        "timestamp":  time.Now().Format(time.RFC3339),
     }
     
     log.Printf("TelegramWebhook: отправляем ответ: %+v", response)

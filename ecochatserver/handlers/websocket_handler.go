@@ -84,11 +84,9 @@ func ServeWs(c *gin.Context) {
     clientType := c.DefaultQuery("type", "admin")
     chatIDStr := c.Query("chat_id")
 
-    // Для виджета обязательно нужен chat_id
+    // Для виджета chat_id необязателен - может быть создан позже
     if clientType == "widget" && chatIDStr == "" {
-        log.Printf("ServeWs: ошибка для виджета - отсутствует chat_id")
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Для виджета обязателен параметр chat_id"})
-        return
+        log.Printf("ServeWs: виджет подключается без chat_id - чат будет создан при первом сообщении")
     }
 
     // Проверяем токен для админа
@@ -125,12 +123,14 @@ func ServeWs(c *gin.Context) {
         
         log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
     } else if clientType == "widget" {
-        // Для виджета проверяем существование чата
-        chatID, err = uuid.Parse(chatIDStr)
-        if err != nil {
-            log.Printf("ServeWs: ошибка парсинга chatID: %v", err)
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат chatID"})
-            return
+        // Для виджета парсим chatID только если он передан
+        if chatIDStr != "" {
+            chatID, err = uuid.Parse(chatIDStr)
+            if err != nil {
+                log.Printf("ServeWs: ошибка парсинга chatID: %v", err)
+                c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат chatID"})
+                return
+            }
         }
         
         // Получаем userID из заголовка для виджета, если есть
@@ -618,8 +618,8 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
         return
     }
 
-    // Проверяем, принадлежит ли чат этому пользователю
-    if client.ClientType == "widget" && client.ChatID != chatID {
+    // Проверяем, принадлежит ли чат этому пользователю (только если у клиента есть ChatID)
+    if client.ClientType == "widget" && client.ChatID != uuid.Nil && client.ChatID != chatID {
         client.SendError("access_denied", "Доступ к чату запрещен")
         return
     }
