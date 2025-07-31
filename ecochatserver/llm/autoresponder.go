@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -198,10 +199,19 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 		return nil, fmt.Errorf("GenerateResponse: %w", err)
 	}
 
-	// ── фильтр самоидентификации ──────────────────────────────
+	// ── фильтр самоидентификации и проверка тегов эскалации ──
 	clean, escalate := sanitize(rawResp)
+	
+	// Дополнительная проверка: ищем теги эскалации в тексте
+	if !escalate && strings.Contains(clean, "#эскалация") {
+		escalate = true
+	}
+	
 	if escalate {
-		clean = "Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏"
+		// Если текст уже содержит сообщение об эскалации, оставляем его
+		if !strings.Contains(clean, "#эскалация") {
+			clean = "Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏"
+		}
 		
 		// Сохраняем состояние эскалации
 		ar.mu.Lock()

@@ -207,12 +207,17 @@ func TelegramWebhook(c *gin.Context) {
                 }
                 
                 // Проверяем нужна ли эскалация
-                if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok && needEscalation {
-                    log.Printf("TelegramWebhunk: требуется эскалация для чата %s", chat.ID)
-                    // Отправляем уведомление админам об эскалации
-                    escalationNotification := createEscalationNotification(chat.ID, userMsg)
-                    totalSent := WebSocketHub.SendToAllAdmins(escalationNotification)
-                    log.Printf("TelegramWebhook: уведомление об эскалации отправлено %d админам", totalSent)
+                if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok {
+                    log.Printf("TelegramWebhook: проверка эскалации для чата %s: needEscalation=%v", chat.ID, needEscalation)
+                    if needEscalation {
+                        log.Printf("TelegramWebhook: требуется эскалация для чата %s", chat.ID)
+                        // Отправляем уведомление админам об эскалации
+                        escalationNotification := createEscalationNotification(chat.ID, userMsg)
+                        totalSent := WebSocketHub.SendToAllAdmins(escalationNotification)
+                        log.Printf("TelegramWebhook: уведомление об эскалации отправлено %d админам", totalSent)
+                    }
+                } else {
+                    log.Printf("TelegramWebhook: поле needEscalation отсутствует в метаданных для чата %s", chat.ID)
                 }
             }
         } else {
@@ -306,6 +311,7 @@ func createEscalationNotification(chatID uuid.UUID, userMsg *models.Message) []b
     }
     
     msg, _ := websocket.NewMessage("escalation_alert", payload)
+    log.Printf("createEscalationNotification: создано уведомление об эскалации: %s", string(msg))
     return msg
 }
 
