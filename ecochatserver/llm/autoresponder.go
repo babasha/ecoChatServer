@@ -240,8 +240,6 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 // handleEscalatedChat обрабатывает сообщения в эскалированном чате
 func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.Chat, msg *models.Message, escalation *EscalationState) (*models.Message, error) {
-	chatKey := chat.ID.String()
-	
 	// Проверяем, прошло ли 5 минут с момента эскалации
 	const escalationTimeout = 5 * time.Minute
 	if time.Since(escalation.EscalatedAt) > escalationTimeout && escalation.ReturnedAt == nil {
