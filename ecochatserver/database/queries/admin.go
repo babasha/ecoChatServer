@@ -1,38 +1,37 @@
 package queries
 
 import (
-    "context"
-    "database/sql"
-    "fmt"
-    
-    "golang.org/x/crypto/bcrypt"
-    "github.com/egor/ecochatserver/models"
+	"database/sql"
+	"fmt"
+
+	"github.com/egor/ecochatserver/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
-    ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
-    defer cancel()
+	ctx, cancel := WithDBContext()
+	defer cancel()
 
-    var admin models.Admin
-    var avatarNull sql.NullString
+	var admin models.Admin
+	var avatarNull sql.NullString
 
-    const q = `
+	const q = `
         SELECT id,name,email,password_hash,avatar,role,client_id,active
           FROM admins
          WHERE email=$1`
-    if err := db.QueryRowContext(ctx, q, email).Scan(
-        &admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash,
-        &avatarNull, &admin.Role, &admin.ClientID, &admin.Active,
-    ); err != nil {
-        if err == sql.ErrNoRows {
-            return nil, nil
-        }
-        return nil, fmt.Errorf("GetAdmin: %w", err)
-    }
-    admin.Avatar = nullStringToPointer(avatarNull)
-    return &admin, nil
+	if err := db.QueryRowContext(ctx, q, email).Scan(
+		&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash,
+		&avatarNull, &admin.Role, &admin.ClientID, &admin.Active,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetAdmin: %w", err)
+	}
+	admin.Avatar = nullStringToPointer(avatarNull)
+	return &admin, nil
 }
 
 func VerifyPassword(pw, hash string) error {
-    return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw))
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw))
 }

@@ -40,13 +40,13 @@ func Init() error {
 	}
 
 	log.Println("[database] PostgreSQL connected ✓")
-	
+
 	// Создаем партиции заранее
 	if err := initializePartitions(); err != nil {
 		log.Printf("Warning: не удалось создать партиции: %v", err)
 		// Не прерываем запуск сервера из-за партиций
 	}
-	
+
 	return nil
 }
 
@@ -96,12 +96,12 @@ func Close() { _ = DB.Close() }
 // ─────────────────────────────── helpers
 
 func buildDSN() string {
-	host     := env("PG_HOST",     "localhost")
-	port     := env("PG_PORT",     "5432")
-	user     := env("PG_USER",     "postgres")
+	host := env("PG_HOST", "localhost")
+	port := env("PG_PORT", "5432")
+	user := env("PG_USER", "postgres")
 	password := os.Getenv("PG_PASSWORD") // может быть пустым
-	dbname   := env("PG_DATABASE", "ecochat")
-	sslmode  := env("PG_SSL_MODE", "disable")
+	dbname := env("PG_DATABASE", "ecochat")
+	sslmode := env("PG_SSL_MODE", "disable")
 
 	return fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
@@ -114,4 +114,4 @@ func env(k, def string) string {
 		return v
 	}
 	return def
-} 
+}

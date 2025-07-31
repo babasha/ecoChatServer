@@ -140,10 +140,10 @@ func NewAutoResponder(client LLM, cfg AutoResponderConfig) *AutoResponder {
 		history:     make(map[string][]Message),
 		escalations: make(map[string]*EscalationState),
 	}
-	
+
 	// Запускаем периодическую проверку эскалированных чатов
 	go ar.escalationWatcher()
-	
+
 	return ar
 }
 
@@ -161,12 +161,12 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	}
 
 	chatKey := chat.ID.String()
-	
+
 	// Проверяем состояние эскалации
 	ar.mu.Lock()
 	escalation := ar.escalations[chatKey]
 	ar.mu.Unlock()
-	
+
 	// Если чат эскалирован, проверяем нужно ли вернуть LLM
 	if escalation != nil {
 		return ar.handleEscalatedChat(ctx, chat, msg, escalation)
@@ -201,18 +201,18 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 	// ── фильтр самоидентификации и проверка тегов эскалации ──
 	clean, escalate := sanitize(rawResp)
-	
+
 	// Дополнительная проверка: ищем теги эскалации в тексте
 	if !escalate && strings.Contains(clean, "#эскалация") {
 		escalate = true
 	}
-	
+
 	if escalate {
 		// Проверяем, не эскалирован ли уже этот чат
 		ar.mu.Lock()
 		existingEscalation := ar.escalations[chatKey]
 		ar.mu.Unlock()
-		
+
 		if existingEscalation != nil && existingEscalation.ReturnedAt == nil {
 			// Чат уже эскалирован и LLM еще не вернулся
 			log.Printf("ProcessMessage: чат %s уже эскалирован, пропускаем повторную эскалацию", chatKey)
@@ -223,7 +223,7 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 			if !strings.Contains(clean, "#эскалация") {
 				clean = "Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏"
 			}
-			
+
 			// Сохраняем состояние эскалации
 			ar.mu.Lock()
 			ar.escalations[chatKey] = &EscalationState{
@@ -238,13 +238,13 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	// ── формируем сообщение ──────────────────────────────────
 	now := time.Now()
 	botMsg := &models.Message{
-		ChatID:   chat.ID,
-		Content:  clean,
-		Sender:   "admin",
-		SenderID: uuid.Nil,
+		ChatID:    chat.ID,
+		Content:   clean,
+		Sender:    "admin",
+		SenderID:  uuid.Nil,
 		Timestamp: now,
-		Read:     true,
-		Type:     "text",
+		Read:      true,
+		Type:      "text",
 		Metadata: map[string]interface{}{
 			"isAutoResponse": true,
 			"botName":        ar.config.BotName,
@@ -267,14 +267,14 @@ func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.C
 	if time.Since(escalation.EscalatedAt) > escalationTimeout && escalation.ReturnedAt == nil {
 		// Проверяем, отвечал ли адиин после эскалации
 		adminAnswered := ar.checkAdminResponse(chat, escalation.EscalatedAt)
-		
+
 		if !adminAnswered {
 			// Админ не ответил, возвращаем LLM с извинением
 			now := time.Now()
 			ar.mu.Lock()
 			escalation.ReturnedAt = &now
 			ar.mu.Unlock()
-			
+
 			apologeticMsg := &models.Message{
 				ChatID:    chat.ID,
 				Content:   "Прошу прощения за ожидание! Наш специалист временно недоступен. Я постараюсь помочь вам сам. Пожалуйста, повторите свой вопрос. 🙏",
@@ -289,12 +289,12 @@ func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.C
 					"escalationEnd":  true,
 				},
 			}
-			
+
 			// Продолжаем нормальную обработку
 			return apologeticMsg, nil
 		}
 	}
-	
+
 	// Если админ уже ответил или время еще не истекло, LLM не отвечает
 	return nil, nil
 }
@@ -307,7 +307,7 @@ func (ar *AutoResponder) checkAdminResponse(chat *models.Chat, after time.Time) 
 		log.Printf("checkAdminResponse: ошибка загрузки сообщений: %v", err)
 		return false
 	}
-	
+
 	// Проверяем сообщения
 	for i := len(chatWithMessages.Messages) - 1; i >= 0; i-- {
 		msg := chatWithMessages.Messages[i]
@@ -318,7 +318,7 @@ func (ar *AutoResponder) checkAdminResponse(chat *models.Chat, after time.Time) 
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -338,7 +338,7 @@ func (ar *AutoResponder) SetApologyCallback(callback func(chatID uuid.UUID, mess
 func (ar *AutoResponder) escalationWatcher() {
 	ticker := time.NewTicker(1 * time.Minute) // Проверяем каждую минуту
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		ar.checkEscalations()
 	}
@@ -352,14 +352,14 @@ func (ar *AutoResponder) checkEscalations() {
 		escalationsToCheck[chatID] = escalation
 	}
 	ar.mu.RUnlock()
-	
+
 	const escalationTimeout = 5 * time.Minute
-	
+
 	for chatID, escalation := range escalationsToCheck {
 		if escalation.ReturnedAt != nil {
 			continue // Уже вернулся
 		}
-		
+
 		if time.Since(escalation.EscalatedAt) > escalationTimeout {
 			// Загружаем чат из базы
 			chatUUID, err := uuid.Parse(chatID)
@@ -367,13 +367,13 @@ func (ar *AutoResponder) checkEscalations() {
 				log.Printf("escalationWatcher: ошибка парсинга chatID %s: %v", chatID, err)
 				continue
 			}
-			
+
 			lightChat, err := queries.GetChatLightweight(database.DB, chatUUID)
 			if err != nil {
 				log.Printf("escalationWatcher: ошибка загрузки чата %s: %v", chatID, err)
 				continue
 			}
-			
+
 			// Проверяем отвечал ли админ
 			adminAnswered := ar.checkAdminResponse(lightChat, escalation.EscalatedAt)
 			if !adminAnswered {
@@ -388,14 +388,14 @@ func (ar *AutoResponder) checkEscalations() {
 func (ar *AutoResponder) sendApologyMessage(chat *models.Chat) {
 	now := time.Now()
 	chatKey := chat.ID.String()
-	
+
 	// Обновляем состояние эскалации
 	ar.mu.Lock()
 	if escalation := ar.escalations[chatKey]; escalation != nil {
 		escalation.ReturnedAt = &now
 	}
 	ar.mu.Unlock()
-	
+
 	// Создаем сообщение извинения
 	apologeticMsg := &models.Message{
 		ChatID:    chat.ID,
@@ -411,7 +411,7 @@ func (ar *AutoResponder) sendApologyMessage(chat *models.Chat) {
 			"escalationEnd":  true,
 		},
 	}
-	
+
 	// Сохраняем в базу данных
 	saved, err := database.AddMessage(
 		chat.ID,
@@ -425,9 +425,9 @@ func (ar *AutoResponder) sendApologyMessage(chat *models.Chat) {
 		log.Printf("sendApologyMessage: ошибка сохранения сообщения: %v", err)
 		return
 	}
-	
+
 	log.Printf("escalationWatcher: отправлено извинение в чат %s", chatKey)
-	
+
 	// Здесь нужно отправить WebSocket уведомление
 	// Но у нас нет доступа к WebSocketHub отсюда
 	// Поэтому добавим callback функцию

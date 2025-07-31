@@ -1,679 +1,678 @@
 package handlers
 
 import (
-    "encoding/json"
-    "log"
-    "net/http"
-    "os"
-    "strings"
-    "time"
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
-    "github.com/gin-gonic/gin"
-    "github.com/google/uuid"
-    "github.com/gorilla/websocket"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 
-    "github.com/egor/ecochatserver/database"
-    "github.com/egor/ecochatserver/database/queries"
-    "github.com/egor/ecochatserver/middleware"
-    "github.com/egor/ecochatserver/models"
-    websocketpkg "github.com/egor/ecochatserver/websocket"
+	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/database/queries"
+	"github.com/egor/ecochatserver/middleware"
+	"github.com/egor/ecochatserver/models"
+	websocketpkg "github.com/egor/ecochatserver/websocket"
 )
-
 
 // wsUpgrader апгрейдит HTTP→WebSocket с улучшенной проверкой Origin
 var wsUpgrader = websocket.Upgrader{
-    ReadBufferSize:  1024,
-    WriteBufferSize: 1024,
-    CheckOrigin:     checkOrigin,
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     checkOrigin,
 }
 
 // checkOrigin проверяет, разрешен ли Origin для подключения
 func checkOrigin(r *http.Request) bool {
-    origin := r.Header.Get("Origin")
-    if origin == "" {
-        // Разрешаем локальные подключения без Origin
-        host := r.Host
-        if strings.HasPrefix(host, "localhost:") || strings.HasPrefix(host, "127.0.0.1:") {
-            return true
-        }
-        return false
-    }
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Разрешаем локальные подключения без Origin
+		host := r.Host
+		if strings.HasPrefix(host, "localhost:") || strings.HasPrefix(host, "127.0.0.1:") {
+			return true
+		}
+		return false
+	}
 
-    // Получаем разрешенные origins из переменных окружения
-    allowedOrigins := []string{}
-    
-    // Основной URL фронтенда
-    if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {
-        allowedOrigins = append(allowedOrigins, frontendURL)
-    }
-    
-    // Дополнительные разрешенные origins
-    if additional := os.Getenv("ADDITIONAL_ALLOWED_ORIGINS"); additional != "" {
-        for _, url := range strings.Split(additional, ",") {
-            url = strings.TrimSpace(url)
-            if url != "" {
-                allowedOrigins = append(allowedOrigins, url)
-            }
-        }
-    }
-    
-    // Проверяем, есть ли origin в списке разрешенных
-    for _, allowed := range allowedOrigins {
-        if allowed == origin {
-            return true
-        }
-    }
-    
-    // Для разработки можно разрешить все origins
-    if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
-        log.Printf("ВНИМАНИЕ: Разрешен origin %s (ALLOW_ALL_ORIGINS=true)", origin)
-        return true
-    }
-    
-    log.Printf("Отклонен origin: %s", origin)
-    return false
+	// Получаем разрешенные origins из переменных окружения
+	allowedOrigins := []string{}
+
+	// Основной URL фронтенда
+	if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {
+		allowedOrigins = append(allowedOrigins, frontendURL)
+	}
+
+	// Дополнительные разрешенные origins
+	if additional := os.Getenv("ADDITIONAL_ALLOWED_ORIGINS"); additional != "" {
+		for _, url := range strings.Split(additional, ",") {
+			url = strings.TrimSpace(url)
+			if url != "" {
+				allowedOrigins = append(allowedOrigins, url)
+			}
+		}
+	}
+
+	// Проверяем, есть ли origin в списке разрешенных
+	for _, allowed := range allowedOrigins {
+		if allowed == origin {
+			return true
+		}
+	}
+
+	// Для разработки можно разрешить все origins
+	if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
+		log.Printf("ВНИМАНИЕ: Разрешен origin %s (ALLOW_ALL_ORIGINS=true)", origin)
+		return true
+	}
+
+	log.Printf("Отклонен origin: %s", origin)
+	return false
 }
 
 // ServeWs обрабатывает WebSocket соединение
 func ServeWs(c *gin.Context) {
-    log.Printf("ServeWs: новое соединение от %s, origin: %s", 
-        c.ClientIP(), c.Request.Header.Get("Origin"))
+	log.Printf("ServeWs: новое соединение от %s, origin: %s",
+		c.ClientIP(), c.Request.Header.Get("Origin"))
 
-    // Получаем параметры и токен
-    token := c.Query("token")
-    clientType := c.DefaultQuery("type", "admin")
-    chatIDStr := c.Query("chat_id")
+	// Получаем параметры и токен
+	token := c.Query("token")
+	clientType := c.DefaultQuery("type", "admin")
+	chatIDStr := c.Query("chat_id")
 
-    // Для виджета chat_id необязателен - может быть создан позже
-    if clientType == "widget" && chatIDStr == "" {
-        log.Printf("ServeWs: виджет подключается без chat_id - чат будет создан при первом сообщении")
-    }
+	// Для виджета chat_id необязателен - может быть создан позже
+	if clientType == "widget" && chatIDStr == "" {
+		log.Printf("ServeWs: виджет подключается без chat_id - чат будет создан при первом сообщении")
+	}
 
-    // Проверяем токен для админа
-    var adminID, clientID, chatID uuid.UUID
-    var err error
+	// Проверяем токен для админа
+	var adminID, clientID, chatID uuid.UUID
+	var err error
 
-    if clientType == "admin" && token != "" {
-        // Валидируем JWT токен
-        claims, err := middleware.ValidateToken(token)
-        if err != nil {
-            log.Printf("ServeWs: ошибка валидации токена: %v", err)
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
-            return
-        }
-        
-        adminID, err = uuid.Parse(claims.AdminID)
-        if err != nil {
-            log.Printf("ServeWs: ошибка парсинга adminID: %v", err)
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный adminID"})
-            return
-        }
-        
-        clientID, err = uuid.Parse(claims.ClientID)
-        if err != nil {
-            log.Printf("ServeWs: ошибка парсинга clientID: %v", err)
-            c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный clientID"})
-            return
-        }
-        
-        // Сохраняем данные в контексте для использования в обработчиках
-        c.Set("adminID", claims.AdminID)
-        c.Set("clientID", claims.ClientID)
-        c.Set("role", claims.Role)
-        
-        log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
-    } else if clientType == "widget" {
-        // Для виджета парсим chatID только если он передан
-        if chatIDStr != "" {
-            chatID, err = uuid.Parse(chatIDStr)
-            if err != nil {
-                log.Printf("ServeWs: ошибка парсинга chatID: %v", err)
-                c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат chatID"})
-                return
-            }
-        }
-        
-        // Получаем userID из заголовка для виджета, если есть
-        userIDStr := c.GetHeader("X-Widget-User-ID")
-        if userIDStr != "" {
-            adminID, _ = uuid.Parse(userIDStr)
-        }
-        
-        log.Printf("ServeWs: подключение виджета, chatID: %s, userID: %s", chatID, adminID)
-    } else {
-        log.Printf("ServeWs: неверный тип клиента или отсутствует токен")
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный тип клиента или отсутствует токен"})
-        return
-    }
+	if clientType == "admin" && token != "" {
+		// Валидируем JWT токен
+		claims, err := middleware.ValidateToken(token)
+		if err != nil {
+			log.Printf("ServeWs: ошибка валидации токена: %v", err)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
+			return
+		}
 
-    // Апгрейдим соединение
-    conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-    if err != nil {
-        log.Printf("ServeWs: ошибка апгрейда соединения: %v", err)
-        return
-    }
+		adminID, err = uuid.Parse(claims.AdminID)
+		if err != nil {
+			log.Printf("ServeWs: ошибка парсинга adminID: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный adminID"})
+			return
+		}
 
-    // Создаем нового клиента
-    client := websocketpkg.NewClient(WebSocketHub, conn, clientType, adminID, chatID)
-    client.Context = c
+		clientID, err = uuid.Parse(claims.ClientID)
+		if err != nil {
+			log.Printf("ServeWs: ошибка парсинга clientID: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный clientID"})
+			return
+		}
 
-    // Регистрируем клиента в хабе
-    WebSocketHub.Register <- client
+		// Сохраняем данные в контексте для использования в обработчиках
+		c.Set("adminID", claims.AdminID)
+		c.Set("clientID", claims.ClientID)
+		c.Set("role", claims.Role)
 
-    // Запускаем горутины обработки
-    go client.WritePump()
-    go client.ReadPump(processWebSocketMessage)
+		log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
+	} else if clientType == "widget" {
+		// Для виджета парсим chatID только если он передан
+		if chatIDStr != "" {
+			chatID, err = uuid.Parse(chatIDStr)
+			if err != nil {
+				log.Printf("ServeWs: ошибка парсинга chatID: %v", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат chatID"})
+				return
+			}
+		}
 
-    // Отправляем статус подключения
-    WebSocketHub.SendConnectionStatus(client, true)
-    
-    log.Printf("ServeWs: клиент %s успешно подключен", client.ID)
+		// Получаем userID из заголовка для виджета, если есть
+		userIDStr := c.GetHeader("X-Widget-User-ID")
+		if userIDStr != "" {
+			adminID, _ = uuid.Parse(userIDStr)
+		}
+
+		log.Printf("ServeWs: подключение виджета, chatID: %s, userID: %s", chatID, adminID)
+	} else {
+		log.Printf("ServeWs: неверный тип клиента или отсутствует токен")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный тип клиента или отсутствует токен"})
+		return
+	}
+
+	// Апгрейдим соединение
+	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("ServeWs: ошибка апгрейда соединения: %v", err)
+		return
+	}
+
+	// Создаем нового клиента
+	client := websocketpkg.NewClient(WebSocketHub, conn, clientType, adminID, chatID)
+	client.Context = c
+
+	// Регистрируем клиента в хабе
+	WebSocketHub.Register <- client
+
+	// Запускаем горутины обработки
+	go client.WritePump()
+	go client.ReadPump(processWebSocketMessage)
+
+	// Отправляем статус подключения
+	WebSocketHub.SendConnectionStatus(client, true)
+
+	log.Printf("ServeWs: клиент %s успешно подключен", client.ID)
 }
 
 // processWebSocketMessage обрабатывает входящие WebSocket сообщения
 func processWebSocketMessage(client *websocketpkg.Client, raw []byte) {
-    var msg websocketpkg.WebSocketMessage
-    if err := json.Unmarshal(raw, &msg); err != nil {
-        client.SendError("invalid_json", "Некорректный формат JSON")
-        return
-    }
+	var msg websocketpkg.WebSocketMessage
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		client.SendError("invalid_json", "Некорректный формат JSON")
+		return
+	}
 
-    // Получаем данные из контекста Gin
-    ginCtx := client.Context
+	// Получаем данные из контекста Gin
+	ginCtx := client.Context
 
-    switch msg.Type {
-    case "getChats":
-        processGetChats(client, msg.Payload, ginCtx)
-    case "getChatByID":
-        processGetChatByID(client, msg.Payload, ginCtx)
-    case "sendMessage":
-        processSendMessage(client, msg.Payload, ginCtx)
-    case "markAsRead":
-        processMarkAsRead(client, msg.Payload, ginCtx)
-    case "typing":
-        processTypingStatus(client, msg.Payload, ginCtx)
-    case "getWidgetMessages":
-        processGetWidgetMessages(client, msg.Payload, ginCtx)
-    default:
-        client.SendError("unknown_type", "Неизвестный тип сообщения: "+msg.Type)
-    }
+	switch msg.Type {
+	case "getChats":
+		processGetChats(client, msg.Payload, ginCtx)
+	case "getChatByID":
+		processGetChatByID(client, msg.Payload, ginCtx)
+	case "sendMessage":
+		processSendMessage(client, msg.Payload, ginCtx)
+	case "markAsRead":
+		processMarkAsRead(client, msg.Payload, ginCtx)
+	case "typing":
+		processTypingStatus(client, msg.Payload, ginCtx)
+	case "getWidgetMessages":
+		processGetWidgetMessages(client, msg.Payload, ginCtx)
+	default:
+		client.SendError("unknown_type", "Неизвестный тип сообщения: "+msg.Type)
+	}
 }
 
 // processSendMessage обрабатывает отправку сообщений с автоответчиком
 func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
-    var p struct {
-        ChatID  string                 `json:"chatID"`
-        Content string                 `json:"content"`
-        Type    string                 `json:"type"`
-        Metadata map[string]interface{} `json:"metadata,omitempty"`
-    }
-    if err := json.Unmarshal(payload, &p); err != nil {
-        client.SendError("invalid_payload", "Некорректный формат данных для sendMessage")
-        return
-    }
+	var p struct {
+		ChatID   string                 `json:"chatID"`
+		Content  string                 `json:"content"`
+		Type     string                 `json:"type"`
+		Metadata map[string]interface{} `json:"metadata,omitempty"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для sendMessage")
+		return
+	}
 
-    // Проверяем обязательные поля
-    if p.ChatID == "" || p.Content == "" {
-        client.SendError("missing_fields", "Необходимы поля chatID и content")
-        return
-    }
-    
-    // Устанавливаем тип сообщения по умолчанию
-    if p.Type == "" {
-        p.Type = "text"
-    }
+	// Проверяем обязательные поля
+	if p.ChatID == "" || p.Content == "" {
+		client.SendError("missing_fields", "Необходимы поля chatID и content")
+		return
+	}
 
-    // Парсим chatID
-    chatID, err := uuid.Parse(p.ChatID)
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный формат chatID")
-        return
-    }
+	// Устанавливаем тип сообщения по умолчанию
+	if p.Type == "" {
+		p.Type = "text"
+	}
 
-    // Определяем отправителя в зависимости от типа клиента
-    var senderID uuid.UUID
-    var sender string
-    
-    if client.ClientType == "admin" {
-        // Для админа берем ID из контекста аутентификации
-        adminIDStr, exists := ginCtx.Get("adminID")
-        if !exists {
-            client.SendError("auth_error", "Не удалось получить ID администратора")
-            return
-        }
-        adminID, err := uuid.Parse(adminIDStr.(string))
-        if err != nil {
-            client.SendError("invalid_uuid", "Некорректный adminID")
-            return
-        }
-        senderID = adminID
-        sender = "admin"
-    } else {
-        // Для виджета используем ID пользователя
-        senderID = client.ID
-        sender = "user"
-    }
+	// Парсим chatID
+	chatID, err := uuid.Parse(p.ChatID)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
 
-    messageTime := time.Now()
-    
-    // Создаем детерминированный ID для сообщения (дедупликация)
-    messageID := generateMessageID(chatID, senderID, p.Content, messageTime)
+	// Определяем отправителя в зависимости от типа клиента
+	var senderID uuid.UUID
+	var sender string
 
-    // Добавляем сообщение в базу с детерминированным ID
-    log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s) с ID %s: %s", 
-        chatID, sender, senderID, messageID, p.Content)
-        
-    message, err := database.AddMessageWithID(
-        messageID,
-        chatID, 
-        p.Content, 
-        sender, 
-        senderID, 
-        messageTime,
-        p.Type, 
-        p.Metadata,
-    )
-    if err != nil {
-        // Проверяем, не является ли это ошибкой дублирования
-        if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
-            log.Printf("processSendMessage: сообщение уже существует в базе: %s", messageID)
-            // Отправляем подтверждение о том, что сообщение уже обработано
-            response := map[string]interface{}{
-                "type": "messageDuplicate",
-                "payload": map[string]interface{}{
-                    "messageID": messageID.String(),
-                    "chatID":    p.ChatID,
-                    "status":    "already_exists",
-                },
-            }
-            client.SendJSON(response)
-            return
-        }
-        
-        log.Printf("processSendMessage: ошибка добавления сообщения: %v", err)
-        client.SendError("db_error", "Ошибка сохранения сообщения")
-        return
-    }
+	if client.ClientType == "admin" {
+		// Для админа берем ID из контекста аутентификации
+		adminIDStr, exists := ginCtx.Get("adminID")
+		if !exists {
+			client.SendError("auth_error", "Не удалось получить ID администратора")
+			return
+		}
+		adminID, err := uuid.Parse(adminIDStr.(string))
+		if err != nil {
+			client.SendError("invalid_uuid", "Некорректный adminID")
+			return
+		}
+		senderID = adminID
+		sender = "admin"
+	} else {
+		// Для виджета используем ID пользователя
+		senderID = client.ID
+		sender = "user"
+	}
 
-    // Быстро обновляем время чата
-    if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
-        log.Printf("processSendMessage: ошибка обновления времени: %v", err)
-    }
-    
-    // Если это сообщение от админа, очищаем состояние эскалации
-    if sender == "admin" && AutoResponder != nil {
-        AutoResponder.ClearEscalation(chatID.String())
-        log.Printf("processSendMessage: очищена эскалация для чата %s (ответ админа)", chatID)
-    }
-    
-    // ОБРАБОТКА АВТООТВЕТЧИКА
-    if sender == "user" && AutoResponder != nil {
-        go func() {
-            // Асинхронная обработка автоответчика
-            lightChat, err := queries.GetChatLightweight(database.DB, chatID)
-            if err != nil {
-                log.Printf("processSendMessage: ошибка загрузки чата для автоответчика: %v", err)
-                return
-            }
-            
-            botMsg, err := AutoResponder.ProcessMessage(ginCtx.Request.Context(), lightChat, message)
-            if err != nil {
-                log.Printf("processSendMessage: ошибка автоответчика: %v", err)
-                return
-            }
-            
-            if botMsg != nil {
-                // Сохраняем автоответ
-                saved, err := database.AddMessage(
-                    chatID,
-                    botMsg.Content,
-                    botMsg.Sender,
-                    botMsg.SenderID,
-                    botMsg.Type,
-                    botMsg.Metadata,
-                )
-                if err != nil {
-                    log.Printf("processSendMessage: ошибка сохранения автоответа: %v", err)
-                } else {
-                    botMsg = saved
-                    
-                    // Обновляем время чата
-                    if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
-                        log.Printf("processSendMessage: ошибка обновления времени: %v", err)
-                    }
-                    
-                    // Отправляем ОДНО комплексное сообщение
-                    notification := createChatNotification(chatID, message, botMsg)
-                    WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
-                }
-            }
-        }()
-    } else {
-        // Отправляем только сообщение пользователя
-        notification := createChatNotification(chatID, message, nil)
-        WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
-    }
-    
-    log.Printf("processSendMessage: сообщение успешно отправлено (ID=%s)", message.ID)
-    
-    // Отправляем подтверждение отправителю
-    response := map[string]interface{}{
-        "type": "messageSent",
-        "payload": map[string]interface{}{
-            "messageID": message.ID.String(),
-            "timestamp": message.Timestamp,
-            "status":    "delivered",
-        },
-    }
-    
-    if err := client.SendJSON(response); err != nil {
-        log.Printf("processSendMessage: ошибка отправки подтверждения: %v", err)
-    }
+	messageTime := time.Now()
+
+	// Создаем детерминированный ID для сообщения (дедупликация)
+	messageID := generateMessageID(chatID, senderID, p.Content, messageTime)
+
+	// Добавляем сообщение в базу с детерминированным ID
+	log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s) с ID %s: %s",
+		chatID, sender, senderID, messageID, p.Content)
+
+	message, err := database.AddMessageWithID(
+		messageID,
+		chatID,
+		p.Content,
+		sender,
+		senderID,
+		messageTime,
+		p.Type,
+		p.Metadata,
+	)
+	if err != nil {
+		// Проверяем, не является ли это ошибкой дублирования
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			log.Printf("processSendMessage: сообщение уже существует в базе: %s", messageID)
+			// Отправляем подтверждение о том, что сообщение уже обработано
+			response := map[string]interface{}{
+				"type": "messageDuplicate",
+				"payload": map[string]interface{}{
+					"messageID": messageID.String(),
+					"chatID":    p.ChatID,
+					"status":    "already_exists",
+				},
+			}
+			client.SendJSON(response)
+			return
+		}
+
+		log.Printf("processSendMessage: ошибка добавления сообщения: %v", err)
+		client.SendError("db_error", "Ошибка сохранения сообщения")
+		return
+	}
+
+	// Быстро обновляем время чата
+	if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
+		log.Printf("processSendMessage: ошибка обновления времени: %v", err)
+	}
+
+	// Если это сообщение от админа, очищаем состояние эскалации
+	if sender == "admin" && AutoResponder != nil {
+		AutoResponder.ClearEscalation(chatID.String())
+		log.Printf("processSendMessage: очищена эскалация для чата %s (ответ админа)", chatID)
+	}
+
+	// ОБРАБОТКА АВТООТВЕТЧИКА
+	if sender == "user" && AutoResponder != nil {
+		go func() {
+			// Асинхронная обработка автоответчика
+			lightChat, err := queries.GetChatLightweight(database.DB, chatID)
+			if err != nil {
+				log.Printf("processSendMessage: ошибка загрузки чата для автоответчика: %v", err)
+				return
+			}
+
+			botMsg, err := AutoResponder.ProcessMessage(ginCtx.Request.Context(), lightChat, message)
+			if err != nil {
+				log.Printf("processSendMessage: ошибка автоответчика: %v", err)
+				return
+			}
+
+			if botMsg != nil {
+				// Сохраняем автоответ
+				saved, err := database.AddMessage(
+					chatID,
+					botMsg.Content,
+					botMsg.Sender,
+					botMsg.SenderID,
+					botMsg.Type,
+					botMsg.Metadata,
+				)
+				if err != nil {
+					log.Printf("processSendMessage: ошибка сохранения автоответа: %v", err)
+				} else {
+					botMsg = saved
+
+					// Обновляем время чата
+					if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
+						log.Printf("processSendMessage: ошибка обновления времени: %v", err)
+					}
+
+					// Отправляем ОДНО комплексное сообщение
+					notification := createChatNotification(chatID, message, botMsg)
+					WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
+				}
+			}
+		}()
+	} else {
+		// Отправляем только сообщение пользователя
+		notification := createChatNotification(chatID, message, nil)
+		WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
+	}
+
+	log.Printf("processSendMessage: сообщение успешно отправлено (ID=%s)", message.ID)
+
+	// Отправляем подтверждение отправителю
+	response := map[string]interface{}{
+		"type": "messageSent",
+		"payload": map[string]interface{}{
+			"messageID": message.ID.String(),
+			"timestamp": message.Timestamp,
+			"status":    "delivered",
+		},
+	}
+
+	if err := client.SendJSON(response); err != nil {
+		log.Printf("processSendMessage: ошибка отправки подтверждения: %v", err)
+	}
 }
 
 // Остальные обработчики остаются без изменений
 func processGetChats(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
-    var p struct {
-        Page     int `json:"page"`
-        PageSize int `json:"pageSize"`
-    }
-    if err := json.Unmarshal(payload, &p); err != nil {
-        client.SendError("invalid_payload", "Некорректный формат данных для getChats")
-        return
-    }
+	var p struct {
+		Page     int `json:"page"`
+		PageSize int `json:"pageSize"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для getChats")
+		return
+	}
 
-    // Устанавливаем дефолтные значения
-    if p.Page < 1 {
-        p.Page = 1
-    }
-    if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
-        p.PageSize = database.DefaultPageSize
-    }
+	// Устанавливаем дефолтные значения
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
+		p.PageSize = database.DefaultPageSize
+	}
 
-    // Получаем ID из контекста
-    adminIDStr, _ := ginCtx.Get("adminID")
-    clientIDStr, _ := ginCtx.Get("clientID")
-    
-    adminID, err := uuid.Parse(adminIDStr.(string))
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный adminID")
-        return
-    }
-    
-    clientID, err := uuid.Parse(clientIDStr.(string))
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный clientID")
-        return
-    }
+	// Получаем ID из контекста
+	adminIDStr, _ := ginCtx.Get("adminID")
+	clientIDStr, _ := ginCtx.Get("clientID")
 
-    // Получаем чаты
-    log.Printf("processGetChats: запрос чатов для admin=%s, client=%s, page=%d, size=%d", 
-        adminID, clientID, p.Page, p.PageSize)
-        
-    chats, total, err := database.GetChats(clientID, adminID, p.Page, p.PageSize)
-    if err != nil {
-        log.Printf("processGetChats: ошибка получения чатов: %v", err)
-        client.SendError("db_error", "Ошибка получения чатов: "+err.Error())
-        return
-    }
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный adminID")
+		return
+	}
 
-    // Рассчитываем общее количество страниц
-    totalPages := (total + p.PageSize - 1) / p.PageSize
-    if totalPages < 1 {
-        totalPages = 1
-    }
+	clientID, err := uuid.Parse(clientIDStr.(string))
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный clientID")
+		return
+	}
 
-    // Формируем ответ
-    response := map[string]interface{}{
-        "type": "chatsList",
-        "payload": models.ChatPaginationResponse{
-            Chats:      chats,
-            Page:       p.Page,
-            PageSize:   p.PageSize,
-            TotalItems: total,
-            TotalPages: totalPages,
-        },
-    }
-    
-    log.Printf("processGetChats: найдено %d чатов из %d всего", len(chats), total)
-    
-    // Отправляем ответ
-    if err := client.SendJSON(response); err != nil {
-        log.Printf("processGetChats: ошибка отправки ответа: %v", err)
-    }
+	// Получаем чаты
+	log.Printf("processGetChats: запрос чатов для admin=%s, client=%s, page=%d, size=%d",
+		adminID, clientID, p.Page, p.PageSize)
+
+	chats, total, err := database.GetChats(clientID, adminID, p.Page, p.PageSize)
+	if err != nil {
+		log.Printf("processGetChats: ошибка получения чатов: %v", err)
+		client.SendError("db_error", "Ошибка получения чатов: "+err.Error())
+		return
+	}
+
+	// Рассчитываем общее количество страниц
+	totalPages := (total + p.PageSize - 1) / p.PageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Формируем ответ
+	response := map[string]interface{}{
+		"type": "chatsList",
+		"payload": models.ChatPaginationResponse{
+			Chats:      chats,
+			Page:       p.Page,
+			PageSize:   p.PageSize,
+			TotalItems: total,
+			TotalPages: totalPages,
+		},
+	}
+
+	log.Printf("processGetChats: найдено %d чатов из %d всего", len(chats), total)
+
+	// Отправляем ответ
+	if err := client.SendJSON(response); err != nil {
+		log.Printf("processGetChats: ошибка отправки ответа: %v", err)
+	}
 }
 
 func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
-    var p struct {
-        ChatID   string `json:"chatID"`
-        Page     int    `json:"page"`
-        PageSize int    `json:"pageSize"`
-    }
-    if err := json.Unmarshal(payload, &p); err != nil {
-        client.SendError("invalid_payload", "Некорректный формат данных для getChatByID")
-        return
-    }
+	var p struct {
+		ChatID   string `json:"chatID"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"pageSize"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для getChatByID")
+		return
+	}
 
-    // Устанавливаем дефолтные значения
-    if p.Page < 1 {
-        p.Page = 1
-    }
-    if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
-        p.PageSize = database.DefaultPageSize
-    }
+	// Устанавливаем дефолтные значения
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
+		p.PageSize = database.DefaultPageSize
+	}
 
-    // Парсим ID чата
-    chatID, err := uuid.Parse(p.ChatID)
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный формат chatID")
-        return
-    }
+	// Парсим ID чата
+	chatID, err := uuid.Parse(p.ChatID)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
 
-    // Получаем чат и его сообщения
-    log.Printf("processGetChatByID: запрос чата ID=%s, page=%d, size=%d", 
-        chatID, p.Page, p.PageSize)
-        
-    chat, total, err := database.GetChatByID(chatID, p.Page, p.PageSize)
-    if err != nil {
-        log.Printf("processGetChatByID: ошибка получения чата: %v", err)
-        client.SendError("db_error", "Ошибка получения чата: "+err.Error())
-        return
-    }
+	// Получаем чат и его сообщения
+	log.Printf("processGetChatByID: запрос чата ID=%s, page=%d, size=%d",
+		chatID, p.Page, p.PageSize)
 
-    // Отмечаем сообщения как прочитанные
-    if client.ClientType == "admin" {
-        if err := database.MarkMessagesAsRead(chatID); err != nil {
-            log.Printf("processGetChatByID: ошибка маркировки сообщений: %v", err)
-        }
-    }
+	chat, total, err := database.GetChatByID(chatID, p.Page, p.PageSize)
+	if err != nil {
+		log.Printf("processGetChatByID: ошибка получения чата: %v", err)
+		client.SendError("db_error", "Ошибка получения чата: "+err.Error())
+		return
+	}
 
-    // Рассчитываем общее количество страниц
-    totalPages := (total + p.PageSize - 1) / p.PageSize
-    if totalPages < 1 {
-        totalPages = 1
-    }
+	// Отмечаем сообщения как прочитанные
+	if client.ClientType == "admin" {
+		if err := database.MarkMessagesAsRead(chatID); err != nil {
+			log.Printf("processGetChatByID: ошибка маркировки сообщений: %v", err)
+		}
+	}
 
-    // Формируем ответ
-    response := map[string]interface{}{
-        "type": "chatDetails",
-        "payload": map[string]interface{}{
-            "chat":       chat,
-            "page":       p.Page,
-            "pageSize":   p.PageSize,
-            "totalItems": total,
-            "totalPages": totalPages,
-        },
-    }
-    
-    log.Printf("processGetChatByID: найден чат с %d сообщениями", len(chat.Messages))
-    
-    // Отправляем ответ
-    if err := client.SendJSON(response); err != nil {
-        log.Printf("processGetChatByID: ошибка отправки ответа: %v", err)
-    }
+	// Рассчитываем общее количество страниц
+	totalPages := (total + p.PageSize - 1) / p.PageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Формируем ответ
+	response := map[string]interface{}{
+		"type": "chatDetails",
+		"payload": map[string]interface{}{
+			"chat":       chat,
+			"page":       p.Page,
+			"pageSize":   p.PageSize,
+			"totalItems": total,
+			"totalPages": totalPages,
+		},
+	}
+
+	log.Printf("processGetChatByID: найден чат с %d сообщениями", len(chat.Messages))
+
+	// Отправляем ответ
+	if err := client.SendJSON(response); err != nil {
+		log.Printf("processGetChatByID: ошибка отправки ответа: %v", err)
+	}
 }
 
 func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
-    var p struct {
-        ChatID string `json:"chatID"`
-    }
-    if err := json.Unmarshal(payload, &p); err != nil {
-        client.SendError("invalid_payload", "Некорректный формат данных для markAsRead")
-        return
-    }
+	var p struct {
+		ChatID string `json:"chatID"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для markAsRead")
+		return
+	}
 
-    chatID, err := uuid.Parse(p.ChatID)
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный формат chatID")
-        return
-    }
+	chatID, err := uuid.Parse(p.ChatID)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
 
-    log.Printf("processMarkAsRead: отметка сообщений как прочитанных в чате %s", chatID)
-    
-    if err := database.MarkMessagesAsRead(chatID); err != nil {
-        log.Printf("processMarkAsRead: ошибка: %v", err)
-        client.SendError("db_error", "Ошибка при обновлении статуса сообщений: "+err.Error())
-        return
-    }
+	log.Printf("processMarkAsRead: отметка сообщений как прочитанных в чате %s", chatID)
 
-    // Отправляем обновление всем клиентам чата о прочтении сообщений
-    statusMsg, _ := websocketpkg.NewMessage("messagesRead", map[string]interface{}{
-        "chatID": chatID.String(),
-        "readBy": client.ID.String(),
-    })
-    
-    // Отправляем статус другим клиентам этого чата
-    WebSocketHub.SendToChat(chatID.String(), statusMsg)
-    
-    log.Printf("processMarkAsRead: успешно обновлен статус сообщений в чате %s", chatID)
-    
-    // Отправляем подтверждение отправителю запроса
-    response := map[string]interface{}{
-        "type": "markAsReadConfirmed",
-        "payload": map[string]interface{}{
-            "chatID": chatID.String(),
-            "status": "success",
-        },
-    }
-    
-    if err := client.SendJSON(response); err != nil {
-        log.Printf("processMarkAsRead: ошибка отправки подтверждения: %v", err)
-    }
+	if err := database.MarkMessagesAsRead(chatID); err != nil {
+		log.Printf("processMarkAsRead: ошибка: %v", err)
+		client.SendError("db_error", "Ошибка при обновлении статуса сообщений: "+err.Error())
+		return
+	}
+
+	// Отправляем обновление всем клиентам чата о прочтении сообщений
+	statusMsg, _ := websocketpkg.NewMessage("messagesRead", map[string]interface{}{
+		"chatID": chatID.String(),
+		"readBy": client.ID.String(),
+	})
+
+	// Отправляем статус другим клиентам этого чата
+	WebSocketHub.SendToChat(chatID.String(), statusMsg)
+
+	log.Printf("processMarkAsRead: успешно обновлен статус сообщений в чате %s", chatID)
+
+	// Отправляем подтверждение отправителю запроса
+	response := map[string]interface{}{
+		"type": "markAsReadConfirmed",
+		"payload": map[string]interface{}{
+			"chatID": chatID.String(),
+			"status": "success",
+		},
+	}
+
+	if err := client.SendJSON(response); err != nil {
+		log.Printf("processMarkAsRead: ошибка отправки подтверждения: %v", err)
+	}
 }
 
 func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
-    var p struct {
-        ChatID   string `json:"chatID"`
-        IsTyping bool   `json:"isTyping"`
-    }
-    if err := json.Unmarshal(payload, &p); err != nil {
-        client.SendError("invalid_payload", "Некорректный формат данных для typing")
-        return
-    }
+	var p struct {
+		ChatID   string `json:"chatID"`
+		IsTyping bool   `json:"isTyping"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для typing")
+		return
+	}
 
-    chatID, err := uuid.Parse(p.ChatID)
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный формат chatID")
-        return
-    }
+	chatID, err := uuid.Parse(p.ChatID)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
 
-    // Определяем тип отправителя
-    sender := "admin"
-    if client.ClientType == "widget" {
-        sender = "user"
-    }
+	// Определяем тип отправителя
+	sender := "admin"
+	if client.ClientType == "widget" {
+		sender = "user"
+	}
 
-    // Создаем и отправляем сообщение о наборе текста
-    typingMsg, err := websocketpkg.NewTypingMessage(chatID, p.IsTyping, sender)
-    if err != nil {
-        log.Printf("processTypingStatus: ошибка формирования сообщения: %v", err)
-        return
-    }
-    
-    // Отправляем только клиентам этого чата
-    WebSocketHub.SendToChat(chatID.String(), typingMsg)
-    
-    log.Printf("processTypingStatus: отправлен статус typing=%v для чата %s от %s", 
-        p.IsTyping, chatID, sender)
+	// Создаем и отправляем сообщение о наборе текста
+	typingMsg, err := websocketpkg.NewTypingMessage(chatID, p.IsTyping, sender)
+	if err != nil {
+		log.Printf("processTypingStatus: ошибка формирования сообщения: %v", err)
+		return
+	}
+
+	// Отправляем только клиентам этого чата
+	WebSocketHub.SendToChat(chatID.String(), typingMsg)
+
+	log.Printf("processTypingStatus: отправлен статус typing=%v для чата %s от %s",
+		p.IsTyping, chatID, sender)
 }
 
 // processGetWidgetMessages - новый метод для получения сообщений виджета через WebSocket
 func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
-    var p struct {
-        ChatID   string `json:"chatID"`
-        Page     int    `json:"page"`
-        PageSize int    `json:"pageSize"`
-    }
-    if err := json.Unmarshal(payload, &p); err != nil {
-        client.SendError("invalid_payload", "Некорректный формат данных для getWidgetMessages")
-        return
-    }
+	var p struct {
+		ChatID   string `json:"chatID"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"pageSize"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для getWidgetMessages")
+		return
+	}
 
-    // Устанавливаем дефолтные значения
-    if p.Page < 1 {
-        p.Page = 1
-    }
-    if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
-        p.PageSize = database.DefaultPageSize
-    }
+	// Устанавливаем дефолтные значения
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
+		p.PageSize = database.DefaultPageSize
+	}
 
-    // Парсим ID чата
-    chatID, err := uuid.Parse(p.ChatID)
-    if err != nil {
-        client.SendError("invalid_uuid", "Некорректный формат chatID")
-        return
-    }
+	// Парсим ID чата
+	chatID, err := uuid.Parse(p.ChatID)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
 
-    // Проверяем, принадлежит ли чат этому пользователю (только если у клиента есть ChatID)
-    if client.ClientType == "widget" && client.ChatID != uuid.Nil && client.ChatID != chatID {
-        client.SendError("access_denied", "Доступ к чату запрещен")
-        return
-    }
+	// Проверяем, принадлежит ли чат этому пользователю (только если у клиента есть ChatID)
+	if client.ClientType == "widget" && client.ChatID != uuid.Nil && client.ChatID != chatID {
+		client.SendError("access_denied", "Доступ к чату запрещен")
+		return
+	}
 
-    // Получаем сообщения
-    chat, total, err := database.GetChatByID(chatID, p.Page, p.PageSize)
-    if err != nil {
-        log.Printf("processGetWidgetMessages: ошибка получения сообщений: %v", err)
-        client.SendError("db_error", "Ошибка получения сообщений: "+err.Error())
-        return
-    }
+	// Получаем сообщения
+	chat, total, err := database.GetChatByID(chatID, p.Page, p.PageSize)
+	if err != nil {
+		log.Printf("processGetWidgetMessages: ошибка получения сообщений: %v", err)
+		client.SendError("db_error", "Ошибка получения сообщений: "+err.Error())
+		return
+	}
 
-    // Рассчитываем общее количество страниц
-    totalPages := (total + p.PageSize - 1) / p.PageSize
-    if totalPages < 1 {
-        totalPages = 1
-    }
+	// Рассчитываем общее количество страниц
+	totalPages := (total + p.PageSize - 1) / p.PageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
 
-    // Преобразуем сообщения в формат для виджета
-    simplifiedMessages := make([]map[string]interface{}, 0, len(chat.Messages))
-    for _, msg := range chat.Messages {
-        simplifiedMessages = append(simplifiedMessages, map[string]interface{}{
-            "id":        msg.ID.String(),
-            "content":   msg.Content,
-            "sender":    msg.Sender,
-            "timestamp": msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
-            "type":      msg.Type,
-        })
-    }
+	// Преобразуем сообщения в формат для виджета
+	simplifiedMessages := make([]map[string]interface{}, 0, len(chat.Messages))
+	for _, msg := range chat.Messages {
+		simplifiedMessages = append(simplifiedMessages, map[string]interface{}{
+			"id":        msg.ID.String(),
+			"content":   msg.Content,
+			"sender":    msg.Sender,
+			"timestamp": msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+			"type":      msg.Type,
+		})
+	}
 
-    // Формируем ответ
-    response := map[string]interface{}{
-        "type": "widgetMessages",
-        "payload": map[string]interface{}{
-            "messages":    simplifiedMessages,
-            "page":        p.Page,
-            "pageSize":    p.PageSize,
-            "totalItems":  total,
-            "totalPages":  totalPages,
-            "chatId":      chat.ID.String(),
-            "userId":      chat.User.ID.String(),
-        },
-    }
-    
-    log.Printf("processGetWidgetMessages: найдено %d сообщений", len(simplifiedMessages))
-    
-    // Отправляем ответ
-    if err := client.SendJSON(response); err != nil {
-        log.Printf("processGetWidgetMessages: ошибка отправки ответа: %v", err)
-    }
+	// Формируем ответ
+	response := map[string]interface{}{
+		"type": "widgetMessages",
+		"payload": map[string]interface{}{
+			"messages":   simplifiedMessages,
+			"page":       p.Page,
+			"pageSize":   p.PageSize,
+			"totalItems": total,
+			"totalPages": totalPages,
+			"chatId":     chat.ID.String(),
+			"userId":     chat.User.ID.String(),
+		},
+	}
+
+	log.Printf("processGetWidgetMessages: найдено %d сообщений", len(simplifiedMessages))
+
+	// Отправляем ответ
+	if err := client.SendJSON(response); err != nil {
+		log.Printf("processGetWidgetMessages: ошибка отправки ответа: %v", err)
+	}
 }

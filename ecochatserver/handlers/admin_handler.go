@@ -18,7 +18,7 @@ func GetChats(c *gin.Context) {
 	// Получаем параметры пагинации
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
-	
+
 	if page < 1 {
 		page = 1
 	}
@@ -34,7 +34,7 @@ func GetChats(c *gin.Context) {
 	chats, total, err := database.GetChats(clientID, adminID, page-1, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка получения чатов",
+			"error":   "Ошибка получения чатов",
 			"details": err.Error(),
 		})
 		return
@@ -43,10 +43,10 @@ func GetChats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"chats": chats,
 		"pagination": gin.H{
-			"page":     page,
-			"size":     size,
-			"total":    total,
-			"pages":    (total + size - 1) / size,
+			"page":  page,
+			"size":  size,
+			"total": total,
+			"pages": (total + size - 1) / size,
 		},
 	})
 }
@@ -65,7 +65,7 @@ func GetChatByID(c *gin.Context) {
 	// Получаем параметры пагинации для сообщений
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
-	
+
 	if page < 1 {
 		page = 1
 	}
@@ -76,7 +76,7 @@ func GetChatByID(c *gin.Context) {
 	chat, total, err := database.GetChatByID(chatID, page-1, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка получения чата",
+			"error":   "Ошибка получения чата",
 			"details": err.Error(),
 		})
 		return
@@ -85,10 +85,10 @@ func GetChatByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"chat": chat,
 		"pagination": gin.H{
-			"page":     page,
-			"size":     size,
-			"total":    total,
-			"pages":    (total + size - 1) / size,
+			"page":  page,
+			"size":  size,
+			"total": total,
+			"pages": (total + size - 1) / size,
 		},
 	})
 }
@@ -107,7 +107,7 @@ func SendMessageToChat(c *gin.Context) {
 	var request struct {
 		Content string `json:"content"`
 	}
-	
+
 	if err := c.ShouldBindJSON(&request); err != nil {
 		log.Printf("SendMessageToChat: ошибка парсинга JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
