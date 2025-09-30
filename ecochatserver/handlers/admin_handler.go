@@ -144,14 +144,39 @@ func SendMessageToChat(c *gin.Context) {
 		return
 	}
 
-	// Добавляем сообщение в базу данных
+	// Переводим сообщение админа на язык клиента
+	var messageContent = request.Content
+	var messageMetadata map[string]interface{}
+
+	if Translator != nil {
+		log.Printf("SendMessageToChat: попытка перевода сообщения админа")
+		result, err := Translator.TranslateAdminMessage(c.Request.Context(), request.Content, chatID, adminID)
+		if err != nil {
+			log.Printf("SendMessageToChat: ошибка перевода сообщения: %v", err)
+			// Продолжаем с оригинальным текстом
+		} else if result != nil {
+			// Используем переведенный текст для клиента
+			messageContent = result.Content
+			messageMetadata = result.Metadata
+			if result.WasTranslated {
+				log.Printf("SendMessageToChat: сообщение переведено с %s на %s",
+					result.Metadata["sourceLanguage"], result.Metadata["targetLanguage"])
+			} else {
+				log.Printf("SendMessageToChat: перевод не требуется")
+			}
+		}
+	} else {
+		log.Printf("SendMessageToChat: сервис перевода недоступен")
+	}
+
+	// Добавляем сообщение в базу данных (с переведенным текстом)
 	message, err := database.AddMessage(
 		chatID,
-		request.Content,
+		messageContent,
 		"admin",
 		adminID,
 		"text",
-		nil, // metadata
+		messageMetadata,
 	)
 	if err != nil {
 		log.Printf("SendMessageToChat: ошибка добавления сообщения: %v", err)
@@ -167,18 +192,25 @@ func SendMessageToChat(c *gin.Context) {
 	}
 
 	// Отправляем WebSocket уведомление в формате совместимом с виджетом и админкой
+	messagePayload := map[string]interface{}{
+		"id":        message.ID.String(),
+		"chatId":    chatID.String(),
+		"content":   message.Content,
+		"sender":    message.Sender,
+		"senderId":  message.SenderID.String(),
+		"timestamp": message.Timestamp.Format(time.RFC3339),
+		"read":      false,
+		"type":      message.Type,
+	}
+
+	// Добавляем metadata, если есть
+	if message.Metadata != nil {
+		messagePayload["metadata"] = message.Metadata
+	}
+
 	payload := map[string]interface{}{
-		"chatId": chatID.String(), // для админки
-		"message": map[string]interface{}{
-			"id":        message.ID.String(),
-			"chatId":    chatID.String(),
-			"content":   message.Content,
-			"sender":    message.Sender,
-			"senderId":  message.SenderID.String(),
-			"timestamp": message.Timestamp.Format(time.RFC3339),
-			"read":      false,
-			"type":      message.Type,
-		},
+		"chatId":  chatID.String(), // для админки
+		"message": messagePayload,
 		"chat": map[string]interface{}{ // для виджета
 			"id": chatID.String(),
 		},
@@ -231,5 +263,96 @@ func ToggleAutoResponder(c *gin.Context) {
 		"success": true,
 		"enabled": request.Enabled,
 		"message": "Автоответчик успешно обновлен",
+	})
+}
+
+// GetAdminSettings возвращает настройки админа
+func GetAdminSettings(c *gin.Context) {
+	// Получаем adminID из JWT токена
+	adminIDStr, exists := c.Get("adminID")
+	if !exists {
+		log.Printf("GetAdminSettings: adminID отсутствует в контексте")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+		return
+	}
+
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		log.Printf("GetAdminSettings: неверный UUID админа: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID админа"})
+		return
+	}
+
+	log.Printf("GetAdminSettings: получение настроек для админа %s", adminID)
+
+	settings, err := queries.GetAdminSettings(database.DB, adminID)
+	if err != nil {
+		log.Printf("GetAdminSettings: ошибка получения настроек: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения настроек"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":           true,
+		"preferredLanguage": settings.PreferredLanguage,
+	})
+}
+
+// UpdateAdminSettings обновляет настройки админа
+func UpdateAdminSettings(c *gin.Context) {
+	// Получаем adminID из JWT токена
+	adminIDStr, exists := c.Get("adminID")
+	if !exists {
+		log.Printf("UpdateAdminSettings: adminID отсутствует в контексте")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+		return
+	}
+
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		log.Printf("UpdateAdminSettings: неверный UUID админа: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID админа"})
+		return
+	}
+
+	// Парсим тело запроса
+	var request struct {
+		PreferredLanguage string `json:"preferredLanguage" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		log.Printf("UpdateAdminSettings: ошибка парсинга JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+		return
+	}
+
+	// Валидируем код языка (опционально, можно расширить список)
+	validLanguages := map[string]bool{
+		"ru": true, "en": true, "pl": true, "de": true, "fr": true,
+		"es": true, "it": true, "uk": true, "be": true, "cs": true,
+		"sk": true, "lt": true, "lv": true, "et": true,
+	}
+
+	if !validLanguages[request.PreferredLanguage] {
+		log.Printf("UpdateAdminSettings: недопустимый код языка: %s", request.PreferredLanguage)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Недопустимый код языка"})
+		return
+	}
+
+	log.Printf("UpdateAdminSettings: обновление языка для админа %s на %s", adminID, request.PreferredLanguage)
+
+	// Обновляем настройки
+	if err := queries.UpsertAdminSettings(database.DB, adminID, request.PreferredLanguage); err != nil {
+		log.Printf("UpdateAdminSettings: ошибка обновления: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления настроек"})
+		return
+	}
+
+	log.Printf("UpdateAdminSettings: настройки успешно обновлены для админа %s", adminID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":           true,
+		"preferredLanguage": request.PreferredLanguage,
+		"message":           "Настройки успешно обновлены",
 	})
 }

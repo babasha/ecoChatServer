@@ -21,6 +21,9 @@ import (
 // AutoResponder — единственный экземпляр автоответчика
 var AutoResponder *llm.AutoResponder
 
+// Translator — сервис для перевода сообщений
+var Translator *TranslationService
+
 // InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
 	raw := os.Getenv("ENABLE_AUTO_RESPONDER")
@@ -43,6 +46,10 @@ func InitAutoResponder() {
 	client := llm.NewLLMClient()
 	cfg := llm.GetDefaultConfig()
 	AutoResponder = llm.NewAutoResponder(client, cfg)
+
+	// Инициализируем сервис перевода
+	Translator = NewTranslationService(client)
+	log.Println("Сервис перевода успешно инициализирован")
 
 	// Устанавливаем callback для отправки сообщений извинения
 	AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {
@@ -117,6 +124,31 @@ func TelegramWebhook(c *gin.Context) {
 	log.Printf("TelegramWebhook: получен чат: ID=%s, ClientID=%s, UserID=%s",
 		chat.ID, chat.ClientID, chat.User.ID)
 
+	// Переводим сообщение пользователя, если включен переводчик
+	messageContent := in.Content
+	messageMetadata := in.Metadata
+	if messageMetadata == nil {
+		messageMetadata = make(map[string]interface{})
+	}
+
+	if Translator != nil {
+		log.Printf("TelegramWebhook: перевод сообщения пользователя")
+		result, err := Translator.TranslateUserMessage(c.Request.Context(), in.Content, chat.ID)
+		if err != nil {
+			log.Printf("TelegramWebhook: ошибка перевода сообщения: %v", err)
+			// Продолжаем с оригинальным текстом
+		} else if result != nil {
+			// Используем переведенный текст (или оригинал, если перевод не нужен)
+			messageContent = result.Content
+			// Добавляем метаданные перевода
+			for k, v := range result.Metadata {
+				messageMetadata[k] = v
+			}
+			log.Printf("TelegramWebhook: перевод завершен, wasTranslated=%v, detectedLang=%s",
+				result.WasTranslated, result.DetectedLanguage)
+		}
+	}
+
 	// Создаем детерминированный UUID для отправителя
 	var userUUID uuid.UUID
 	if parsedUUID, err := uuid.Parse(in.UserID); err == nil {
@@ -128,6 +160,7 @@ func TelegramWebhook(c *gin.Context) {
 	}
 
 	// Создаем детерминированный ID для сообщения (дедупликация)
+	// Используем оригинальный content для ID, чтобы избежать дублей при переводе
 	messageID := generateMessageID(chat.ID, userUUID, in.Content, messageTime)
 
 	// Добавляем сообщение пользователя с детерминированным ID
@@ -142,12 +175,12 @@ func TelegramWebhook(c *gin.Context) {
 	userMsg, err := database.AddMessageWithID(
 		messageID,
 		chat.ID,
-		in.Content,
+		messageContent,    // Используем переведенный контент
 		"user",
 		userUUID,
 		messageTime,
 		msgType,
-		in.Metadata,
+		messageMetadata,   // Используем обогащенные метаданные
 	)
 	if err != nil {
 		log.Printf("TelegramWebhook: AddMessage error: %v", err)
@@ -260,6 +293,7 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
 			"timestamp": userMsg.Timestamp.Format(time.RFC3339),
 			"read":      false,
 			"type":      userMsg.Type,
+			"metadata":  userMsg.Metadata,
 		},
 	}
 

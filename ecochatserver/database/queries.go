@@ -76,3 +76,7 @@ func GetChatLightweight(chatID uuid.UUID) (*models.Chat, error) {
 func UpdateChatTimestamp(chatID uuid.UUID) error {
 	return queries.UpdateChatTimestamp(DB, chatID)
 }
+
+func GetClientLanguageFromChat(chatID uuid.UUID) (string, error) {
+	return queries.GetClientLanguageFromChat(DB, chatID)
+}

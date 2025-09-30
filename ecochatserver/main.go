@@ -289,6 +289,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			// Управление автоответчиком для чата
 			auth.PUT("/chats/:id/auto-responder", handlers.ToggleAutoResponder)
 
+			// Настройки админа (языковые предпочтения)
+			auth.GET("/admin/settings", handlers.GetAdminSettings)
+			auth.PUT("/admin/settings", handlers.UpdateAdminSettings)
+
 			// Статистика для администраторов
 			auth.GET("/admin/stats", func(c *gin.Context) {
 				stats := handlers.WebSocketHub.GetStats()
