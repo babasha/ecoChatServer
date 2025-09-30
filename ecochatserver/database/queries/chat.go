@@ -281,9 +281,9 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 	// Получаем последние сообщения в правильном порядке (старые сверху, новые снизу)
 	offset := (page - 1) * size
 	messagesQuery := `
-        SELECT id,content,sender,sender_id,timestamp,read,type,metadata
+        SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
           FROM (
-            SELECT id,content,sender,sender_id,timestamp,read,type,metadata
+            SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
               FROM messages
              WHERE chat_id=$1
              ORDER BY timestamp DESC
@@ -306,7 +306,7 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 		var raw []byte
 		if err := rows.Scan(
 			&m.ID, &m.Content, &m.Sender, &m.SenderID,
-			&m.Timestamp, &m.Read, &m.Type, &raw,
+			&m.Timestamp, &m.Read, &m.ReadAt, &m.Type, &raw,
 		); err != nil {
 			log.Printf("GetChatByID: ошибка сканирования сообщения %d: %v", msgNum, err)
 			return nil, 0, fmt.Errorf("ошибка сканирования сообщения: %w", err)

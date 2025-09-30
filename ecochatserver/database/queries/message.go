@@ -157,7 +157,19 @@ func MarkMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
 	defer cancel()
 
 	_, err := db.ExecContext(ctx,
-		"UPDATE messages SET read=true WHERE chat_id=$1 AND sender='user' AND read=false",
+		"UPDATE messages SET read=true, read_at=CURRENT_TIMESTAMP WHERE chat_id=$1 AND sender='user' AND read=false",
+		chatID,
+	)
+	return err
+}
+
+// MarkAdminMessagesAsRead помечает сообщения админа как прочитанные (когда клиент просматривает чат)
+func MarkAdminMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	_, err := db.ExecContext(ctx,
+		"UPDATE messages SET read=true, read_at=CURRENT_TIMESTAMP WHERE chat_id=$1 AND sender='admin' AND read=false",
 		chatID,
 	)
 	return err

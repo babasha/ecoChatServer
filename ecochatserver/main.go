@@ -289,6 +289,9 @@ func setupAPIRoutes(r *gin.Engine) {
 			// Управление автоответчиком для чата
 			auth.PUT("/chats/:id/auto-responder", handlers.ToggleAutoResponder)
 
+			// Пометка сообщений как прочитанных
+			auth.POST("/chats/:id/read", handlers.MarkChatMessagesAsRead)
+
 			// Настройки админа (языковые предпочтения)
 			auth.GET("/admin/settings", handlers.GetAdminSettings)
 			auth.PUT("/admin/settings", handlers.UpdateAdminSettings)

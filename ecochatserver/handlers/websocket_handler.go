@@ -189,6 +189,9 @@ func processWebSocketMessage(client *websocketpkg.Client, raw []byte) {
 		processSendMessage(client, msg.Payload, ginCtx)
 	case "markAsRead":
 		processMarkAsRead(client, msg.Payload, ginCtx)
+	case "mark_read":
+		// Для виджета: помечаем сообщения админа как прочитанные клиентом
+		processMarkReadFromWidget(client, msg.Payload, ginCtx)
 	case "typing":
 		processTypingStatus(client, msg.Payload, ginCtx)
 	case "getWidgetMessages":
@@ -558,6 +561,42 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 	if err := client.SendJSON(response); err != nil {
 		log.Printf("processMarkAsRead: ошибка отправки подтверждения: %v", err)
 	}
+}
+
+// processMarkReadFromWidget обрабатывает пометку сообщений админа как прочитанных (от виджета/клиента)
+func processMarkReadFromWidget(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
+	var p struct {
+		ChatID string `json:"chatId"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		client.SendError("invalid_payload", "Некорректный формат данных для mark_read")
+		return
+	}
+
+	chatID, err := uuid.Parse(p.ChatID)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
+
+	log.Printf("processMarkReadFromWidget: клиент пометил сообщения админа как прочитанные в чате %s", chatID)
+
+	// Помечаем сообщения админа как прочитанные
+	if err := queries.MarkAdminMessagesAsRead(database.DB, chatID); err != nil {
+		log.Printf("processMarkReadFromWidget: ошибка: %v", err)
+		client.SendError("db_error", "Ошибка при обновлении статуса сообщений: "+err.Error())
+		return
+	}
+
+	// Отправляем уведомление админам о том, что клиент прочитал сообщения
+	statusMsg, _ := websocketpkg.NewMessage("messages_read", map[string]interface{}{
+		"chatId": chatID.String(),
+	})
+
+	// Отправляем статус админам, подключенным к этому чату
+	WebSocketHub.SendToChatAndAdmins(chatID.String(), statusMsg)
+
+	log.Printf("processMarkReadFromWidget: успешно обновлен статус сообщений в чате %s", chatID)
 }
 
 func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {

@@ -356,3 +356,39 @@ func UpdateAdminSettings(c *gin.Context) {
 		"message":           "Настройки успешно обновлены",
 	})
 }
+
+// MarkChatMessagesAsRead помечает все сообщения в чате как прочитанные
+func MarkChatMessagesAsRead(c *gin.Context) {
+	chatIDStr := c.Param("id")
+	chatID, err := uuid.Parse(chatIDStr)
+	if err != nil {
+		log.Printf("MarkChatMessagesAsRead: неверный UUID чата: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
+		return
+	}
+
+	log.Printf("MarkChatMessagesAsRead: пометка сообщений в чате %s как прочитанных", chatIDStr)
+
+	// Помечаем сообщения как прочитанные
+	if err := database.MarkMessagesAsRead(chatID); err != nil {
+		log.Printf("MarkChatMessagesAsRead: ошибка пометки сообщений: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка пометки сообщений"})
+		return
+	}
+
+	log.Printf("MarkChatMessagesAsRead: сообщения в чате %s успешно помечены как прочитанные", chatIDStr)
+
+	// Отправляем WebSocket уведомление о прочтении сообщений
+	readNotification := map[string]interface{}{
+		"chatId": chatID.String(),
+	}
+
+	wsMessage, _ := websocket.NewMessage("messages_read", readNotification)
+	totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), wsMessage)
+	log.Printf("MarkChatMessagesAsRead: WebSocket уведомление отправлено %d клиентам", totalSent)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Сообщения помечены как прочитанные",
+	})
+}

@@ -14,6 +14,7 @@ type Message struct {
 	SenderID  uuid.UUID              `json:"senderId,omitempty"`
 	Timestamp time.Time              `json:"timestamp"`
 	Read      bool                   `json:"read"`
+	ReadAt    *time.Time             `json:"readAt,omitempty"`   // Время прочтения сообщения
 	Type      string                 `json:"type,omitempty"`     // "text", "image", "file", etc.
 	Metadata  map[string]interface{} `json:"metadata,omitempty"` // Дополнительные данные
 }
@@ -28,6 +29,7 @@ type UniversalMessage struct {
 	SenderID  uuid.UUID              `json:"senderId,omitempty"`
 	Timestamp time.Time              `json:"timestamp,omitempty"`
 	Read      bool                   `json:"read,omitempty"`
+	ReadAt    *time.Time             `json:"readAt,omitempty"`
 	Type      string                 `json:"type,omitempty"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 
@@ -54,6 +56,7 @@ func (um *UniversalMessage) ToMessage() *Message {
 		SenderID:  um.SenderID,
 		Timestamp: um.Timestamp,
 		Read:      um.Read,
+		ReadAt:    um.ReadAt,
 		Type:      um.Type,
 		Metadata:  um.Metadata,
 	}
