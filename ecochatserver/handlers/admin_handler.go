@@ -29,7 +29,15 @@ func GetChats(c *gin.Context) {
 	// Для админки получаем ВСЕ чаты всех клиентов
 	// Используем специальное значение для обозначения "все клиенты"
 	var clientID uuid.UUID // будет nil UUID (00000000-0000-0000-0000-000000000000)
-	adminID := uuid.Nil    // TODO: получить из токена
+
+	// Получаем adminID из JWT токена (опционально, для фильтрации)
+	adminIDStr, exists := c.Get("adminID")
+	var adminID uuid.UUID
+	if exists {
+		adminID, _ = uuid.Parse(adminIDStr.(string))
+	} else {
+		adminID = uuid.Nil
+	}
 
 	chats, total, err := database.GetChats(clientID, adminID, page-1, size)
 	if err != nil {
@@ -121,8 +129,20 @@ func SendMessageToChat(c *gin.Context) {
 
 	log.Printf("SendMessageToChat: отправка сообщения в чат %s от админа", chatIDStr)
 
-	// TODO: Получить реальный ID админа из JWT токена
-	adminID := uuid.MustParse("22222222-2222-2222-2222-222222222222") // Временный ID админа
+	// Получаем реальный ID админа из JWT токена
+	adminIDStr, exists := c.Get("adminID")
+	if !exists {
+		log.Printf("SendMessageToChat: adminID не найден в контексте")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
+		return
+	}
+
+	adminID, err := uuid.Parse(adminIDStr.(string))
+	if err != nil {
+		log.Printf("SendMessageToChat: ошибка парсинга adminID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Некорректный ID администратора"})
+		return
+	}
 
 	// Добавляем сообщение в базу данных
 	message, err := database.AddMessage(
@@ -172,5 +192,44 @@ func SendMessageToChat(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Сообщение отправлено",
+	})
+}
+
+// ToggleAutoResponder включает/выключает автоответчик для чата
+func ToggleAutoResponder(c *gin.Context) {
+	chatIDStr := c.Param("id")
+	chatID, err := uuid.Parse(chatIDStr)
+	if err != nil {
+		log.Printf("ToggleAutoResponder: неверный UUID чата: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
+		return
+	}
+
+	// Парсим тело запроса
+	var request struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		log.Printf("ToggleAutoResponder: ошибка парсинга JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+		return
+	}
+
+	log.Printf("ToggleAutoResponder: обновление автоответчика для чата %s, enabled=%t", chatIDStr, request.Enabled)
+
+	// Обновляем статус автоответчика в базе данных
+	if err := queries.UpdateAutoResponder(database.DB, chatID, request.Enabled); err != nil {
+		log.Printf("ToggleAutoResponder: ошибка обновления: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления автоответчика"})
+		return
+	}
+
+	log.Printf("ToggleAutoResponder: автоответчик успешно обновлен для чата %s", chatIDStr)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"enabled": request.Enabled,
+		"message": "Автоответчик успешно обновлен",
 	})
 }

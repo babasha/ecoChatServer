@@ -164,7 +164,7 @@ func TelegramWebhook(c *gin.Context) {
 
 	// Генерируем автоответ, если включено
 	var botMsg *models.Message
-	if AutoResponder != nil {
+	if AutoResponder != nil && chat.AutoResponderEnabled {
 		log.Printf("TelegramWebhook: генерируем автоответ")
 
 		// Загружаем минимальную информацию о чате для автоответчика

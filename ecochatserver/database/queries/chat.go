@@ -96,7 +96,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	// Основной запрос для получения чатов
 	const q = `
       SELECT
-        c.id,c.created_at,c.updated_at,c.status,
+        c.id,c.created_at,c.updated_at,c.status,c.auto_responder_enabled,
         u.id,u.name,u.email,u.avatar,
         COUNT(CASE WHEN m.sender='user' AND m.read=false THEN 1 END) AS unread,
         l.id,l.content,l.sender,l.timestamp
@@ -152,7 +152,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 			lastTime   sql.NullTime
 		)
 		if err := rows.Scan(
-			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
+			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &chat.AutoResponderEnabled,
 			&user.ID, &user.Name, &user.Email, &avatarNull,
 			&unread, &lastID, &lastCont, &lastSender, &lastTime,
 		); err != nil {
@@ -218,14 +218,14 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 
 	chatQuery := `
         SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
+               source,bot_id,client_id,assigned_to,auto_responder_enabled
           FROM chats WHERE id=$1`
 
 	log.Printf("GetChatByID: выполняем запрос чата: %s", chatQuery)
 
 	if err := db.QueryRowContext(ctx, chatQuery, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
-		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull,
+		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled,
 	); err != nil {
 		log.Printf("GetChatByID: ошибка получения чата: %v", err)
 		if err == sql.ErrNoRows {
@@ -449,4 +449,34 @@ func GetOrCreateChat(
 	log.Printf("GetOrCreateChat: успешно, возвращаем чат ID=%s, clientID=%s, userID=%s",
 		chat.ID, chat.ClientID, chat.User.ID)
 	return chat, nil
+}
+
+// UpdateAutoResponder обновляет статус автоответчика для чата
+func UpdateAutoResponder(db *sql.DB, chatID uuid.UUID, enabled bool) error {
+	log.Printf("UpdateAutoResponder: начало, chatID=%s, enabled=%t", chatID, enabled)
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
+	query := `UPDATE chats SET auto_responder_enabled=$1 WHERE id=$2`
+
+	result, err := db.ExecContext(ctx, query, enabled, chatID)
+	if err != nil {
+		log.Printf("UpdateAutoResponder: ошибка обновления: %v", err)
+		return fmt.Errorf("ошибка обновления автоответчика: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("UpdateAutoResponder: ошибка получения количества обновленных строк: %v", err)
+		return fmt.Errorf("ошибка проверки обновления: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		log.Printf("UpdateAutoResponder: чат не найден: %s", chatID)
+		return fmt.Errorf("чат не найден")
+	}
+
+	log.Printf("UpdateAutoResponder: успешно обновлен, chatID=%s, enabled=%t", chatID, enabled)
+	return nil
 }

@@ -23,9 +23,13 @@ func init() {
 	// Получаем ключ из переменных окружения
 	jwtSecret := os.Getenv("JWT_SECRET_KEY")
 	if jwtSecret == "" {
-		// В продакшене этот код должен выдавать ошибку или использовать защищенное хранилище секретов
-		log.Println("Предупреждение: JWT_SECRET_KEY не установлен, используется стандартный ключ")
-		jwtSecret = "временный_ключ_для_разработки_не_использовать_в_продакшене"
+		// Проверяем режим работы
+		if os.Getenv("GIN_MODE") == "release" {
+			log.Fatal("ОШИБКА: JWT_SECRET_KEY обязательно должен быть установлен в production режиме")
+		}
+		// В dev режиме используем временный ключ
+		log.Println("⚠️  ВНИМАНИЕ: JWT_SECRET_KEY не установлен, используется временный ключ (только для разработки)")
+		jwtSecret = "dev_secret_key_change_in_production"
 	}
 	jwtKey = []byte(jwtSecret)
 }
@@ -128,7 +132,7 @@ func ValidateToken(tokenString string) (*JWTClaims, error) {
 func Authenticate(email, password string) (string, error) {
 	// Получаем администратора из базы данных
 	admin, err := database.GetAdmin(email)
-	if err != nil {
+	if err != nil || admin == nil {
 		return "", errors.New("неверные учетные данные")
 	}
 

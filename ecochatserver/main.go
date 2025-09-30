@@ -242,15 +242,16 @@ func setupAPIRoutes(r *gin.Engine) {
 			})
 		})
 
-		// Авторизация через HTTP
-		api.POST("/auth/login", handlers.Login)
+		// Авторизация через HTTP (строгий rate limit для защиты от brute force)
+		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.Login)
 
 		// Webhook для Telegram и других внешних сервисов
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 
-		// Виджетный API (публичный, для iframe/web widget)
+		// Виджетный API (публичный, для iframe/web widget + мягкий rate limit)
 		// Оставляем для обратной совместимости, но рекомендуем использовать WebSocket
 		widget := api.Group("/widget")
+		widget.Use(middleware.RelaxedRateLimitMiddleware())
 		{
 			// Получение информации о подключении к WebSocket
 			widget.GET("/chat/:id/messages", handlers.GetWidgetChatMessages)
@@ -271,9 +272,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			})
 		}
 
-		// Защищенные API-маршруты (требуется токен)
+		// Защищенные API-маршруты (требуется токен + rate limiting)
 		auth := api.Group("/")
 		auth.Use(middleware.AuthMiddleware())
+		auth.Use(middleware.ModerateRateLimitMiddleware())
 		{
 			// Получение списка чатов для админки
 			auth.GET("/chats", handlers.GetChats)
@@ -283,6 +285,9 @@ func setupAPIRoutes(r *gin.Engine) {
 
 			// Отправка сообщения в чат от админа
 			auth.POST("/chats/:id/messages", handlers.SendMessageToChat)
+
+			// Управление автоответчиком для чата
+			auth.PUT("/chats/:id/auto-responder", handlers.ToggleAutoResponder)
 
 			// Статистика для администраторов
 			auth.GET("/admin/stats", func(c *gin.Context) {
