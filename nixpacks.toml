@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["go"]
+nixPkgs = ["curl"]
 
 [phases.install]
 cmds = [
@@ -9,10 +9,7 @@ cmds = [
 
 [phases.build]
 cmds = [
-  "export PATH=/usr/local/go/bin:$PATH",
-  "cd ecochatserver",
-  "go mod download",
-  "go build -o bin/ecochatserver ."
+  "cd ecochatserver && /usr/local/go/bin/go mod download && /usr/local/go/bin/go build -o bin/ecochatserver ."
 ]
 
 [start]
