@@ -1,887 +1,267 @@
-2025/07/29 00:21:44 Предупреждение: JWT_SECRET_KEY не установлен, используется стандартный ключ
-2025/07/29 00:21:44 main.go:28: EcoChat server starting with anti-duplication optimizations…
-2025/07/29 00:21:44 db.go:42: [database] PostgreSQL connected ✓
-2025/07/29 00:21:44 db.go:70: [database] Партиции успешно созданы
-2025/07/29 00:21:44 main.go:42: Простое кэширование инициализировано
+2025/10/01 18:43:26 ⚠️  ВНИМАНИЕ: JWT_SECRET_KEY не установлен, используется временный ключ (только для разработки)
+2025/10/01 18:43:26 main.go:28: EcoChat server starting with anti-duplication optimizations…
+2025/10/01 18:43:26 db.go:42: [database] PostgreSQL connected ✓
+2025/10/01 18:43:26 db.go:70: [database] Партиции успешно созданы
+2025/10/01 18:43:26 main.go:42: Простое кэширование инициализировано
 [GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
  - using env:	export GIN_MODE=release
  - using code:	gin.SetMode(gin.ReleaseMode)
 
-2025/07/29 00:21:44 main.go:183: CORS настроен для доменов: [http://localhost:3000 https://ecp-chat-widget.vercel.app http://localhost:5500 http://127.0.0.1:5500]
-2025/07/29 00:21:44 telegram_handler.go:47: Автоответчик успешно инициализирован
-2025/07/29 00:21:44 main.go:79: Автоответчик инициализирован
+2025/10/01 18:43:26 main.go:183: CORS настроен для доменов: [http://localhost:3000 https://ecp-chat-widget.vercel.app http://localhost:5500 http://127.0.0.1:5500 https://enddel.com https://www.enddel.com https://48dea37f2adf.ngrok-free.app]
+2025/10/01 18:43:26 autoresponder.go:474: [AUTORESPONDER] [SECURITY] Инициализирован с усиленной защитой доступа к заказам
+2025/10/01 18:43:26 telegram_handler.go:52: Сервис перевода успешно инициализирован
+2025/10/01 18:43:26 telegram_handler.go:64: Автоответчик успешно инициализирован
+2025/10/01 18:43:26 main.go:79: Автоответчик инициализирован
 [GIN-debug] GET    /api/health               --> main.setupAPIRoutes.func1 (6 handlers)
-[GIN-debug] POST   /api/auth/login           --> github.com/egor/ecochatserver/handlers.Login (6 handlers)
+[GIN-debug] POST   /api/auth/login           --> github.com/egor/ecochatserver/handlers.Login (7 handlers)
 [GIN-debug] POST   /api/telegram/webhook     --> github.com/egor/ecochatserver/handlers.TelegramWebhook (6 handlers)
-[GIN-debug] GET    /api/widget/chat/:id/messages --> github.com/egor/ecochatserver/handlers.GetWidgetChatMessages (6 handlers)
-[GIN-debug] GET    /api/widget/info          --> main.setupAPIRoutes.func2 (6 handlers)
-[GIN-debug] GET    /api/chats                --> github.com/egor/ecochatserver/handlers.GetChats (7 handlers)
-[GIN-debug] GET    /api/chats/:id            --> github.com/egor/ecochatserver/handlers.GetChatByID (7 handlers)
-[GIN-debug] GET    /api/admin/stats          --> main.setupAPIRoutes.func3 (7 handlers)
+[GIN-debug] GET    /api/widget/chat/:id/messages --> github.com/egor/ecochatserver/handlers.GetWidgetChatMessages (7 handlers)
+[GIN-debug] GET    /api/widget/info          --> main.setupAPIRoutes.func2 (7 handlers)
+[GIN-debug] GET    /api/chats                --> github.com/egor/ecochatserver/handlers.GetChats (8 handlers)
+[GIN-debug] GET    /api/chats/:id            --> github.com/egor/ecochatserver/handlers.GetChatByID (8 handlers)
+[GIN-debug] POST   /api/chats/:id/messages   --> github.com/egor/ecochatserver/handlers.SendMessageToChat (8 handlers)
+[GIN-debug] PUT    /api/chats/:id/auto-responder --> github.com/egor/ecochatserver/handlers.ToggleAutoResponder (8 handlers)
+[GIN-debug] POST   /api/chats/:id/read       --> github.com/egor/ecochatserver/handlers.MarkChatMessagesAsRead (8 handlers)
+[GIN-debug] GET    /api/admin/settings       --> github.com/egor/ecochatserver/handlers.GetAdminSettings (8 handlers)
+[GIN-debug] PUT    /api/admin/settings       --> github.com/egor/ecochatserver/handlers.UpdateAdminSettings (8 handlers)
+[GIN-debug] GET    /api/admin/stats          --> main.setupAPIRoutes.func3 (8 handlers)
 [GIN-debug] GET    /ws                       --> github.com/egor/ecochatserver/handlers.ServeWs (6 handlers)
-2025/07/29 00:21:44 main.go:302: WebSocket эндпоинт настроен: /ws
+2025/10/01 18:43:26 main.go:317: WebSocket эндпоинт настроен: /ws
 [GIN-debug] GET    /api/ws                   --> github.com/egor/ecochatserver/handlers.ServeWs (6 handlers)
 [GIN-debug] GET    /                         --> main.setupAPIRoutes.func4 (6 handlers)
-2025/07/29 00:21:44 main.go:83: API маршруты настроены
-2025/07/29 00:21:44 main.go:87: HTTP сервер запускается на :8080
-2025/07/29 00:26:44 hub.go:314: Hub статистика: active=0, total=0, messages=0, disconnected=0
-2025/07/29 00:31:44 hub.go:314: Hub статистика: active=0, total=0, messages=0, disconnected=0
-[GIN] 2025/07/29 - 00:35:43 | 403 |    2.751792ms |       127.0.0.1 | OPTIONS /api/auth/login
-2025/07/29 00:36:44 hub.go:314: Hub статистика: active=0, total=0, messages=0, disconnected=0
-[GIN] 2025/07/29 - 00:40:50 | 204 |    2.143208ms |             ::1 | OPTIONS /api/chats
-2025/07/29 00:40:50 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 00:40:50 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 00:40:50 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 00:40:50 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:40:50 websocket_handler.go:79: ServeWs: новое соединение от ::1, origin: http://localhost:3000
-2025/07/29 00:40:50 websocket_handler.go:126: ServeWs: аутентифицирован admin 22222222-2222-2222-2222-222222222222 (client: 15efbba6-6411-4dfe-8334-476c7d056cf8)
-2025/07/29 00:40:50 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 00:40:50 hub.go:138: Клиент зарегистрирован: type=admin, id=22222222-2222-2222-2222-222222222222, chatID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:40:50 websocket_handler.go:170: ServeWs: клиент 22222222-2222-2222-2222-222222222222 успешно подключен
-[GIN] 2025/07/29 - 00:40:50 | 200 |    3.175458ms |             ::1 | GET     /ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiMjIyMjIyMjItMjIyMi0yMjIyLTIyMjItMjIyMjIyMjIyMjIyIiwiY2xpZW50SWQiOiIxNWVmYmJhNi02NDExLTRkZmUtODMzNC00NzZjN2QwNTZjZjgiLCJyb2xlIjoiYWRtaW4iLCJpc3MiOiJlY29jaGF0LXNlcnZlciIsImV4cCI6MTc1MzgwOTg1MCwiaWF0IjoxNzUzNzIzNDUwfQ.SCieEq-p-kSVHFuF_vI3yLVXNAy6EJBdDt5lVFDYWuI
-2025/07/29 00:40:50 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 00:40:50 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 00:40:50 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 00:40:50 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 00:40:50 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:40:50 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=7, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:18:57.722649 +0400 +04
-2025/07/29 00:40:50 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 00:40:50 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 00:40:50 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 00:40:50 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 00:40:50 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 00:40:50 | 200 |  170.093042ms |             ::1 | GET     /api/chats
-[GIN] 2025/07/29 - 00:40:50 | 204 |     937.584µs |             ::1 | OPTIONS /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:40:50 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=0, size=50
-2025/07/29 00:40:50 chat.go:202: GetChatByID: page скорректирован на 1
-2025/07/29 00:40:50 chat.go:224: GetChatByID: выполняем запрос чата: 
+2025/10/01 18:43:26 main.go:83: API маршруты настроены
+2025/10/01 18:43:26 main.go:87: HTTP сервер запускается на :8080
+2025/10/01 18:43:27 websocket_handler.go:78: ServeWs: новое соединение от 177.54.4.72, origin: https://enddel.com
+2025/10/01 18:43:27 websocket_handler.go:141: ServeWs: подключение виджета, chatID: ae7b9bc1-7e62-4f32-aa50-37f8be145573, userID: 00000000-0000-0000-0000-000000000000
+2025/10/01 18:43:27 hub.go:148: Клиент зарегистрирован: type=widget, id=00000000-0000-0000-0000-000000000000, chatID=ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:43:27 websocket_handler.go:169: ServeWs: клиент 00000000-0000-0000-0000-000000000000 успешно подключен
+[GIN] 2025/10/01 - 18:43:27 | 200 |     869.042µs |     177.54.4.72 | GET     /ws?token=web_user_192833&type=widget&chat_id=ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:28 telegram_handler.go:69: TelegramWebhook: POST /api/telegram/webhook from 177.54.4.72
+2025/10/01 18:44:28 telegram_handler.go:94: TelegramWebhook: получено сообщение: {UserID:web_user_192833 UserName: UserEmail: Content:раскажите пожалуйста про Свежее филе лосося Source:web_widget BotID:web_widget_bot ClientID:enddel_store_widget_key MessageType:text Metadata:map[]}
+2025/10/01 18:44:28 telegram_handler.go:105: TelegramWebhook: используем ClientID: enddel_store_widget_key
+2025/10/01 18:44:28 telegram_handler.go:111: TelegramWebhook: создаем/получаем чат для user=web_user_192833, source=web_widget, botID=web_widget_bot, clientID=enddel_store_widget_key
+2025/10/01 18:44:28 chat.go:370: GetOrCreateChat: начало, userID=web_user_192833, userName='', userEmail='', source=web_widget, sourceID=web_user_192833, botID=web_widget_bot, clientAPIKey=enddel_store_widget_key
+2025/10/01 18:44:28 user.go:17: getOrCreateUser: начало, userID=web_user_192833, userName=, source=web_widget, sourceID=web_user_192833
+2025/10/01 18:44:28 user.go:35: getOrCreateUser: найден существующий пользователь ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, name=
+2025/10/01 18:44:28 chat.go:389: GetOrCreateChat: получен/создан пользователь ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, name='', email=''
+2025/10/01 18:44:28 client.go:13: getClientUUIDByAPIKey: начало, apiKey=enddel_store_widget_key
+2025/10/01 18:44:28 client.go:42: getClientUUIDByAPIKey: найден существующий клиент ID=4c85db47-b6aa-45b2-b83a-ac1e84974657 для apiKey=enddel_store_widget_key
+2025/10/01 18:44:28 chat.go:398: GetOrCreateChat: получен clientUUID=4c85db47-b6aa-45b2-b83a-ac1e84974657 для API key=enddel_store_widget_key
+2025/10/01 18:44:28 chat.go:403: GetOrCreateChat: проверяем существование чата: user_id=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, source=web_widget, bot_id=web_widget_bot, client_id=4c85db47-b6aa-45b2-b83a-ac1e84974657
+2025/10/01 18:44:28 chat.go:432: GetOrCreateChat: найден существующий чат ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:28 chat.go:440: GetOrCreateChat: транзакция успешно закоммичена
+2025/10/01 18:44:28 chat.go:198: GetChatByID: начало, chatID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, page=1, size=20
+2025/10/01 18:44:28 chat.go:224: GetChatByID: выполняем запрос чата: 
         SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
+               source,bot_id,client_id,assigned_to,auto_responder_enabled
           FROM chats WHERE id=$1
-2025/07/29 00:40:50 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:40:50 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:40:50 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:40:50 chat.go:279: GetChatByID: всего сообщений в чате: 236
-2025/07/29 00:40:50 chat.go:294: GetChatByID: получаем сообщения с LIMIT=50 OFFSET=0
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 0: ID=56dbace9-42b9-4890-8e81-a8899664c290, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 20:30:51.118292 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 1: ID=2a6e25d3-6901-438f-945b-0ca293afc147, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ау', timestamp=2025-05-09 20:31:01.081407 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 2: ID=4ee99813-a55f-4886-8ec0-db4435d8677b, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я понимаю, что вы сейчас испытываете сложности с общением. Давайте сосредоточимся на вашем заказе. Если вам нужна помощь или поддержка, я здесь для вас. 🙂 Если же вам нужен живой оператор – я могу его подключить.
-#эскалация_selfID', timestamp=2025-05-09 20:31:04.265833 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 3: ID=26f9caa6-0942-48e5-a24d-1a0200647378, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='ау', timestamp=2025-05-09 20:31:08.682485 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 4: ID=8a9a09c9-e481-483c-a72b-0251da103e1e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ge', timestamp=2025-05-09 20:47:32.142136 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 5: ID=ca38ddc2-01ee-4931-935f-96781df85fb8, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я вижу, что вы пишете английский язык. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 20:47:34.414267 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 6: ID=879f9995-d42a-4590-b1e6-4baddd4ca511, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='fdf', timestamp=2025-05-09 20:47:39.161596 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 7: ID=9aec2aaa-61ea-4f39-ba8b-6350776aa607, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ghbdtn', timestamp=2025-05-09 20:47:49.449356 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 8: ID=80127827-5a0c-4ff3-8293-7841285b3483, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Простите, я не понимаю ваш запрос. Пожалуйста, напишите на русском языке или уточните, что вы хотели бы узнать. 🙂
-#эскалация_selfID', timestamp=2025-05-09 20:47:52.080244 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 9: ID=5c530f87-fc63-4c47-86ea-7a036ae64dd6, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 20:49:08.07411 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 10: ID=df2aaae7-6c1e-49bf-b23b-db4960cb59cd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 20:49:14.367759 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 11: ID=87755954-737c-4019-8316-46def5a33865, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё хорошо! Надеюсь, у вас тоже все замечательно? 😊 Чем могу вам помочь сегодня?
-#поддержка_enddel', timestamp=2025-05-09 20:49:16.726182 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 12: ID=c992198c-e066-4d1d-902c-d0f8663fdf86, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 21:02:32.239819 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 13: ID=452b012c-2006-44b3-ba07-15d48b0ec845, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Рад(а) слышать вас. Чем я могу быть полезен/полезной сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 21:02:34.737733 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 14: ID=82966284-9fbc-4b88-884e-04f915d93483, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:20:36.581566 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 15: ID=466ed169-6f57-4c14-9dcf-8cc16f2b0d4e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:20:43.348891 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 16: ID=36684d2d-9723-4520-a442-266dc542212a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё отлично, спасибо за вопрос! Как ваши дела? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:20:45.541468 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 17: ID=9f6986bc-5ceb-4525-9402-da6a378c12bd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:28:31.181614 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 18: ID=72f4f807-7402-48d4-9d6a-976f8aeee69a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 22:28:33.502936 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 19: ID=09263c06-19b9-4be1-a565-3193f377ea97, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:30:40.51392 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 20: ID=3cd8100e-0bb7-4b1d-8eee-b804b519daa5, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:30:45.801969 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 21: ID=79e6b2b2-d942-4d59-b6cd-ce2e6c96b939, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:30:48.135272 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 22: ID=84d10d4d-0358-4d33-82f4-f3c63ed2d999, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='кого ?', timestamp=2025-05-09 22:42:21.807751 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 23: ID=8a507277-9df3-4fc7-82f4-878fe4ae0dec, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Давайте сосредоточимся на вашем заказе. Если нужен живой оператор — я подключу его. 🙂
-#эскалация_selfID', timestamp=2025-05-09 22:42:24.339658 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 24: ID=4f55d20b-abb0-4c12-9b57-59a3ab9b2168, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:48:35.599477 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 25: ID=1b12b0a9-6c3d-4334-884c-339e5e2ca3c5, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:48:37.837016 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 26: ID=fcb467ab-037b-426d-83bc-31b668f52cdd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:48:45.484592 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 27: ID=3cfc0403-cb7e-477d-bfd8-de0960d21705, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:48:47.459957 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 28: ID=fe220996-2d2e-4fb1-aff5-59d25afa27c3, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:59:21.533879 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 29: ID=1d8008e1-bdc7-47b6-9574-f5c72d010777, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу вам помочь сегодня? 🙂', timestamp=2025-05-09 22:59:28.804271 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 30: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 31: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 32: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 33: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+2025/10/01 18:44:28 chat.go:244: GetChatByID: найден чат ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, userID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, clientID=4c85db47-b6aa-45b2-b83a-ac1e84974657, status=active, source=web_widget, botID=web_widget_bot
+2025/10/01 18:44:28 chat.go:256: GetChatByID: получаем пользователя ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd
+2025/10/01 18:44:28 chat.go:268: GetChatByID: пользователь: ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, name='', email='', source=web_widget, sourceID=web_user_192833
+2025/10/01 18:44:28 chat.go:279: GetChatByID: всего сообщений в чате: 63
+2025/10/01 18:44:28 chat.go:294: GetChatByID: получаем сообщения с LIMIT=20 OFFSET=0
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 0: ID=58a3ce8b-66c7-48f1-bfca-a142beed8995, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 17:56:56.313994 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 1: ID=cf8451c1-5424-4046-9174-83c8ec7acae4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-10-01 17:57:07.751305 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 2: ID=d3f8fc7f-792c-4fea-b0da-ad280aa8329a, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 17:59:06.156135 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 3: ID=8992b84c-4a37-42bc-8594-f4b284a2f371, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 17:59:08.651986 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 4: ID=2bd60b6e-5f17-4f07-a708-7a248741539c, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:09:03.366938 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 5: ID=43b2eab7-e327-4a18-a374-f3d8c2ad2269, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:09:06.167366 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 6: ID=2bd60b6e-5f17-4f07-a708-7a248741539c, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:09:18.913575 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 7: ID=3799a28f-1ccf-47cf-a2b7-1df5330e12fc, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, по запросу 'свежее филе лосося' ничего не найдено. Попробуйте уточнить запрос или спросите про другие товары.', timestamp=2025-10-01 18:09:20.721606 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 8: ID=aaf3e817-0781-4a92-a843-879967228d8e, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:16:16.92807 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 9: ID=a870f030-6aa0-4be1-83e7-25241506ea7f, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:16:19.43511 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 10: ID=cc9f3c33-58be-4daa-ae07-57d8a54fd42e, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:22:57.972704 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 11: ID=073e8ec1-e1ad-4958-88da-5849fd4450d2, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:23:00.693091 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 12: ID=beca1f2e-4561-4d73-b874-d7e37be943e1, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:25:06.648784 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 13: ID=4eb5470c-7774-4269-aed5-eec285bcc17a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, по запросу 'свежее филе лосося' ничего не найдено. Попробуйте уточнить запрос или спросите про другие товары.', timestamp=2025-10-01 18:25:09.140853 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 14: ID=e1ec54da-7a25-4df9-834b-e668adc4a8d8, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:36:07.193035 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 15: ID=0543525d-c72e-4200-83bd-892599f185ae, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:36:09.639969 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 16: ID=64a62270-b5aa-4e17-87c5-34ccb563ae2a, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:40:52.348446 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 17: ID=20458acb-9f6c-4d09-ac28-d334bf62ac17, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='🛒 **Свежее филе лосося**
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 34: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 35: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 36: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 37: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 38: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 39: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 40: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 41: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 42: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 43: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 44: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 45: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 46: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 47: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 48: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:320: GetChatByID: сообщение 49: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:40:50 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:40:50 chat.go:353: GetChatByID: последнее сообщение: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:40:50 chat.go:362: GetChatByID: успешно, возвращаем чат с 50 сообщениями
-[GIN] 2025/07/29 - 00:40:50 | 200 |   24.918083ms |             ::1 | GET     /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:41:44 hub.go:314: Hub статистика: active=1, total=1, messages=1, disconnected=0
-[GIN] 2025/07/29 - 00:46:15 | 204 |    2.687875ms |  37.232.127.201 | OPTIONS /api/widget/chat/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b/messages
-2025/07/29 00:46:15 websocket_handler.go:79: ServeWs: новое соединение от 37.232.127.201, origin: https://ecp-chat-widget.vercel.app
-2025/07/29 00:46:15 websocket_handler.go:142: ServeWs: подключение виджета, chatID: 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID: 00000000-0000-0000-0000-000000000000
-2025/07/29 00:46:15 hub.go:138: Клиент зарегистрирован: type=widget, id=00000000-0000-0000-0000-000000000000, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:15 websocket_handler.go:170: ServeWs: клиент 00000000-0000-0000-0000-000000000000 успешно подключен
-[GIN] 2025/07/29 - 00:46:15 | 200 |      3.5165ms |  37.232.127.201 | GET     /ws?token=web_user_287102&type=widget&chat_id=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:15 widget_handeler.go:35: GetWidgetChatMessages: перенаправление на WebSocket для чата 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-[GIN] 2025/07/29 - 00:46:15 | 200 |     615.458µs |  37.232.127.201 | GET     /api/widget/chat/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b/messages
-2025/07/29 00:46:23 client.go:71: WebSocket closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:46:23 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:46:23 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:46:23 client.go:108: WritePump closed: admin (22222222-2222-2222-2222-222222222222)
-[GIN] 2025/07/29 - 00:46:23 | 204 |     433.791µs |             ::1 | OPTIONS /api/chats
-2025/07/29 00:46:23 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 00:46:23 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 00:46:23 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 00:46:23 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:46:23 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 00:46:23 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 00:46:23 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 00:46:23 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 00:46:23 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 00:46:23 websocket_handler.go:79: ServeWs: новое соединение от ::1, origin: http://localhost:3000
-2025/07/29 00:46:23 websocket_handler.go:126: ServeWs: аутентифицирован admin 22222222-2222-2222-2222-222222222222 (client: 15efbba6-6411-4dfe-8334-476c7d056cf8)
-2025/07/29 00:46:23 hub.go:138: Клиент зарегистрирован: type=admin, id=22222222-2222-2222-2222-222222222222, chatID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:46:23 websocket_handler.go:170: ServeWs: клиент 22222222-2222-2222-2222-222222222222 успешно подключен
-[GIN] 2025/07/29 - 00:46:23 | 200 |    2.789125ms |             ::1 | GET     /ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiMjIyMjIyMjItMjIyMi0yMjIyLTIyMjItMjIyMjIyMjIyMjIyIiwiY2xpZW50SWQiOiIxNWVmYmJhNi02NDExLTRkZmUtODMzNC00NzZjN2QwNTZjZjgiLCJyb2xlIjoiYWRtaW4iLCJpc3MiOiJlY29jaGF0LXNlcnZlciIsImV4cCI6MTc1MzgwOTg1MCwiaWF0IjoxNzUzNzIzNDUwfQ.SCieEq-p-kSVHFuF_vI3yLVXNAy6EJBdDt5lVFDYWuI
-2025/07/29 00:46:23 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:23 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=7, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:18:57.722649 +0400 +04
-2025/07/29 00:46:23 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 00:46:23 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 00:46:23 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 00:46:23 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 00:46:23 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 00:46:23 | 200 |       97.55ms |             ::1 | GET     /api/chats
-[GIN] 2025/07/29 - 00:46:23 | 204 |      77.458µs |             ::1 | OPTIONS /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:23 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=0, size=50
-2025/07/29 00:46:23 chat.go:202: GetChatByID: page скорректирован на 1
-2025/07/29 00:46:23 chat.go:224: GetChatByID: выполняем запрос чата: 
+📝 Описание:
+Свежайшее филе фермерского лосося из Турции, прошедшее санитарный контроль. Каждое филе аккуратно разделано: удалены кости и лишний жир, сохранена идеальная структура мяса.
+
+✔️ Сочное и нежное филе, готовое к употреблению
+✔️ Богатый источник белка и Омега-3
+
+✔️ Подходит для сашими, гриля, запекания, стейков и роллов
+
+
+Происхождение: Турция, фермерское выращивание
+
+Остаётся только наслаждаться свежим вкусом лосося премиального качества.
+
+💰 Цена: **7.00₾**
+❌ Нет в наличии
+
+Для оформления заказа добавьте товар в корзину на сайте [enddel.com](https://enddel.com).', timestamp=2025-10-01 18:40:54.707415 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 18: ID=350a832d-2d63-498b-bd86-ebee9e5f6cc8, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Is it from Belarus?', timestamp=2025-10-01 18:41:24.697789 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:320: GetChatByID: сообщение 19: ID=5d12627a-ca2c-4c23-b6e1-e8809bc830c2, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-10-01 18:41:33.231969 -0300 -03, read=false, type=text
+2025/10/01 18:44:28 chat.go:341: GetChatByID: получаем последнее сообщение
+2025/10/01 18:44:28 chat.go:353: GetChatByID: последнее сообщение: ID=5d12627a-ca2c-4c23-b6e1-e8809bc830c2, sender=admin, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-10-01 18:41:33.231969 -0300 -03, ChatID=ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:28 chat.go:362: GetChatByID: успешно, возвращаем чат с 20 сообщениями
+2025/10/01 18:44:28 chat.go:449: GetOrCreateChat: успешно, возвращаем чат ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, clientID=4c85db47-b6aa-45b2-b83a-ac1e84974657, userID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd
+2025/10/01 18:44:28 telegram_handler.go:124: TelegramWebhook: получен чат: ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, ClientID=4c85db47-b6aa-45b2-b83a-ac1e84974657, UserID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd
+2025/10/01 18:44:28 hub.go:378: UpdateWidgetChatID: виджет с userID web_user_192833 не найден
+2025/10/01 18:44:28 telegram_handler.go:141: TelegramWebhook: перевод сообщения пользователя
+2025/10/01 18:44:28 translation_handler.go:39: TranslateUserMessage: определение языка сообщения
+2025/10/01 18:44:28 translator.go:53: DetectLanguage: text='раскажите пожалуйста про С�...' -> language='ru'
+2025/10/01 18:44:28 translation_handler.go:52: TranslateUserMessage: определен язык: ru
+2025/10/01 18:44:28 admin_settings.go:56: GetAdminSettings: настройки для админа 22222222-2222-2222-2222-222222222222 получены, язык=en
+2025/10/01 18:44:28 translation_handler.go:68: TranslateUserMessage: целевой язык админа: en
+2025/10/01 18:44:28 translation_handler.go:84: TranslateUserMessage: перевод с ru на en
+2025/10/01 18:44:29 translator.go:129: TranslateText: from=ru to=en, original='раскажите пожалуйста про С�...' -> translated='Please tell me about fresh salmon fillet.'
+2025/10/01 18:44:29 translation_handler.go:100: TranslateUserMessage: перевод выполнен успешно
+2025/10/01 18:44:29 telegram_handler.go:153: TelegramWebhook: перевод завершен, wasTranslated=true, detectedLang=ru
+2025/10/01 18:44:29 telegram_handler.go:165: TelegramWebhook: создан детерминированный UUID для userID web_user_192833: b37d9616-7354-5b5e-afd4-d11c8fce9eb5
+2025/10/01 18:44:29 telegram_handler.go:178: TelegramWebhook: добавляем сообщение в чат ae7b9bc1-7e62-4f32-aa50-37f8be145573 от пользователя b37d9616-7354-5b5e-afd4-d11c8fce9eb5 с ID 1e72d9e8-c020-4911-82d7-c7a056391b24
+2025/10/01 18:44:29 telegram_handler.go:197: TelegramWebhook: сообщение добавлено: ID=1e72d9e8-c020-4911-82d7-c7a056391b24
+2025/10/01 18:44:29 telegram_handler.go:207: TelegramWebhook: генерируем автоответ
+2025/10/01 18:44:29 autoresponder.go:511: [AUTORESPONDER] Используем оригинальный текст для поиска продуктов: 'раскажите пожалуйста про Свежее филе лосося'
+2025/10/01 18:44:29 product_handler.go:107: [PRODUCT_HANDLER] Распознан запрос: type=1, term='свежее филе лосося'
+2025/10/01 18:44:29 autoresponder.go:516: [AUTORESPONDER] Обнаружен запрос о продуктах в чате ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:29 product_handler.go:121: [PRODUCT_HANDLER] Обработка запроса: type=1, searchTerm='свежее филе лосося'
+2025/10/01 18:44:29 product_handler.go:213: [PRODUCT_HANDLER] Целевой поиск продуктов через API: term='свежее филе лосося'
+2025/10/01 18:44:30 store_client.go:396: [STORE_CLIENT] Запрос к API магазина: https://enddel.com/products?search=%D1%81%D0%B2%D0%B5%D0%B6%D0%B5%D0%B5+%D1%84%D0%B8%D0%BB%D0%B5+%D0%BB%D0%BE%D1%81%D0%BE%D1%81%D1%8F
+2025/10/01 18:44:30 telegram_handler.go:224: TelegramWebhook: автоответ сгенерирован, сохраняем в БД
+2025/10/01 18:44:30 telegram_handler.go:239: TelegramWebhook: автоответ сохранен: ID=f746dd69-4974-40ab-8e78-e33a2a0980b1
+2025/10/01 18:44:30 telegram_handler.go:257: TelegramWebhook: поле needEscalation отсутствует в метаданных для чата ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:30 hub.go:281: Отправлено 1 сообщений в чат ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:30 telegram_handler.go:329: TelegramWebhook: отправлено WebSocket уведомление о сообщении бота
+2025/10/01 18:44:30 hub.go:281: Отправлено 1 сообщений в чат ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:30 telegram_handler.go:272: TelegramWebhook: комплексное WebSocket уведомление отправлено 1 клиентам
+2025/10/01 18:44:30 telegram_handler.go:284: TelegramWebhook: отправляем ответ: map[chat_id:ae7b9bc1-7e62-4f32-aa50-37f8be145573 message:Сообщение обработано message_id:1e72d9e8-c020-4911-82d7-c7a056391b24 success:true timestamp:2025-10-01T18:44:30-03:00]
+[GIN] 2025/10/01 - 18:44:30 | 200 |    2.3846945s |     177.54.4.72 | POST    /api/telegram/webhook
+2025/10/01 18:44:47 telegram_handler.go:69: TelegramWebhook: POST /api/telegram/webhook from 177.54.4.72
+2025/10/01 18:44:47 telegram_handler.go:94: TelegramWebhook: получено сообщение: {UserID:web_user_192833 UserName: UserEmail: Content:оно из беларуси ? Source:web_widget BotID:web_widget_bot ClientID:enddel_store_widget_key MessageType:text Metadata:map[]}
+2025/10/01 18:44:47 telegram_handler.go:105: TelegramWebhook: используем ClientID: enddel_store_widget_key
+2025/10/01 18:44:47 telegram_handler.go:111: TelegramWebhook: создаем/получаем чат для user=web_user_192833, source=web_widget, botID=web_widget_bot, clientID=enddel_store_widget_key
+2025/10/01 18:44:47 chat.go:370: GetOrCreateChat: начало, userID=web_user_192833, userName='', userEmail='', source=web_widget, sourceID=web_user_192833, botID=web_widget_bot, clientAPIKey=enddel_store_widget_key
+2025/10/01 18:44:47 user.go:17: getOrCreateUser: начало, userID=web_user_192833, userName=, source=web_widget, sourceID=web_user_192833
+2025/10/01 18:44:47 user.go:35: getOrCreateUser: найден существующий пользователь ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, name=
+2025/10/01 18:44:47 chat.go:389: GetOrCreateChat: получен/создан пользователь ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, name='', email=''
+2025/10/01 18:44:47 client.go:13: getClientUUIDByAPIKey: начало, apiKey=enddel_store_widget_key
+2025/10/01 18:44:47 client.go:42: getClientUUIDByAPIKey: найден существующий клиент ID=4c85db47-b6aa-45b2-b83a-ac1e84974657 для apiKey=enddel_store_widget_key
+2025/10/01 18:44:47 chat.go:398: GetOrCreateChat: получен clientUUID=4c85db47-b6aa-45b2-b83a-ac1e84974657 для API key=enddel_store_widget_key
+2025/10/01 18:44:47 chat.go:403: GetOrCreateChat: проверяем существование чата: user_id=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, source=web_widget, bot_id=web_widget_bot, client_id=4c85db47-b6aa-45b2-b83a-ac1e84974657
+2025/10/01 18:44:47 chat.go:432: GetOrCreateChat: найден существующий чат ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:47 chat.go:440: GetOrCreateChat: транзакция успешно закоммичена
+2025/10/01 18:44:47 chat.go:198: GetChatByID: начало, chatID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, page=1, size=20
+2025/10/01 18:44:47 chat.go:224: GetChatByID: выполняем запрос чата: 
         SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
+               source,bot_id,client_id,assigned_to,auto_responder_enabled
           FROM chats WHERE id=$1
-2025/07/29 00:46:23 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:46:23 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:46:23 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:46:23 chat.go:279: GetChatByID: всего сообщений в чате: 236
-2025/07/29 00:46:23 chat.go:294: GetChatByID: получаем сообщения с LIMIT=50 OFFSET=0
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 0: ID=56dbace9-42b9-4890-8e81-a8899664c290, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 20:30:51.118292 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 1: ID=2a6e25d3-6901-438f-945b-0ca293afc147, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ау', timestamp=2025-05-09 20:31:01.081407 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 2: ID=4ee99813-a55f-4886-8ec0-db4435d8677b, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я понимаю, что вы сейчас испытываете сложности с общением. Давайте сосредоточимся на вашем заказе. Если вам нужна помощь или поддержка, я здесь для вас. 🙂 Если же вам нужен живой оператор – я могу его подключить.
-#эскалация_selfID', timestamp=2025-05-09 20:31:04.265833 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 3: ID=26f9caa6-0942-48e5-a24d-1a0200647378, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='ау', timestamp=2025-05-09 20:31:08.682485 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 4: ID=8a9a09c9-e481-483c-a72b-0251da103e1e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ge', timestamp=2025-05-09 20:47:32.142136 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 5: ID=ca38ddc2-01ee-4931-935f-96781df85fb8, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я вижу, что вы пишете английский язык. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 20:47:34.414267 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 6: ID=879f9995-d42a-4590-b1e6-4baddd4ca511, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='fdf', timestamp=2025-05-09 20:47:39.161596 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 7: ID=9aec2aaa-61ea-4f39-ba8b-6350776aa607, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ghbdtn', timestamp=2025-05-09 20:47:49.449356 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 8: ID=80127827-5a0c-4ff3-8293-7841285b3483, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Простите, я не понимаю ваш запрос. Пожалуйста, напишите на русском языке или уточните, что вы хотели бы узнать. 🙂
-#эскалация_selfID', timestamp=2025-05-09 20:47:52.080244 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 9: ID=5c530f87-fc63-4c47-86ea-7a036ae64dd6, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 20:49:08.07411 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 10: ID=df2aaae7-6c1e-49bf-b23b-db4960cb59cd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 20:49:14.367759 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 11: ID=87755954-737c-4019-8316-46def5a33865, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё хорошо! Надеюсь, у вас тоже все замечательно? 😊 Чем могу вам помочь сегодня?
-#поддержка_enddel', timestamp=2025-05-09 20:49:16.726182 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 12: ID=c992198c-e066-4d1d-902c-d0f8663fdf86, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 21:02:32.239819 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 13: ID=452b012c-2006-44b3-ba07-15d48b0ec845, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Рад(а) слышать вас. Чем я могу быть полезен/полезной сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 21:02:34.737733 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 14: ID=82966284-9fbc-4b88-884e-04f915d93483, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:20:36.581566 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 15: ID=466ed169-6f57-4c14-9dcf-8cc16f2b0d4e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:20:43.348891 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 16: ID=36684d2d-9723-4520-a442-266dc542212a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё отлично, спасибо за вопрос! Как ваши дела? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:20:45.541468 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 17: ID=9f6986bc-5ceb-4525-9402-da6a378c12bd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:28:31.181614 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 18: ID=72f4f807-7402-48d4-9d6a-976f8aeee69a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 22:28:33.502936 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 19: ID=09263c06-19b9-4be1-a565-3193f377ea97, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:30:40.51392 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 20: ID=3cd8100e-0bb7-4b1d-8eee-b804b519daa5, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:30:45.801969 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 21: ID=79e6b2b2-d942-4d59-b6cd-ce2e6c96b939, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:30:48.135272 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 22: ID=84d10d4d-0358-4d33-82f4-f3c63ed2d999, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='кого ?', timestamp=2025-05-09 22:42:21.807751 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 23: ID=8a507277-9df3-4fc7-82f4-878fe4ae0dec, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Давайте сосредоточимся на вашем заказе. Если нужен живой оператор — я подключу его. 🙂
-#эскалация_selfID', timestamp=2025-05-09 22:42:24.339658 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 24: ID=4f55d20b-abb0-4c12-9b57-59a3ab9b2168, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:48:35.599477 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 25: ID=1b12b0a9-6c3d-4334-884c-339e5e2ca3c5, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:48:37.837016 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 26: ID=fcb467ab-037b-426d-83bc-31b668f52cdd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:48:45.484592 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 27: ID=3cfc0403-cb7e-477d-bfd8-de0960d21705, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:48:47.459957 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 28: ID=fe220996-2d2e-4fb1-aff5-59d25afa27c3, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:59:21.533879 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 29: ID=1d8008e1-bdc7-47b6-9574-f5c72d010777, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу вам помочь сегодня? 🙂', timestamp=2025-05-09 22:59:28.804271 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 30: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 31: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 32: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 33: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+2025/10/01 18:44:47 chat.go:244: GetChatByID: найден чат ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, userID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, clientID=4c85db47-b6aa-45b2-b83a-ac1e84974657, status=active, source=web_widget, botID=web_widget_bot
+2025/10/01 18:44:47 chat.go:256: GetChatByID: получаем пользователя ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd
+2025/10/01 18:44:47 chat.go:268: GetChatByID: пользователь: ID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd, name='', email='', source=web_widget, sourceID=web_user_192833
+2025/10/01 18:44:47 chat.go:279: GetChatByID: всего сообщений в чате: 65
+2025/10/01 18:44:47 chat.go:294: GetChatByID: получаем сообщения с LIMIT=20 OFFSET=0
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 0: ID=d3f8fc7f-792c-4fea-b0da-ad280aa8329a, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 17:59:06.156135 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 1: ID=8992b84c-4a37-42bc-8594-f4b284a2f371, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 17:59:08.651986 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 2: ID=2bd60b6e-5f17-4f07-a708-7a248741539c, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:09:03.366938 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 3: ID=43b2eab7-e327-4a18-a374-f3d8c2ad2269, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:09:06.167366 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 4: ID=2bd60b6e-5f17-4f07-a708-7a248741539c, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:09:18.913575 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 5: ID=3799a28f-1ccf-47cf-a2b7-1df5330e12fc, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, по запросу 'свежее филе лосося' ничего не найдено. Попробуйте уточнить запрос или спросите про другие товары.', timestamp=2025-10-01 18:09:20.721606 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 6: ID=aaf3e817-0781-4a92-a843-879967228d8e, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:16:16.92807 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 7: ID=a870f030-6aa0-4be1-83e7-25241506ea7f, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:16:19.43511 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 8: ID=cc9f3c33-58be-4daa-ae07-57d8a54fd42e, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:22:57.972704 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 9: ID=073e8ec1-e1ad-4958-88da-5849fd4450d2, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:23:00.693091 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 10: ID=beca1f2e-4561-4d73-b874-d7e37be943e1, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:25:06.648784 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 11: ID=4eb5470c-7774-4269-aed5-eec285bcc17a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, по запросу 'свежее филе лосося' ничего не найдено. Попробуйте уточнить запрос или спросите про другие товары.', timestamp=2025-10-01 18:25:09.140853 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 12: ID=e1ec54da-7a25-4df9-834b-e668adc4a8d8, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:36:07.193035 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 13: ID=0543525d-c72e-4200-83bd-892599f185ae, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, произошла ошибка при поиске товаров. Попробуйте позже.', timestamp=2025-10-01 18:36:09.639969 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 14: ID=64a62270-b5aa-4e17-87c5-34ccb563ae2a, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:40:52.348446 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 15: ID=20458acb-9f6c-4d09-ac28-d334bf62ac17, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='🛒 **Свежее филе лосося**
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 34: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 35: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 36: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 37: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 38: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 39: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 40: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 41: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 42: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 43: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 44: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 45: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 46: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 47: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 48: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:320: GetChatByID: сообщение 49: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:46:23 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:46:23 chat.go:353: GetChatByID: последнее сообщение: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:23 chat.go:362: GetChatByID: успешно, возвращаем чат с 50 сообщениями
-[GIN] 2025/07/29 - 00:46:23 | 200 |    39.93425ms |             ::1 | GET     /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-[GIN] 2025/07/29 - 00:46:31 | 204 |      23.458µs |  37.232.127.201 | OPTIONS /api/telegram/webhook
-2025/07/29 00:46:31 telegram_handler.go:53: TelegramWebhook: POST /api/telegram/webhook from 37.232.127.201
-2025/07/29 00:46:31 telegram_handler.go:78: TelegramWebhook: получено сообщение: {UserID:web_user_287102 UserName: UserEmail: Content:ТЕСТСОКЕТА2 Source:web_widget BotID:web_widget_bot ClientID:test_key MessageType:text Metadata:map[]}
-2025/07/29 00:46:31 telegram_handler.go:89: TelegramWebhook: используем ClientID: test_key
-2025/07/29 00:46:31 telegram_handler.go:95: TelegramWebhook: создаем/получаем чат для user=web_user_287102, source=web_widget, botID=web_widget_bot, clientID=test_key
-2025/07/29 00:46:31 chat.go:370: GetOrCreateChat: начало, userID=web_user_287102, userName='', userEmail='', source=web_widget, sourceID=web_user_287102, botID=web_widget_bot, clientAPIKey=test_key
-2025/07/29 00:46:31 user.go:17: getOrCreateUser: начало, userID=web_user_287102, userName=, source=web_widget, sourceID=web_user_287102
-2025/07/29 00:46:31 user.go:35: getOrCreateUser: найден существующий пользователь ID=25add90d-8915-441a-9a81-7d6f305ce033, name=
-2025/07/29 00:46:31 chat.go:389: GetOrCreateChat: получен/создан пользователь ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email=''
-2025/07/29 00:46:31 client.go:13: getClientUUIDByAPIKey: начало, apiKey=test_key
-2025/07/29 00:46:31 client.go:42: getClientUUIDByAPIKey: найден существующий клиент ID=15efbba6-6411-4dfe-8334-476c7d056cf8 для apiKey=test_key
-2025/07/29 00:46:31 chat.go:398: GetOrCreateChat: получен clientUUID=15efbba6-6411-4dfe-8334-476c7d056cf8 для API key=test_key
-2025/07/29 00:46:31 chat.go:403: GetOrCreateChat: проверяем существование чата: user_id=25add90d-8915-441a-9a81-7d6f305ce033, source=web_widget, bot_id=web_widget_bot, client_id=15efbba6-6411-4dfe-8334-476c7d056cf8
-2025/07/29 00:46:31 chat.go:432: GetOrCreateChat: найден существующий чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:31 chat.go:440: GetOrCreateChat: транзакция успешно закоммичена
-2025/07/29 00:46:31 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=1, size=20
-2025/07/29 00:46:31 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 00:46:31 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:46:31 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:46:31 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:46:31 chat.go:279: GetChatByID: всего сообщений в чате: 236
-2025/07/29 00:46:31 chat.go:294: GetChatByID: получаем сообщения с LIMIT=20 OFFSET=0
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 0: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 1: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 2: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 3: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+📝 Описание:
+Свежайшее филе фермерского лосося из Турции, прошедшее санитарный контроль. Каждое филе аккуратно разделано: удалены кости и лишний жир, сохранена идеальная структура мяса.
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 4: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 5: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 6: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 7: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 8: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 9: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 10: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 11: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 12: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 13: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 14: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 15: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 16: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 17: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 18: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:320: GetChatByID: сообщение 19: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:46:31 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:46:31 chat.go:353: GetChatByID: последнее сообщение: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:31 chat.go:362: GetChatByID: успешно, возвращаем чат с 20 сообщениями
-2025/07/29 00:46:31 chat.go:449: GetOrCreateChat: успешно, возвращаем чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, userID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:46:31 telegram_handler.go:108: TelegramWebhook: получен чат: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, ClientID=15efbba6-6411-4dfe-8334-476c7d056cf8, UserID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:46:31 telegram_handler.go:118: TelegramWebhook: создан детерминированный UUID для userID web_user_287102: f660a123-fd41-5778-b762-57660fde3d11
-2025/07/29 00:46:31 telegram_handler.go:130: TelegramWebhook: добавляем сообщение в чат 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b от пользователя f660a123-fd41-5778-b762-57660fde3d11 с ID 9ae334aa-6844-4251-9720-3c051e155212
-2025/07/29 00:46:31 telegram_handler.go:149: TelegramWebhook: сообщение добавлено: ID=9ae334aa-6844-4251-9720-3c051e155212
-2025/07/29 00:46:31 telegram_handler.go:159: TelegramWebhook: генерируем автоответ
-2025/07/29 00:46:32 telegram_handler.go:174: TelegramWebhook: AutoResponder.ProcessMessage error: GenerateResponse: LLM API request failed: Post "http://localhost:1234/v1/chat/completions": dial tcp [::1]:1234: connect: connection refused
-2025/07/29 00:46:32 hub.go:269: Отправлено 1 сообщений в чат 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:46:32 telegram_handler.go:209: TelegramWebhook: комплексное WebSocket уведомление отправлено
-2025/07/29 00:46:32 telegram_handler.go:225: TelegramWebhook: отправляем ответ: map[chat_id:15e521bc-d9e7-4478-aa6d-4bfd0fc2942b message_id:9ae334aa-6844-4251-9720-3c051e155212 status:message processed timestamp:2025-07-29T00:46:32+04:00]
-[GIN] 2025/07/29 - 00:46:32 | 200 |     1.086117s |  37.232.127.201 | POST    /api/telegram/webhook
-2025/07/29 00:46:44 hub.go:314: Hub статистика: active=1, total=3, messages=3, disconnected=2
-2025/07/29 00:48:54 client.go:71: WebSocket closed: widget (00000000-0000-0000-0000-000000000000)
-2025/07/29 00:48:54 hub.go:183: Клиент отключен: type=widget, id=00000000-0000-0000-0000-000000000000
-2025/07/29 00:48:54 hub.go:183: Клиент отключен: type=widget, id=00000000-0000-0000-0000-000000000000
-2025/07/29 00:48:54 client.go:108: WritePump closed: widget (00000000-0000-0000-0000-000000000000)
-[GIN] 2025/07/29 - 00:48:56 | 204 |     153.083µs |  37.232.127.201 | OPTIONS /api/widget/chat/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b/messages
-2025/07/29 00:48:56 widget_handeler.go:35: GetWidgetChatMessages: перенаправление на WebSocket для чата 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-[GIN] 2025/07/29 - 00:48:56 | 200 |     177.333µs |  37.232.127.201 | GET     /api/widget/chat/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b/messages
-2025/07/29 00:48:56 websocket_handler.go:79: ServeWs: новое соединение от 37.232.127.201, origin: https://ecp-chat-widget.vercel.app
-2025/07/29 00:48:56 websocket_handler.go:142: ServeWs: подключение виджета, chatID: 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID: 00000000-0000-0000-0000-000000000000
-2025/07/29 00:48:56 hub.go:138: Клиент зарегистрирован: type=widget, id=00000000-0000-0000-0000-000000000000, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:48:56 websocket_handler.go:170: ServeWs: клиент 00000000-0000-0000-0000-000000000000 успешно подключен
-[GIN] 2025/07/29 - 00:48:56 | 200 |         789µs |  37.232.127.201 | GET     /ws?token=web_user_287102&type=widget&chat_id=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-[GIN] 2025/07/29 - 00:49:02 | 204 |          30µs |  37.232.127.201 | OPTIONS /api/telegram/webhook
-2025/07/29 00:49:02 telegram_handler.go:53: TelegramWebhook: POST /api/telegram/webhook from 37.232.127.201
-2025/07/29 00:49:02 telegram_handler.go:78: TelegramWebhook: получено сообщение: {UserID:web_user_287102 UserName: UserEmail: Content:ТЕСТСОКЕТА3 Source:web_widget BotID:web_widget_bot ClientID:test_key MessageType:text Metadata:map[]}
-2025/07/29 00:49:02 telegram_handler.go:89: TelegramWebhook: используем ClientID: test_key
-2025/07/29 00:49:02 telegram_handler.go:95: TelegramWebhook: создаем/получаем чат для user=web_user_287102, source=web_widget, botID=web_widget_bot, clientID=test_key
-2025/07/29 00:49:02 chat.go:370: GetOrCreateChat: начало, userID=web_user_287102, userName='', userEmail='', source=web_widget, sourceID=web_user_287102, botID=web_widget_bot, clientAPIKey=test_key
-2025/07/29 00:49:02 user.go:17: getOrCreateUser: начало, userID=web_user_287102, userName=, source=web_widget, sourceID=web_user_287102
-2025/07/29 00:49:02 user.go:35: getOrCreateUser: найден существующий пользователь ID=25add90d-8915-441a-9a81-7d6f305ce033, name=
-2025/07/29 00:49:02 chat.go:389: GetOrCreateChat: получен/создан пользователь ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email=''
-2025/07/29 00:49:02 client.go:13: getClientUUIDByAPIKey: начало, apiKey=test_key
-2025/07/29 00:49:02 client.go:42: getClientUUIDByAPIKey: найден существующий клиент ID=15efbba6-6411-4dfe-8334-476c7d056cf8 для apiKey=test_key
-2025/07/29 00:49:02 chat.go:398: GetOrCreateChat: получен clientUUID=15efbba6-6411-4dfe-8334-476c7d056cf8 для API key=test_key
-2025/07/29 00:49:02 chat.go:403: GetOrCreateChat: проверяем существование чата: user_id=25add90d-8915-441a-9a81-7d6f305ce033, source=web_widget, bot_id=web_widget_bot, client_id=15efbba6-6411-4dfe-8334-476c7d056cf8
-2025/07/29 00:49:02 chat.go:432: GetOrCreateChat: найден существующий чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:49:02 chat.go:440: GetOrCreateChat: транзакция успешно закоммичена
-2025/07/29 00:49:02 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=1, size=20
-2025/07/29 00:49:02 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 00:49:02 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:49:02 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:49:02 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:49:03 chat.go:279: GetChatByID: всего сообщений в чате: 237
-2025/07/29 00:49:03 chat.go:294: GetChatByID: получаем сообщения с LIMIT=20 OFFSET=0
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 0: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 1: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 2: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+✔️ Сочное и нежное филе, готовое к употреблению
+✔️ Богатый источник белка и Омега-3
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 3: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 4: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 5: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 6: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 7: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 8: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 9: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 10: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 11: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 12: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 13: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 14: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 15: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 16: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 17: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 18: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:320: GetChatByID: сообщение 19: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, read=false, type=text
-2025/07/29 00:49:03 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:49:03 chat.go:353: GetChatByID: последнее сообщение: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:49:03 chat.go:362: GetChatByID: успешно, возвращаем чат с 20 сообщениями
-2025/07/29 00:49:03 chat.go:449: GetOrCreateChat: успешно, возвращаем чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, userID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:49:03 telegram_handler.go:108: TelegramWebhook: получен чат: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, ClientID=15efbba6-6411-4dfe-8334-476c7d056cf8, UserID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:49:03 telegram_handler.go:118: TelegramWebhook: создан детерминированный UUID для userID web_user_287102: f660a123-fd41-5778-b762-57660fde3d11
-2025/07/29 00:49:03 telegram_handler.go:130: TelegramWebhook: добавляем сообщение в чат 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b от пользователя f660a123-fd41-5778-b762-57660fde3d11 с ID e3f599c2-e2d6-40e8-8509-48349b37677e
-2025/07/29 00:49:03 telegram_handler.go:149: TelegramWebhook: сообщение добавлено: ID=e3f599c2-e2d6-40e8-8509-48349b37677e
-2025/07/29 00:49:03 telegram_handler.go:159: TelegramWebhook: генерируем автоответ
-2025/07/29 00:49:04 telegram_handler.go:174: TelegramWebhook: AutoResponder.ProcessMessage error: GenerateResponse: LLM API request failed: Post "http://localhost:1234/v1/chat/completions": dial tcp [::1]:1234: connect: connection refused
-2025/07/29 00:49:04 hub.go:269: Отправлено 1 сообщений в чат 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:49:04 telegram_handler.go:209: TelegramWebhook: комплексное WebSocket уведомление отправлено
-2025/07/29 00:49:04 telegram_handler.go:225: TelegramWebhook: отправляем ответ: map[chat_id:15e521bc-d9e7-4478-aa6d-4bfd0fc2942b message_id:e3f599c2-e2d6-40e8-8509-48349b37677e status:message processed timestamp:2025-07-29T00:49:04+04:00]
-[GIN] 2025/07/29 - 00:49:04 | 200 |  1.047663125s |  37.232.127.201 | POST    /api/telegram/webhook
-2025/07/29 00:51:44 hub.go:314: Hub статистика: active=0, total=4, messages=4, disconnected=4
-2025/07/29 00:53:29 websocket_handler.go:79: ServeWs: новое соединение от ::1, origin: http://localhost:3000
-[GIN] 2025/07/29 - 00:53:29 | 204 |     502.208µs |  37.232.127.201 | OPTIONS /api/chats
-2025/07/29 00:53:29 websocket_handler.go:126: ServeWs: аутентифицирован admin 22222222-2222-2222-2222-222222222222 (client: 15efbba6-6411-4dfe-8334-476c7d056cf8)
-2025/07/29 00:53:29 hub.go:138: Клиент зарегистрирован: type=admin, id=22222222-2222-2222-2222-222222222222, chatID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:53:29 websocket_handler.go:170: ServeWs: клиент 22222222-2222-2222-2222-222222222222 успешно подключен
-[GIN] 2025/07/29 - 00:53:29 | 200 |    6.147833ms |             ::1 | GET     /ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiMjIyMjIyMjItMjIyMi0yMjIyLTIyMjItMjIyMjIyMjIyMjIyIiwiY2xpZW50SWQiOiIxNWVmYmJhNi02NDExLTRkZmUtODMzNC00NzZjN2QwNTZjZjgiLCJyb2xlIjoiYWRtaW4iLCJpc3MiOiJlY29jaGF0LXNlcnZlciIsImV4cCI6MTc1MzgwOTg1MCwiaWF0IjoxNzUzNzIzNDUwfQ.SCieEq-p-kSVHFuF_vI3yLVXNAy6EJBdDt5lVFDYWuI
-2025/07/29 00:53:29 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 00:53:29 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 00:53:29 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 00:53:29 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:53:29 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 00:53:29 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 00:53:29 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 00:53:29 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 00:53:29 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 00:53:29 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=e3f599c2-e2d6-40e8-8509-48349b37677e, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:29 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=9, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:49:03.037778 +0400 +04
-2025/07/29 00:53:29 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 00:53:29 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 00:53:29 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 00:53:29 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 00:53:29 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 00:53:29 | 200 |   75.141667ms |  37.232.127.201 | GET     /api/chats
-[GIN] 2025/07/29 - 00:53:29 | 204 |      13.916µs |  37.232.127.201 | OPTIONS /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:29 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=0, size=50
-2025/07/29 00:53:29 chat.go:202: GetChatByID: page скорректирован на 1
-2025/07/29 00:53:29 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 00:53:29 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:53:29 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:53:29 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:53:29 chat.go:279: GetChatByID: всего сообщений в чате: 238
-2025/07/29 00:53:29 chat.go:294: GetChatByID: получаем сообщения с LIMIT=50 OFFSET=0
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 0: ID=4ee99813-a55f-4886-8ec0-db4435d8677b, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я понимаю, что вы сейчас испытываете сложности с общением. Давайте сосредоточимся на вашем заказе. Если вам нужна помощь или поддержка, я здесь для вас. 🙂 Если же вам нужен живой оператор – я могу его подключить.
-#эскалация_selfID', timestamp=2025-05-09 20:31:04.265833 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 1: ID=26f9caa6-0942-48e5-a24d-1a0200647378, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='ау', timestamp=2025-05-09 20:31:08.682485 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 2: ID=8a9a09c9-e481-483c-a72b-0251da103e1e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ge', timestamp=2025-05-09 20:47:32.142136 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 3: ID=ca38ddc2-01ee-4931-935f-96781df85fb8, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я вижу, что вы пишете английский язык. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 20:47:34.414267 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 4: ID=879f9995-d42a-4590-b1e6-4baddd4ca511, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='fdf', timestamp=2025-05-09 20:47:39.161596 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 5: ID=9aec2aaa-61ea-4f39-ba8b-6350776aa607, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ghbdtn', timestamp=2025-05-09 20:47:49.449356 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 6: ID=80127827-5a0c-4ff3-8293-7841285b3483, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Простите, я не понимаю ваш запрос. Пожалуйста, напишите на русском языке или уточните, что вы хотели бы узнать. 🙂
-#эскалация_selfID', timestamp=2025-05-09 20:47:52.080244 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 7: ID=5c530f87-fc63-4c47-86ea-7a036ae64dd6, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 20:49:08.07411 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 8: ID=df2aaae7-6c1e-49bf-b23b-db4960cb59cd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 20:49:14.367759 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 9: ID=87755954-737c-4019-8316-46def5a33865, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё хорошо! Надеюсь, у вас тоже все замечательно? 😊 Чем могу вам помочь сегодня?
-#поддержка_enddel', timestamp=2025-05-09 20:49:16.726182 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 10: ID=c992198c-e066-4d1d-902c-d0f8663fdf86, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 21:02:32.239819 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 11: ID=452b012c-2006-44b3-ba07-15d48b0ec845, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Рад(а) слышать вас. Чем я могу быть полезен/полезной сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 21:02:34.737733 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 12: ID=82966284-9fbc-4b88-884e-04f915d93483, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:20:36.581566 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 13: ID=466ed169-6f57-4c14-9dcf-8cc16f2b0d4e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:20:43.348891 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 14: ID=36684d2d-9723-4520-a442-266dc542212a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё отлично, спасибо за вопрос! Как ваши дела? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:20:45.541468 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 15: ID=9f6986bc-5ceb-4525-9402-da6a378c12bd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:28:31.181614 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 16: ID=72f4f807-7402-48d4-9d6a-976f8aeee69a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 22:28:33.502936 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 17: ID=09263c06-19b9-4be1-a565-3193f377ea97, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:30:40.51392 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 18: ID=3cd8100e-0bb7-4b1d-8eee-b804b519daa5, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:30:45.801969 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 19: ID=79e6b2b2-d942-4d59-b6cd-ce2e6c96b939, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:30:48.135272 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 20: ID=84d10d4d-0358-4d33-82f4-f3c63ed2d999, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='кого ?', timestamp=2025-05-09 22:42:21.807751 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 21: ID=8a507277-9df3-4fc7-82f4-878fe4ae0dec, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Давайте сосредоточимся на вашем заказе. Если нужен живой оператор — я подключу его. 🙂
-#эскалация_selfID', timestamp=2025-05-09 22:42:24.339658 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 22: ID=4f55d20b-abb0-4c12-9b57-59a3ab9b2168, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:48:35.599477 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 23: ID=1b12b0a9-6c3d-4334-884c-339e5e2ca3c5, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:48:37.837016 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 24: ID=fcb467ab-037b-426d-83bc-31b668f52cdd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:48:45.484592 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 25: ID=3cfc0403-cb7e-477d-bfd8-de0960d21705, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:48:47.459957 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 26: ID=fe220996-2d2e-4fb1-aff5-59d25afa27c3, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:59:21.533879 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 27: ID=1d8008e1-bdc7-47b6-9574-f5c72d010777, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу вам помочь сегодня? 🙂', timestamp=2025-05-09 22:59:28.804271 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 28: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 29: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 30: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 31: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+✔️ Подходит для сашими, гриля, запекания, стейков и роллов
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 32: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 33: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 34: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 35: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 36: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 37: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 38: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 39: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 40: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 41: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 42: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 43: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 44: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 45: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 46: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 47: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 48: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:320: GetChatByID: сообщение 49: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, read=false, type=text
-2025/07/29 00:53:29 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:53:29 chat.go:353: GetChatByID: последнее сообщение: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:29 chat.go:362: GetChatByID: успешно, возвращаем чат с 50 сообщениями
-[GIN] 2025/07/29 - 00:53:29 | 200 |   41.726041ms |  37.232.127.201 | GET     /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-[GIN] 2025/07/29 - 00:53:32 | 204 |      14.625µs |  37.232.127.201 | OPTIONS /api/chats
-2025/07/29 00:53:32 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 00:53:32 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 00:53:32 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 00:53:32 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:53:32 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 00:53:32 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 00:53:32 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 00:53:32 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 00:53:32 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 00:53:32 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=e3f599c2-e2d6-40e8-8509-48349b37677e, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:32 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=9, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:49:03.037778 +0400 +04
-2025/07/29 00:53:32 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 00:53:32 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 00:53:32 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 00:53:32 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 00:53:32 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 00:53:32 | 200 |   27.603916ms |  37.232.127.201 | GET     /api/chats
-[GIN] 2025/07/29 - 00:53:32 | 204 |      32.417µs |  37.232.127.201 | OPTIONS /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:33 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=0, size=50
-2025/07/29 00:53:33 chat.go:202: GetChatByID: page скорректирован на 1
-2025/07/29 00:53:33 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 00:53:33 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:53:33 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:53:33 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:53:33 chat.go:279: GetChatByID: всего сообщений в чате: 238
-2025/07/29 00:53:33 chat.go:294: GetChatByID: получаем сообщения с LIMIT=50 OFFSET=0
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 0: ID=4ee99813-a55f-4886-8ec0-db4435d8677b, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я понимаю, что вы сейчас испытываете сложности с общением. Давайте сосредоточимся на вашем заказе. Если вам нужна помощь или поддержка, я здесь для вас. 🙂 Если же вам нужен живой оператор – я могу его подключить.
-#эскалация_selfID', timestamp=2025-05-09 20:31:04.265833 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 1: ID=26f9caa6-0942-48e5-a24d-1a0200647378, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='ау', timestamp=2025-05-09 20:31:08.682485 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 2: ID=8a9a09c9-e481-483c-a72b-0251da103e1e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ge', timestamp=2025-05-09 20:47:32.142136 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 3: ID=ca38ddc2-01ee-4931-935f-96781df85fb8, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я вижу, что вы пишете английский язык. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 20:47:34.414267 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 4: ID=879f9995-d42a-4590-b1e6-4baddd4ca511, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='fdf', timestamp=2025-05-09 20:47:39.161596 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 5: ID=9aec2aaa-61ea-4f39-ba8b-6350776aa607, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ghbdtn', timestamp=2025-05-09 20:47:49.449356 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 6: ID=80127827-5a0c-4ff3-8293-7841285b3483, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Простите, я не понимаю ваш запрос. Пожалуйста, напишите на русском языке или уточните, что вы хотели бы узнать. 🙂
-#эскалация_selfID', timestamp=2025-05-09 20:47:52.080244 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 7: ID=5c530f87-fc63-4c47-86ea-7a036ae64dd6, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 20:49:08.07411 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 8: ID=df2aaae7-6c1e-49bf-b23b-db4960cb59cd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 20:49:14.367759 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 9: ID=87755954-737c-4019-8316-46def5a33865, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё хорошо! Надеюсь, у вас тоже все замечательно? 😊 Чем могу вам помочь сегодня?
-#поддержка_enddel', timestamp=2025-05-09 20:49:16.726182 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 10: ID=c992198c-e066-4d1d-902c-d0f8663fdf86, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 21:02:32.239819 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 11: ID=452b012c-2006-44b3-ba07-15d48b0ec845, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Рад(а) слышать вас. Чем я могу быть полезен/полезной сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 21:02:34.737733 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 12: ID=82966284-9fbc-4b88-884e-04f915d93483, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:20:36.581566 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 13: ID=466ed169-6f57-4c14-9dcf-8cc16f2b0d4e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:20:43.348891 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 14: ID=36684d2d-9723-4520-a442-266dc542212a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё отлично, спасибо за вопрос! Как ваши дела? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:20:45.541468 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 15: ID=9f6986bc-5ceb-4525-9402-da6a378c12bd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:28:31.181614 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 16: ID=72f4f807-7402-48d4-9d6a-976f8aeee69a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 22:28:33.502936 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 17: ID=09263c06-19b9-4be1-a565-3193f377ea97, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:30:40.51392 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 18: ID=3cd8100e-0bb7-4b1d-8eee-b804b519daa5, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:30:45.801969 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 19: ID=79e6b2b2-d942-4d59-b6cd-ce2e6c96b939, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:30:48.135272 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 20: ID=84d10d4d-0358-4d33-82f4-f3c63ed2d999, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='кого ?', timestamp=2025-05-09 22:42:21.807751 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 21: ID=8a507277-9df3-4fc7-82f4-878fe4ae0dec, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Давайте сосредоточимся на вашем заказе. Если нужен живой оператор — я подключу его. 🙂
-#эскалация_selfID', timestamp=2025-05-09 22:42:24.339658 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 22: ID=4f55d20b-abb0-4c12-9b57-59a3ab9b2168, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:48:35.599477 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 23: ID=1b12b0a9-6c3d-4334-884c-339e5e2ca3c5, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:48:37.837016 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 24: ID=fcb467ab-037b-426d-83bc-31b668f52cdd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:48:45.484592 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 25: ID=3cfc0403-cb7e-477d-bfd8-de0960d21705, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:48:47.459957 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 26: ID=fe220996-2d2e-4fb1-aff5-59d25afa27c3, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:59:21.533879 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 27: ID=1d8008e1-bdc7-47b6-9574-f5c72d010777, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу вам помочь сегодня? 🙂', timestamp=2025-05-09 22:59:28.804271 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 28: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 29: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 30: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 31: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 32: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 33: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 34: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 35: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 36: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 37: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 38: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 39: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 40: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 41: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 42: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 43: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 44: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 45: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 46: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 47: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 48: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:320: GetChatByID: сообщение 49: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, read=false, type=text
-2025/07/29 00:53:33 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:53:33 chat.go:353: GetChatByID: последнее сообщение: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:33 chat.go:362: GetChatByID: успешно, возвращаем чат с 50 сообщениями
-[GIN] 2025/07/29 - 00:53:33 | 200 |   41.403167ms |  37.232.127.201 | GET     /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:34 websocket_handler.go:79: ServeWs: новое соединение от 37.232.127.201, origin: http://localhost:3000
-2025/07/29 00:53:34 websocket_handler.go:126: ServeWs: аутентифицирован admin 22222222-2222-2222-2222-222222222222 (client: 15efbba6-6411-4dfe-8334-476c7d056cf8)
-2025/07/29 00:53:34 hub.go:138: Клиент зарегистрирован: type=admin, id=22222222-2222-2222-2222-222222222222, chatID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:53:34 websocket_handler.go:170: ServeWs: клиент 22222222-2222-2222-2222-222222222222 успешно подключен
-[GIN] 2025/07/29 - 00:53:34 | 200 |     521.208µs |  37.232.127.201 | GET     /ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiMjIyMjIyMjItMjIyMi0yMjIyLTIyMjItMjIyMjIyMjIyMjIyIiwiY2xpZW50SWQiOiIxNWVmYmJhNi02NDExLTRkZmUtODMzNC00NzZjN2QwNTZjZjgiLCJyb2xlIjoiYWRtaW4iLCJpc3MiOiJlY29jaGF0LXNlcnZlciIsImV4cCI6MTc1MzgwOTg1MCwiaWF0IjoxNzUzNzIzNDUwfQ.SCieEq-p-kSVHFuF_vI3yLVXNAy6EJBdDt5lVFDYWuI
-[GIN] 2025/07/29 - 00:53:34 | 204 |     214.458µs |  37.232.127.201 | OPTIONS /api/chats
-2025/07/29 00:53:34 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 00:53:34 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 00:53:34 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 00:53:34 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:53:34 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 00:53:34 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 00:53:34 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 00:53:34 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 00:53:34 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 00:53:34 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=e3f599c2-e2d6-40e8-8509-48349b37677e, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:53:34 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=9, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:49:03.037778 +0400 +04
-2025/07/29 00:53:34 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 00:53:34 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 00:53:34 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 00:53:34 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 00:53:34 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 00:53:34 | 200 |   32.962875ms |  37.232.127.201 | GET     /api/chats
-2025/07/29 00:56:44 hub.go:314: Hub статистика: active=2, total=6, messages=6, disconnected=4
-2025/07/29 00:56:58 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:56:58 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:56:58 client.go:108: WritePump closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:56:58 client.go:71: WebSocket closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:56:58 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:56:58 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:56:58 client.go:71: WebSocket closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:56:58 client.go:108: WritePump closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:56:58 client.go:71: WebSocket closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:56:58 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:56:58 client.go:108: WritePump closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 00:56:58 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 00:56:58 websocket_handler.go:79: ServeWs: новое соединение от 37.232.127.201, origin: http://localhost:3000
-[GIN] 2025/07/29 - 00:56:58 | 204 |      47.958µs |  37.232.127.201 | OPTIONS /api/chats
-2025/07/29 00:56:58 websocket_handler.go:126: ServeWs: аутентифицирован admin 22222222-2222-2222-2222-222222222222 (client: 15efbba6-6411-4dfe-8334-476c7d056cf8)
-2025/07/29 00:56:58 hub.go:138: Клиент зарегистрирован: type=admin, id=22222222-2222-2222-2222-222222222222, chatID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:56:58 websocket_handler.go:170: ServeWs: клиент 22222222-2222-2222-2222-222222222222 успешно подключен
-[GIN] 2025/07/29 - 00:56:58 | 200 |     270.291µs |  37.232.127.201 | GET     /ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiMjIyMjIyMjItMjIyMi0yMjIyLTIyMjItMjIyMjIyMjIyMjIyIiwiY2xpZW50SWQiOiIxNWVmYmJhNi02NDExLTRkZmUtODMzNC00NzZjN2QwNTZjZjgiLCJyb2xlIjoiYWRtaW4iLCJpc3MiOiJlY29jaGF0LXNlcnZlciIsImV4cCI6MTc1MzgwOTg1MCwiaWF0IjoxNzUzNzIzNDUwfQ.SCieEq-p-kSVHFuF_vI3yLVXNAy6EJBdDt5lVFDYWuI
-2025/07/29 00:56:58 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 00:56:58 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 00:56:58 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 00:56:58 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 00:56:58 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 00:56:58 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 00:56:58 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 00:56:58 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 00:56:58 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 00:56:58 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=e3f599c2-e2d6-40e8-8509-48349b37677e, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:56:58 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=9, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:49:03.037778 +0400 +04
-2025/07/29 00:56:58 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 00:56:58 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 00:56:58 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 00:56:58 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 00:56:58 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 00:56:58 | 200 |   40.401333ms |  37.232.127.201 | GET     /api/chats
-[GIN] 2025/07/29 - 00:56:59 | 204 |      14.041µs |  37.232.127.201 | OPTIONS /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:56:59 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=0, size=50
-2025/07/29 00:56:59 chat.go:202: GetChatByID: page скорректирован на 1
-2025/07/29 00:56:59 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 00:56:59 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:56:59 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:56:59 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:56:59 chat.go:279: GetChatByID: всего сообщений в чате: 238
-2025/07/29 00:56:59 chat.go:294: GetChatByID: получаем сообщения с LIMIT=50 OFFSET=0
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 0: ID=4ee99813-a55f-4886-8ec0-db4435d8677b, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я понимаю, что вы сейчас испытываете сложности с общением. Давайте сосредоточимся на вашем заказе. Если вам нужна помощь или поддержка, я здесь для вас. 🙂 Если же вам нужен живой оператор – я могу его подключить.
-#эскалация_selfID', timestamp=2025-05-09 20:31:04.265833 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 1: ID=26f9caa6-0942-48e5-a24d-1a0200647378, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='ау', timestamp=2025-05-09 20:31:08.682485 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 2: ID=8a9a09c9-e481-483c-a72b-0251da103e1e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ge', timestamp=2025-05-09 20:47:32.142136 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 3: ID=ca38ddc2-01ee-4931-935f-96781df85fb8, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я вижу, что вы пишете английский язык. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 20:47:34.414267 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 4: ID=879f9995-d42a-4590-b1e6-4baddd4ca511, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='fdf', timestamp=2025-05-09 20:47:39.161596 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 5: ID=9aec2aaa-61ea-4f39-ba8b-6350776aa607, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ghbdtn', timestamp=2025-05-09 20:47:49.449356 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 6: ID=80127827-5a0c-4ff3-8293-7841285b3483, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Простите, я не понимаю ваш запрос. Пожалуйста, напишите на русском языке или уточните, что вы хотели бы узнать. 🙂
-#эскалация_selfID', timestamp=2025-05-09 20:47:52.080244 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 7: ID=5c530f87-fc63-4c47-86ea-7a036ae64dd6, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 20:49:08.07411 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 8: ID=df2aaae7-6c1e-49bf-b23b-db4960cb59cd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 20:49:14.367759 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 9: ID=87755954-737c-4019-8316-46def5a33865, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё хорошо! Надеюсь, у вас тоже все замечательно? 😊 Чем могу вам помочь сегодня?
-#поддержка_enddel', timestamp=2025-05-09 20:49:16.726182 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 10: ID=c992198c-e066-4d1d-902c-d0f8663fdf86, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 21:02:32.239819 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 11: ID=452b012c-2006-44b3-ba07-15d48b0ec845, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Рад(а) слышать вас. Чем я могу быть полезен/полезной сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 21:02:34.737733 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 12: ID=82966284-9fbc-4b88-884e-04f915d93483, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:20:36.581566 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 13: ID=466ed169-6f57-4c14-9dcf-8cc16f2b0d4e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:20:43.348891 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 14: ID=36684d2d-9723-4520-a442-266dc542212a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё отлично, спасибо за вопрос! Как ваши дела? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:20:45.541468 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 15: ID=9f6986bc-5ceb-4525-9402-da6a378c12bd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:28:31.181614 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 16: ID=72f4f807-7402-48d4-9d6a-976f8aeee69a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 22:28:33.502936 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 17: ID=09263c06-19b9-4be1-a565-3193f377ea97, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:30:40.51392 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 18: ID=3cd8100e-0bb7-4b1d-8eee-b804b519daa5, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:30:45.801969 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 19: ID=79e6b2b2-d942-4d59-b6cd-ce2e6c96b939, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:30:48.135272 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 20: ID=84d10d4d-0358-4d33-82f4-f3c63ed2d999, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='кого ?', timestamp=2025-05-09 22:42:21.807751 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 21: ID=8a507277-9df3-4fc7-82f4-878fe4ae0dec, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Давайте сосредоточимся на вашем заказе. Если нужен живой оператор — я подключу его. 🙂
-#эскалация_selfID', timestamp=2025-05-09 22:42:24.339658 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 22: ID=4f55d20b-abb0-4c12-9b57-59a3ab9b2168, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:48:35.599477 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 23: ID=1b12b0a9-6c3d-4334-884c-339e5e2ca3c5, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:48:37.837016 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 24: ID=fcb467ab-037b-426d-83bc-31b668f52cdd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:48:45.484592 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 25: ID=3cfc0403-cb7e-477d-bfd8-de0960d21705, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:48:47.459957 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 26: ID=fe220996-2d2e-4fb1-aff5-59d25afa27c3, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:59:21.533879 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 27: ID=1d8008e1-bdc7-47b6-9574-f5c72d010777, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу вам помочь сегодня? 🙂', timestamp=2025-05-09 22:59:28.804271 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 28: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 29: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 30: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 31: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+Происхождение: Турция, фермерское выращивание
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 32: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 33: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 34: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 35: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 36: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 37: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 38: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 39: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 40: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 41: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 42: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 43: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 44: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 45: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 46: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 47: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 48: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:320: GetChatByID: сообщение 49: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, read=false, type=text
-2025/07/29 00:56:59 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:56:59 chat.go:353: GetChatByID: последнее сообщение: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:56:59 chat.go:362: GetChatByID: успешно, возвращаем чат с 50 сообщениями
-[GIN] 2025/07/29 - 00:56:59 | 200 |   36.620709ms |  37.232.127.201 | GET     /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:57:00 client.go:71: WebSocket closed: widget (00000000-0000-0000-0000-000000000000)
-2025/07/29 00:57:00 hub.go:183: Клиент отключен: type=widget, id=00000000-0000-0000-0000-000000000000
-2025/07/29 00:57:00 hub.go:183: Клиент отключен: type=widget, id=00000000-0000-0000-0000-000000000000
-2025/07/29 00:57:00 client.go:108: WritePump closed: widget (00000000-0000-0000-0000-000000000000)
-[GIN] 2025/07/29 - 00:57:04 | 204 |      71.667µs |  37.232.127.201 | OPTIONS /api/widget/chat/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b/messages
-2025/07/29 00:57:04 websocket_handler.go:79: ServeWs: новое соединение от 37.232.127.201, origin: https://ecp-chat-widget.vercel.app
-2025/07/29 00:57:04 websocket_handler.go:142: ServeWs: подключение виджета, chatID: 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID: 00000000-0000-0000-0000-000000000000
-2025/07/29 00:57:04 hub.go:138: Клиент зарегистрирован: type=widget, id=00000000-0000-0000-0000-000000000000, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:57:04 websocket_handler.go:170: ServeWs: клиент 00000000-0000-0000-0000-000000000000 успешно подключен
-[GIN] 2025/07/29 - 00:57:04 | 200 |      466.25µs |  37.232.127.201 | GET     /ws?token=web_user_287102&type=widget&chat_id=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:57:04 widget_handeler.go:35: GetWidgetChatMessages: перенаправление на WebSocket для чата 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-[GIN] 2025/07/29 - 00:57:04 | 200 |     866.167µs |  37.232.127.201 | GET     /api/widget/chat/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b/messages
-[GIN] 2025/07/29 - 00:57:14 | 204 |      31.083µs |  37.232.127.201 | OPTIONS /api/telegram/webhook
-2025/07/29 00:57:15 telegram_handler.go:53: TelegramWebhook: POST /api/telegram/webhook from 37.232.127.201
-2025/07/29 00:57:15 telegram_handler.go:78: TelegramWebhook: получено сообщение: {UserID:web_user_287102 UserName: UserEmail: Content:тестсокета4 Source:web_widget BotID:web_widget_bot ClientID:test_key MessageType:text Metadata:map[]}
-2025/07/29 00:57:15 telegram_handler.go:89: TelegramWebhook: используем ClientID: test_key
-2025/07/29 00:57:15 telegram_handler.go:95: TelegramWebhook: создаем/получаем чат для user=web_user_287102, source=web_widget, botID=web_widget_bot, clientID=test_key
-2025/07/29 00:57:15 chat.go:370: GetOrCreateChat: начало, userID=web_user_287102, userName='', userEmail='', source=web_widget, sourceID=web_user_287102, botID=web_widget_bot, clientAPIKey=test_key
-2025/07/29 00:57:15 user.go:17: getOrCreateUser: начало, userID=web_user_287102, userName=, source=web_widget, sourceID=web_user_287102
-2025/07/29 00:57:15 user.go:35: getOrCreateUser: найден существующий пользователь ID=25add90d-8915-441a-9a81-7d6f305ce033, name=
-2025/07/29 00:57:15 chat.go:389: GetOrCreateChat: получен/создан пользователь ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email=''
-2025/07/29 00:57:15 client.go:13: getClientUUIDByAPIKey: начало, apiKey=test_key
-2025/07/29 00:57:15 client.go:42: getClientUUIDByAPIKey: найден существующий клиент ID=15efbba6-6411-4dfe-8334-476c7d056cf8 для apiKey=test_key
-2025/07/29 00:57:15 chat.go:398: GetOrCreateChat: получен clientUUID=15efbba6-6411-4dfe-8334-476c7d056cf8 для API key=test_key
-2025/07/29 00:57:15 chat.go:403: GetOrCreateChat: проверяем существование чата: user_id=25add90d-8915-441a-9a81-7d6f305ce033, source=web_widget, bot_id=web_widget_bot, client_id=15efbba6-6411-4dfe-8334-476c7d056cf8
-2025/07/29 00:57:15 chat.go:432: GetOrCreateChat: найден существующий чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:57:15 chat.go:440: GetOrCreateChat: транзакция успешно закоммичена
-2025/07/29 00:57:15 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=1, size=20
-2025/07/29 00:57:15 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 00:57:15 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 00:57:15 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:57:15 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 00:57:15 chat.go:279: GetChatByID: всего сообщений в чате: 238
-2025/07/29 00:57:15 chat.go:294: GetChatByID: получаем сообщения с LIMIT=20 OFFSET=0
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 0: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 1: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+Остаётся только наслаждаться свежим вкусом лосося премиального качества.
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 2: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 3: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 4: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 5: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 6: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 7: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 8: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 9: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 10: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 11: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 12: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 13: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 14: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 15: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 16: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 17: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 18: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:320: GetChatByID: сообщение 19: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, read=false, type=text
-2025/07/29 00:57:15 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 00:57:15 chat.go:353: GetChatByID: последнее сообщение: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:57:15 chat.go:362: GetChatByID: успешно, возвращаем чат с 20 сообщениями
-2025/07/29 00:57:15 chat.go:449: GetOrCreateChat: успешно, возвращаем чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, userID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:57:15 telegram_handler.go:108: TelegramWebhook: получен чат: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, ClientID=15efbba6-6411-4dfe-8334-476c7d056cf8, UserID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 00:57:15 telegram_handler.go:118: TelegramWebhook: создан детерминированный UUID для userID web_user_287102: f660a123-fd41-5778-b762-57660fde3d11
-2025/07/29 00:57:15 telegram_handler.go:130: TelegramWebhook: добавляем сообщение в чат 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b от пользователя f660a123-fd41-5778-b762-57660fde3d11 с ID 5ac05891-d29a-4586-8f05-389c297740db
-2025/07/29 00:57:15 telegram_handler.go:149: TelegramWebhook: сообщение добавлено: ID=5ac05891-d29a-4586-8f05-389c297740db
-2025/07/29 00:57:15 telegram_handler.go:159: TelegramWebhook: генерируем автоответ
-2025/07/29 00:57:16 telegram_handler.go:174: TelegramWebhook: AutoResponder.ProcessMessage error: GenerateResponse: LLM API request failed: Post "http://localhost:1234/v1/chat/completions": dial tcp [::1]:1234: connect: connection refused
-2025/07/29 00:57:16 hub.go:269: Отправлено 1 сообщений в чат 15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 00:57:16 telegram_handler.go:209: TelegramWebhook: комплексное WebSocket уведомление отправлено
-2025/07/29 00:57:16 telegram_handler.go:225: TelegramWebhook: отправляем ответ: map[chat_id:15e521bc-d9e7-4478-aa6d-4bfd0fc2942b message_id:5ac05891-d29a-4586-8f05-389c297740db status:message processed timestamp:2025-07-29T00:57:16+04:00]
-[GIN] 2025/07/29 - 00:57:16 | 200 |    1.0751445s |  37.232.127.201 | POST    /api/telegram/webhook
-2025/07/29 01:01:21 client.go:71: WebSocket closed: admin (22222222-2222-2222-2222-222222222222)
-2025/07/29 01:01:21 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 01:01:21 hub.go:183: Клиент отключен: type=admin, id=22222222-2222-2222-2222-222222222222
-2025/07/29 01:01:21 client.go:108: WritePump closed: admin (22222222-2222-2222-2222-222222222222)
-[GIN] 2025/07/29 - 01:01:28 | 204 |     138.125µs |  37.232.127.201 | OPTIONS /api/chats
-2025/07/29 01:01:28 websocket_handler.go:79: ServeWs: новое соединение от 37.232.127.201, origin: http://localhost:3000
-2025/07/29 01:01:28 websocket_handler.go:126: ServeWs: аутентифицирован admin 22222222-2222-2222-2222-222222222222 (client: 15efbba6-6411-4dfe-8334-476c7d056cf8)
-2025/07/29 01:01:28 hub.go:138: Клиент зарегистрирован: type=admin, id=22222222-2222-2222-2222-222222222222, chatID=00000000-0000-0000-0000-000000000000
-2025/07/29 01:01:28 websocket_handler.go:170: ServeWs: клиент 22222222-2222-2222-2222-222222222222 успешно подключен
-[GIN] 2025/07/29 - 01:01:28 | 200 |      396.75µs |  37.232.127.201 | GET     /ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiMjIyMjIyMjItMjIyMi0yMjIyLTIyMjItMjIyMjIyMjIyMjIyIiwiY2xpZW50SWQiOiIxNWVmYmJhNi02NDExLTRkZmUtODMzNC00NzZjN2QwNTZjZjgiLCJyb2xlIjoiYWRtaW4iLCJpc3MiOiJlY29jaGF0LXNlcnZlciIsImV4cCI6MTc1MzgwOTg1MCwiaWF0IjoxNzUzNzIzNDUwfQ.SCieEq-p-kSVHFuF_vI3yLVXNAy6EJBdDt5lVFDYWuI
-2025/07/29 01:01:28 chat.go:16: GetChats: начало, clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000, page=0, size=50
-2025/07/29 01:01:28 chat.go:21: GetChats: page скорректирован на 1
-2025/07/29 01:01:28 chat.go:46: GetChats: выполняем запрос подсчета: SELECT COUNT(*) FROM chats
-2025/07/29 01:01:28 chat.go:47: GetChats: параметры подсчета: clientID=00000000-0000-0000-0000-000000000000, adminID=00000000-0000-0000-0000-000000000000
-2025/07/29 01:01:28 chat.go:53: GetChats: найдено всего чатов с фильтром: 3
-2025/07/29 01:01:28 chat.go:59: GetChats: всего чатов клиента без фильтра по assigned_to: 0
-2025/07/29 01:01:28 chat.go:67: GetChats: чатов назначенных другим админам: 0
-2025/07/29 01:01:28 chat.go:77: GetChats: последние 10 чатов клиента для отладки:
-2025/07/29 01:01:28 chat.go:132: GetChats: выполняем основной запрос с LIMIT=50 OFFSET=0
-2025/07/29 01:01:28 chat.go:175: GetChats: чат 0 имеет последнее сообщение ID=5ac05891-d29a-4586-8f05-389c297740db, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 01:01:28 chat.go:181: GetChats: чат 0: ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, userName='', email='', status=active, unread=10, created=2025-04-27 23:47:35.492777 +0400 +04, updated=2025-07-29 00:57:15.083236 +0400 +04
-2025/07/29 01:01:28 chat.go:178: GetChats: чат 1 не имеет сообщений
-2025/07/29 01:01:28 chat.go:181: GetChats: чат 1: ID=5745d3e4-1dbf-4d0f-8a5c-4051ac35ac6b, userID=0176943a-958c-4d94-9022-60dbbedbab6f, userName='', email='', status=active, unread=0, created=2025-05-04 03:02:59.67929 +0400 +04, updated=2025-05-04 03:02:59.67929 +0400 +04
-2025/07/29 01:01:28 chat.go:175: GetChats: чат 2 имеет последнее сообщение ID=11111111-1111-1111-1111-111111111111, ChatID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec
-2025/07/29 01:01:28 chat.go:181: GetChats: чат 2: ID=83b6a6e9-ab6c-4c95-a32d-be57a72da5ec, userID=f2b22b0a-ab0f-4bb2-ad6b-be4639bcbaf5, userName='', email='', status=active, unread=2, created=2025-04-28 02:34:30.235507 +0400 +04, updated=2025-04-28 02:36:24.503839 +0400 +04
-2025/07/29 01:01:28 chat.go:193: GetChats: успешно, возвращаем 3 чатов из 3
-[GIN] 2025/07/29 - 01:01:28 | 200 |    41.46575ms |  37.232.127.201 | GET     /api/chats
-[GIN] 2025/07/29 - 01:01:28 | 204 |       7.833µs |  37.232.127.201 | OPTIONS /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 01:01:29 chat.go:198: GetChatByID: начало, chatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, page=0, size=50
-2025/07/29 01:01:29 chat.go:202: GetChatByID: page скорректирован на 1
-2025/07/29 01:01:29 chat.go:224: GetChatByID: выполняем запрос чата: 
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to
-          FROM chats WHERE id=$1
-2025/07/29 01:01:29 chat.go:244: GetChatByID: найден чат ID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b, userID=25add90d-8915-441a-9a81-7d6f305ce033, clientID=15efbba6-6411-4dfe-8334-476c7d056cf8, status=active, source=web_widget, botID=web_widget_bot
-2025/07/29 01:01:29 chat.go:256: GetChatByID: получаем пользователя ID=25add90d-8915-441a-9a81-7d6f305ce033
-2025/07/29 01:01:29 chat.go:268: GetChatByID: пользователь: ID=25add90d-8915-441a-9a81-7d6f305ce033, name='', email='', source=web_widget, sourceID=web_user_287102
-2025/07/29 01:01:29 chat.go:279: GetChatByID: всего сообщений в чате: 239
-2025/07/29 01:01:29 chat.go:294: GetChatByID: получаем сообщения с LIMIT=50 OFFSET=0
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 0: ID=26f9caa6-0942-48e5-a24d-1a0200647378, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='ау', timestamp=2025-05-09 20:31:08.682485 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 1: ID=8a9a09c9-e481-483c-a72b-0251da103e1e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ge', timestamp=2025-05-09 20:47:32.142136 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 2: ID=ca38ddc2-01ee-4931-935f-96781df85fb8, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Я вижу, что вы пишете английский язык. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 20:47:34.414267 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 3: ID=879f9995-d42a-4590-b1e6-4baddd4ca511, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='fdf', timestamp=2025-05-09 20:47:39.161596 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 4: ID=9aec2aaa-61ea-4f39-ba8b-6350776aa607, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ghbdtn', timestamp=2025-05-09 20:47:49.449356 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 5: ID=80127827-5a0c-4ff3-8293-7841285b3483, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Простите, я не понимаю ваш запрос. Пожалуйста, напишите на русском языке или уточните, что вы хотели бы узнать. 🙂
-#эскалация_selfID', timestamp=2025-05-09 20:47:52.080244 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 6: ID=5c530f87-fc63-4c47-86ea-7a036ae64dd6, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 20:49:08.07411 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 7: ID=df2aaae7-6c1e-49bf-b23b-db4960cb59cd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 20:49:14.367759 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 8: ID=87755954-737c-4019-8316-46def5a33865, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё хорошо! Надеюсь, у вас тоже все замечательно? 😊 Чем могу вам помочь сегодня?
-#поддержка_enddel', timestamp=2025-05-09 20:49:16.726182 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 9: ID=c992198c-e066-4d1d-902c-d0f8663fdf86, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 21:02:32.239819 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 10: ID=452b012c-2006-44b3-ba07-15d48b0ec845, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Рад(а) слышать вас. Чем я могу быть полезен/полезной сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 21:02:34.737733 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 11: ID=82966284-9fbc-4b88-884e-04f915d93483, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:20:36.581566 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 12: ID=466ed169-6f57-4c14-9dcf-8cc16f2b0d4e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:20:43.348891 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 13: ID=36684d2d-9723-4520-a442-266dc542212a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='У меня всё отлично, спасибо за вопрос! Как ваши дела? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:20:45.541468 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 14: ID=9f6986bc-5ceb-4525-9402-da6a378c12bd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:28:31.181614 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 15: ID=72f4f807-7402-48d4-9d6a-976f8aeee69a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь сегодня? 🙂
-#поддержка_enddel', timestamp=2025-05-09 22:28:33.502936 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 16: ID=09263c06-19b9-4be1-a565-3193f377ea97, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='привет', timestamp=2025-05-09 22:30:40.51392 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 17: ID=3cd8100e-0bb7-4b1d-8eee-b804b519daa5, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:30:45.801969 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 18: ID=79e6b2b2-d942-4d59-b6cd-ce2e6c96b939, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:30:48.135272 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 19: ID=84d10d4d-0358-4d33-82f4-f3c63ed2d999, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='кого ?', timestamp=2025-05-09 22:42:21.807751 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 20: ID=8a507277-9df3-4fc7-82f4-878fe4ae0dec, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Давайте сосредоточимся на вашем заказе. Если нужен живой оператор — я подключу его. 🙂
-#эскалация_selfID', timestamp=2025-05-09 22:42:24.339658 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 21: ID=4f55d20b-abb0-4c12-9b57-59a3ab9b2168, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:48:35.599477 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 22: ID=1b12b0a9-6c3d-4334-884c-339e5e2ca3c5, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Рад(а) снова вас слышать. Чем могу помочь? 😊
-#поддержка_enddel', timestamp=2025-05-09 22:48:37.837016 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 23: ID=fcb467ab-037b-426d-83bc-31b668f52cdd, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='как дела ?', timestamp=2025-05-09 22:48:45.484592 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 24: ID=3cfc0403-cb7e-477d-bfd8-de0960d21705, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 22:48:47.459957 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 25: ID=fe220996-2d2e-4fb1-aff5-59d25afa27c3, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-05-09 22:59:21.533879 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 26: ID=1d8008e1-bdc7-47b6-9574-f5c72d010777, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу вам помочь сегодня? 🙂', timestamp=2025-05-09 22:59:28.804271 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 27: ID=74c86708-9887-4342-929b-209ed5cb14fb, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что вы продаете ?', timestamp=2025-05-09 22:59:37.052943 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 28: ID=994b6ea8-099b-4b27-a16a-7ca70ef604b4, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='В «enddel» вы можете заказать продукты питания, напитки, товары для дома и личной гигиены с доставкой на дом. 🛒 Полный ассортимент доступен на нашем сайте: [https://www.enddel.ru/](https://www.enddel.ru/)', timestamp=2025-05-09 22:59:45.590565 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 29: ID=f89117e8-9269-4bb4-b8cb-2d9899050b5e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='о а у вас есть наркотики?', timestamp=2025-05-09 22:59:59.568715 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 30: ID=6b1dc451-379b-4eeb-83d9-066b9ec06328, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='К сожалению, в «enddel» нет и никогда не было запрещенных веществ. Мы продаем только разрешенные законом продукты питания и товары для дома. 🙂
+💰 Цена: **7.00₾**
+❌ Нет в наличии
 
-Если у вас возникли другие вопросы касательно нашего ассортимента, пожалуйста, обращайтесь!', timestamp=2025-05-09 23:00:07.720582 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 31: ID=a65fa637-6620-4b53-bbac-b37372602b9e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='может поговрим о боге ?', timestamp=2025-05-09 23:00:22.077397 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 32: ID=f166d6a7-3bba-445f-9d62-950faa5fce6a, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Извините, но я могу обсуждать только вопросы, связанные с сервисом доставки продуктов «enddel». Возможно, вам стоит обратиться к другим ресурсам для обсуждения религиозных вопросов. 😊', timestamp=2025-05-09 23:00:29.218565 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 33: ID=f774c00d-53c2-491b-9020-da33eeaf281c, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='добрый день', timestamp=2025-05-09 23:32:00.924403 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 34: ID=cab673aa-36ac-46d2-9836-7737242f1f67, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Добрый день! Чем могу помочь? 🙂', timestamp=2025-05-09 23:32:09.413885 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 35: ID=19debaea-8639-4912-a3ba-b8c21b416d2a, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='не знаю вы мне скажите что вы можите мне предложить', timestamp=2025-05-09 23:32:33.344008 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 36: ID=75fff09a-e143-49ed-bed9-623f81622afb, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-05-09 23:33:00.772765 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 37: ID=b1ecf3ea-5443-42e6-848a-b640e018756b, sender=admin, senderID=22222222-2222-2222-2222-222222222222, content='добрый день', timestamp=2025-05-09 23:36:41.905296 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 38: ID=ac52629e-adc3-472a-a5c7-c657db41dab7, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='прив', timestamp=2025-05-09 23:36:59.195778 +0400 +04, read=true, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 39: ID=7380c1b3-c87c-4df5-94a7-4fac5a3b2fbd, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Здравствуйте! Чем могу помочь? 🙂', timestamp=2025-05-09 23:37:06.16663 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 40: ID=05637ca6-bbfd-49fe-8201-77744688f449, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привет', timestamp=2025-07-28 23:47:04.462525 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 41: ID=6edbc7d1-7d34-4d7d-b946-0525623e335f, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='хай', timestamp=2025-07-28 23:52:47.135537 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 42: ID=ec1439ba-c17e-4052-ae08-c44a97247c79, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестНгорок клауд4', timestamp=2025-07-28 23:55:53.712921 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 43: ID=498a6c2e-8a50-471b-9ae4-be0a2d97a583, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='привяу', timestamp=2025-07-29 00:07:50.186136 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 44: ID=4979e0a3-494b-4753-8c98-aa32659b7e63, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='что ?', timestamp=2025-07-29 00:14:14.748186 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 45: ID=ce563f5c-dbeb-44bc-838e-3e50fcba0dc9, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестовоесообщениеновое', timestamp=2025-07-29 00:16:17.415608 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 46: ID=4e374d5e-3dcd-4684-9900-d94bd1617e17, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='новыйтествебсокета', timestamp=2025-07-29 00:18:57.669356 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 47: ID=9ae334aa-6844-4251-9720-3c051e155212, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА2', timestamp=2025-07-29 00:46:31.336824 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 48: ID=e3f599c2-e2d6-40e8-8509-48349b37677e, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='ТЕСТСОКЕТА3', timestamp=2025-07-29 00:49:02.993965 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:320: GetChatByID: сообщение 49: ID=5ac05891-d29a-4586-8f05-389c297740db, sender=user, senderID=f660a123-fd41-5778-b762-57660fde3d11, content='тестсокета4', timestamp=2025-07-29 00:57:15.016601 +0400 +04, read=false, type=text
-2025/07/29 01:01:29 chat.go:341: GetChatByID: получаем последнее сообщение
-2025/07/29 01:01:29 chat.go:353: GetChatByID: последнее сообщение: ID=5ac05891-d29a-4586-8f05-389c297740db, sender=user, content='тестсокета4', timestamp=2025-07-29 00:57:15.016601 +0400 +04, ChatID=15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 01:01:29 chat.go:362: GetChatByID: успешно, возвращаем чат с 50 сообщениями
-[GIN] 2025/07/29 - 01:01:29 | 200 |    41.48975ms |  37.232.127.201 | GET     /api/chats/15e521bc-d9e7-4478-aa6d-4bfd0fc2942b
-2025/07/29 01:01:44 hub.go:314: Hub статистика: active=-5, total=9, messages=9, disconnected=14
+Для оформления заказа добавьте товар в корзину на сайте [enddel.com](https://enddel.com).', timestamp=2025-10-01 18:40:54.707415 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 16: ID=350a832d-2d63-498b-bd86-ebee9e5f6cc8, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Is it from Belarus?', timestamp=2025-10-01 18:41:24.697789 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 17: ID=5d12627a-ca2c-4c23-b6e1-e8809bc830c2, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='Позвольте подключить нашего старшего специалиста. Одну минутку, пожалуйста. 🙏', timestamp=2025-10-01 18:41:33.231969 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 18: ID=1e72d9e8-c020-4911-82d7-c7a056391b24, sender=user, senderID=b37d9616-7354-5b5e-afd4-d11c8fce9eb5, content='Please tell me about fresh salmon fillet.', timestamp=2025-10-01 18:44:28.0436 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:320: GetChatByID: сообщение 19: ID=f746dd69-4974-40ab-8e78-e33a2a0980b1, sender=admin, senderID=00000000-0000-0000-0000-000000000000, content='🛒 **Свежее филе лосося**
+
+📝 Описание:
+Свежайшее филе фермерского лосося из Турции, прошедшее санитарный контроль. Каждое филе аккуратно разделано: удалены кости и лишний жир, сохранена идеальная структура мяса.
+
+✔️ Сочное и нежное филе, готовое к употреблению
+✔️ Богатый источник белка и Омега-3
+
+✔️ Подходит для сашими, гриля, запекания, стейков и роллов
+
+
+Происхождение: Турция, фермерское выращивание
+
+Остаётся только наслаждаться свежим вкусом лосося премиального качества.
+
+💰 Цена: **7.00₾**
+✅ **В наличии** (доступно: 100)
+
+Для оформления заказа добавьте товар в корзину на сайте [enddel.com](https://enddel.com).', timestamp=2025-10-01 18:44:30.424707 -0300 -03, read=false, type=text
+2025/10/01 18:44:47 chat.go:341: GetChatByID: получаем последнее сообщение
+2025/10/01 18:44:47 chat.go:353: GetChatByID: последнее сообщение: ID=f746dd69-4974-40ab-8e78-e33a2a0980b1, sender=admin, content='🛒 **Свежее филе лосося**
+
+📝 Описание:
+Свежайшее филе фермерского лосося из Турции, прошедшее санитарный контроль. Каждое филе аккуратно разделано: удалены кости и лишний жир, сохранена идеальная структура мяса.
+
+✔️ Сочное и нежное филе, готовое к употреблению
+✔️ Богатый источник белка и Омега-3
+
+✔️ Подходит для сашими, гриля, запекания, стейков и роллов
+
+
+Происхождение: Турция, фермерское выращивание
+
+Остаётся только наслаждаться свежим вкусом лосося премиального качества.
+
+💰 Цена: **7.00₾**
+✅ **В наличии** (доступно: 100)
+
+Для оформления заказа добавьте товар в корзину на сайте [enddel.com](https://enddel.com).', timestamp=2025-10-01 18:44:30.424707 -0300 -03, ChatID=ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:47 chat.go:362: GetChatByID: успешно, возвращаем чат с 20 сообщениями
+2025/10/01 18:44:47 chat.go:449: GetOrCreateChat: успешно, возвращаем чат ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, clientID=4c85db47-b6aa-45b2-b83a-ac1e84974657, userID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd
+2025/10/01 18:44:47 telegram_handler.go:124: TelegramWebhook: получен чат: ID=ae7b9bc1-7e62-4f32-aa50-37f8be145573, ClientID=4c85db47-b6aa-45b2-b83a-ac1e84974657, UserID=7a8a23be-54c9-4e1d-b042-6b8c7048b0cd
+2025/10/01 18:44:47 hub.go:378: UpdateWidgetChatID: виджет с userID web_user_192833 не найден
+2025/10/01 18:44:47 telegram_handler.go:141: TelegramWebhook: перевод сообщения пользователя
+2025/10/01 18:44:47 translation_handler.go:39: TranslateUserMessage: определение языка сообщения
+2025/10/01 18:44:47 translator.go:53: DetectLanguage: text='оно из беларуси ?' -> language='be'
+2025/10/01 18:44:47 translation_handler.go:52: TranslateUserMessage: определен язык: be
+2025/10/01 18:44:47 admin_settings.go:56: GetAdminSettings: настройки для админа 22222222-2222-2222-2222-222222222222 получены, язык=en
+2025/10/01 18:44:47 translation_handler.go:68: TranslateUserMessage: целевой язык админа: en
+2025/10/01 18:44:47 translation_handler.go:84: TranslateUserMessage: перевод с be на en
+2025/10/01 18:44:48 translator.go:129: TranslateText: from=be to=en, original='оно из беларуси ?' -> translated='Is it from Belarus?'
+2025/10/01 18:44:48 translation_handler.go:100: TranslateUserMessage: перевод выполнен успешно
+2025/10/01 18:44:48 telegram_handler.go:153: TelegramWebhook: перевод завершен, wasTranslated=true, detectedLang=be
+2025/10/01 18:44:48 telegram_handler.go:165: TelegramWebhook: создан детерминированный UUID для userID web_user_192833: b37d9616-7354-5b5e-afd4-d11c8fce9eb5
+2025/10/01 18:44:48 telegram_handler.go:178: TelegramWebhook: добавляем сообщение в чат ae7b9bc1-7e62-4f32-aa50-37f8be145573 от пользователя b37d9616-7354-5b5e-afd4-d11c8fce9eb5 с ID 429ae111-1bfb-4c26-91d3-2711e55c863c
+2025/10/01 18:44:48 telegram_handler.go:197: TelegramWebhook: сообщение добавлено: ID=429ae111-1bfb-4c26-91d3-2711e55c863c
+2025/10/01 18:44:48 telegram_handler.go:207: TelegramWebhook: генерируем автоответ
+2025/10/01 18:44:48 autoresponder.go:511: [AUTORESPONDER] Используем оригинальный текст для поиска продуктов: 'оно из беларуси ?'
+2025/10/01 18:44:48 autoresponder.go:669: [AUTORESPONDER] [SECURITY] Инициализация истории с НЕАВТОРИЗОВАННЫМ промптом (нет доступа к заказам)
+2025/10/01 18:44:57 telegram_handler.go:224: TelegramWebhook: автоответ сгенерирован, сохраняем в БД
+2025/10/01 18:44:57 telegram_handler.go:239: TelegramWebhook: автоответ сохранен: ID=a5a2caf5-c920-4c6f-be89-a01375835f35
+2025/10/01 18:44:57 telegram_handler.go:248: TelegramWebhook: проверка эскалации для чата ae7b9bc1-7e62-4f32-aa50-37f8be145573: needEscalation=true
+2025/10/01 18:44:57 telegram_handler.go:250: TelegramWebhook: требуется эскалация для чата ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:57 telegram_handler.go:352: createEscalationNotification: создано уведомление об эскалации: {"type":"escalation_alert","payload":{"chatId":"ae7b9bc1-7e62-4f32-aa50-37f8be145573","message":{"content":"Is it from Belarus?","id":"429ae111-1bfb-4c26-91d3-2711e55c863c","sender":"user","timestamp":"2025-10-01T18:44:47-03:00"},"sound":"notification","type":"escalation","urgent":true}}
+2025/10/01 18:44:57 telegram_handler.go:254: TelegramWebhook: уведомление об эскалации отправлено 0 админам
+2025/10/01 18:44:57 hub.go:281: Отправлено 1 сообщений в чат ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:57 telegram_handler.go:329: TelegramWebhook: отправлено WebSocket уведомление о сообщении бота
+2025/10/01 18:44:57 hub.go:281: Отправлено 1 сообщений в чат ae7b9bc1-7e62-4f32-aa50-37f8be145573
+2025/10/01 18:44:57 telegram_handler.go:272: TelegramWebhook: комплексное WebSocket уведомление отправлено 1 клиентам
+2025/10/01 18:44:57 telegram_handler.go:284: TelegramWebhook: отправляем ответ: map[chat_id:ae7b9bc1-7e62-4f32-aa50-37f8be145573 message:Сообщение обработано message_id:429ae111-1bfb-4c26-91d3-2711e55c863c success:true timestamp:2025-10-01T18:44:57-03:00]
+[GIN] 2025/10/01 - 18:44:57 | 200 | 10.079501542s |     177.54.4.72 | POST    /api/telegram/webhook

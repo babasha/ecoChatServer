@@ -503,7 +503,16 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 	// ── проверка запросов о продуктах ───────────────────────
 	// Продукты публичные - не требуют авторизации
-	if productQuery := DetectProductQuery(msg.Content); productQuery != nil {
+	// Используем оригинальный текст для поиска продуктов, если доступен (до перевода)
+	contentToCheck := msg.Content
+	if msg.Metadata != nil {
+		if originalText, ok := msg.Metadata["originalText"].(string); ok && originalText != "" {
+			contentToCheck = originalText
+			log.Printf("[AUTORESPONDER] Используем оригинальный текст для поиска продуктов: '%s'", originalText)
+		}
+	}
+
+	if productQuery := DetectProductQuery(contentToCheck); productQuery != nil {
 		log.Printf("[AUTORESPONDER] Обнаружен запрос о продуктах в чате %s", chatKey)
 
 		productInfo, err := HandleProductQuery(ctx, ar.storeClient, productQuery)

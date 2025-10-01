@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -84,8 +86,25 @@ func NewStoreClient() *StoreClient {
 	return &StoreClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,
-		client:  &http.Client{Timeout: timeout},
+		client: &http.Client{
+			Timeout: timeout,
+			Transport: &customTransport{
+				Base: http.DefaultTransport,
+			},
+		},
 	}
+}
+
+// customTransport добавляет реалистичный User-Agent для обхода bot-блокировки
+type customTransport struct {
+	Base http.RoundTripper
+}
+
+func (t *customTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Устанавливаем реалистичный User-Agent вместо "Go-http-client/2.0"
+	// Используем стандартный браузерный UA для избежания блокировки bot traffic
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	return t.Base.RoundTrip(req)
 }
 
 // GetUserOrders получает все заказы пользователя по user_id
@@ -341,16 +360,17 @@ func FormatOrdersList(orders []Order) string {
 
 // Product представляет товар из магазина
 type Product struct {
-	ID          int     `json:"id"`
-	NameRu      string  `json:"name_ru"`
-	NameEn      string  `json:"name_en"`
-	NamePt      string  `json:"name_pt"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price"`
-	InStock     bool    `json:"in_stock"`
-	CategoryID  *int    `json:"category_id"`
-	ImageURL    string  `json:"image_url"`
-	Slug        string  `json:"slug"`
+	ID            int    `json:"id"`
+	NameRu        string `json:"name_ru"`
+	NameEn        string `json:"name_en"`
+	NamePt        string `json:"name_pt"`
+	Description   string `json:"description"`
+	Price         string `json:"price"` // API возвращает строку вместо числа
+	InStock       bool   `json:"in_stock"`
+	StockQuantity int    `json:"stock_quantity"` // Количество на складе
+	CategoryID    *int   `json:"category_id"`
+	ImageURL      string `json:"image_url"`
+	Slug          string `json:"slug"`
 }
 
 // Category представляет категорию товаров
@@ -368,10 +388,12 @@ type Category struct {
 func (sc *StoreClient) GetAllProducts(ctx context.Context, searchQuery string) ([]Product, error) {
 	endpoint := fmt.Sprintf("%s/products", sc.baseURL)
 
-	// Добавляем параметр поиска если указан
+	// Добавляем параметр поиска если указан (с URL encoding)
 	if searchQuery != "" {
-		endpoint = fmt.Sprintf("%s?search=%s", endpoint, searchQuery)
+		endpoint = fmt.Sprintf("%s?search=%s", endpoint, url.QueryEscape(searchQuery))
 	}
+
+	log.Printf("[STORE_CLIENT] Запрос к API магазина: %s", endpoint)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -379,6 +401,7 @@ func (sc *StoreClient) GetAllProducts(ctx context.Context, searchQuery string) (
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", sc.apiKey)
 
 	resp, err := sc.client.Do(req)
 	if err != nil {
@@ -412,6 +435,7 @@ func (sc *StoreClient) GetAllCategories(ctx context.Context) ([]Category, error)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", sc.apiKey)
 
 	resp, err := sc.client.Do(req)
 	if err != nil {

@@ -30,44 +30,61 @@ func DetectProductQuery(message string) *ProductQuery {
 	msgLower := strings.ToLower(message)
 
 	// Паттерны для распознавания запросов о продуктах (мультиязычные)
+	// ВАЖНО: Порядок имеет значение! Более специфичные паттерны должны быть первыми
 	patterns := []struct {
 		pattern string
 		qtype   ProductQueryType
 	}{
-		// ═══ РУССКИЙ ═══
+		// ═══ РУССКИЙ - ОБЩИЕ ЗАПРОСЫ (приоритет!) ═══
+		{`какие\s*(?:вообще[тм]?|именно)?\s*(?:у\s*вас)?\s*(?:товары?|продукты?)\s*(?:есть|имеются?)?(?:\s+в\s+наличии)?`, ProductQueryList},
 		{`что\s*у\s*вас\s*есть`, ProductQueryList},
-		{`какие\s*(у\s*вас)?\s*(есть\s*)?(товар|продукт)`, ProductQueryList},
-		{`покажи\s*(товар|продукт|ассортимент)`, ProductQueryList},
+		{`покажи\s*(?:товар|продукт|ассортимент)`, ProductQueryList},
 		{`что\s*продаете`, ProductQueryList},
 		{`какой\s*ассортимент`, ProductQueryList},
 		{`ассортимент`, ProductQueryList},
 		{`каталог`, ProductQueryList},
+
+		// ═══ ENGLISH - ОБЩИЕ ЗАПРОСЫ (приоритет!) ═══
+		{`what\s*(?:products?|items?)?\s*(?:do\s*you)?\s*have(?:\s+in\s+your\s+store)?`, ProductQueryList},
+		{`(?:show|list)\s*(?:me\s*)?(?:your\s*)?(?:products?|items?|catalog)`, ProductQueryList},
+		{`what\s*(?:do\s*you)?\s*sell`, ProductQueryList},
+		{`your\s*(?:products?|catalog|assortment)`, ProductQueryList},
+		{`(?:i\s*)?can'?t\s*(?:seem\s*to\s*)?(?:find|figure)`, ProductQueryList},
+
+		// ═══ PORTUGUÊS - ОБЩИЕ ЗАПРОСЫ (приоритет!) ═══
+		{`o\s*que\s*(?:você|vocês)\s*tem`, ProductQueryList},
+		{`quais\s*(?:são\s*)?(?:os\s*)?(?:produtos?|items?)`, ProductQueryList},
+		{`(?:mostre|lista)\s*(?:me\s*)?(?:o\s*)?(?:catálogo|produtos?)`, ProductQueryList},
+		{`o\s*que\s*(?:você|vocês)\s*vende`, ProductQueryList},
+		{`seu\s*catálogo`, ProductQueryList},
+
+		// ═══ РУССКИЙ - ПОИСК КОНКРЕТНЫХ ТОВАРОВ ═══
+		{`(?:можите|можете|могли\s*бы(?:\s+вы)?)\s+(?:пожалуйста\s+)?(?:рассказать|расказать)\s+(?:пожалуйста\s+)?(?:про|о|подробнее\s+про)\s+(.+)`, ProductQuerySearch},
+		{`(?:расскажите|раскажите)\s+(?:пожалуйста\s+)?(?:про|о|подробнее\s+про)\s+(.+)`, ProductQuerySearch},
+		{`подробнее\s+(?:пожалуйста\s+)?(?:про|о)\s+(.+)`, ProductQuerySearch},
+		{`что\s+(?:это|такое)\s+(.+)`, ProductQuerySearch},
 		{`ищу\s+(.+)`, ProductQuerySearch},
 		{`есть\s+ли\s+(.+)`, ProductQuerySearch},
 		{`у\s*вас\s*есть\s+(.+)`, ProductQuerySearch},
-		{`хочу\s+(купить\s+)?(.+)`, ProductQuerySearch},
-		{`мне\s+нужн(о|а|ы)\s+(.+)`, ProductQuerySearch},
+		{`хочу\s+(?:купить\s+)?(.+)`, ProductQuerySearch},
+		{`мне\s+нужн(?:о|а|ы)\s+(.+)`, ProductQuerySearch},
 
-		// ═══ ENGLISH ═══
-		{`what\s*(do\s*you|products?)?\s*have`, ProductQueryList},
-		{`(show|list)\s*(me\s*)?(your\s*)?(product|item|catalog)`, ProductQueryList},
-		{`what\s*(products?)?\s*(do\s*you)?\s*sell`, ProductQueryList},
-		{`your\s*(product|catalog|assortment)`, ProductQueryList},
-		{`(i\s*)?can'?t\s*(seem\s*to\s*)?(find|figure)`, ProductQueryList}, // "can't figure out" = нужна помощь с поиском
+		// ═══ ENGLISH - ПОИСК КОНКРЕТНЫХ ТОВАРОВ ═══
+		{`(?:tell|could\s+you\s+tell)\s+me\s+(?:more\s+)?about\s+(.+)`, ProductQuerySearch},
+		{`(?:more\s+)?(?:details|info(?:rmation)?)\s+(?:about|on)\s+(.+)`, ProductQuerySearch},
+		{`what\s+(?:is|are)\s+(.+)`, ProductQuerySearch},
 		{`looking\s*for\s+(.+)`, ProductQuerySearch},
 		{`do\s*you\s*have\s+(.+)`, ProductQuerySearch},
-		{`i\s*(want|need)\s+(to\s*buy\s+)?(.+)`, ProductQuerySearch},
+		{`i\s*(?:want|need)\s+(?:to\s*buy\s+)?(.+)`, ProductQuerySearch},
 		{`show\s*me\s+(.+)`, ProductQuerySearch},
 
-		// ═══ PORTUGUÊS ═══
-		{`o\s*que\s*(você|vocês)\s*tem`, ProductQueryList},
-		{`quais\s*(são\s*)?(os\s*)?(produto|item)`, ProductQueryList},
-		{`(mostre|lista)\s*(me\s*)?(o\s*)?(catálogo|produto)`, ProductQueryList},
-		{`o\s*que\s*(você|vocês)\s*vende`, ProductQueryList},
-		{`seu\s*catálogo`, ProductQueryList},
-		{`procurando\s+(por\s+)?(.+)`, ProductQuerySearch},
-		{`(você|vocês)\s*tem\s+(.+)`, ProductQuerySearch},
-		{`(eu\s*)?(quero|preciso)\s+(de\s+)?(.+)`, ProductQuerySearch},
+		// ═══ PORTUGUÊS - ПОИСК КОНКРЕТНЫХ ТОВАРОВ ═══
+		{`(?:me\s+)?(?:conte|fale)\s+(?:mais\s+)?sobre\s+(.+)`, ProductQuerySearch},
+		{`(?:mais\s+)?(?:detalhes|informações)\s+sobre\s+(.+)`, ProductQuerySearch},
+		{`o\s+que\s+(?:é|são)\s+(.+)`, ProductQuerySearch},
+		{`procurando\s+(?:por\s+)?(.+)`, ProductQuerySearch},
+		{`(?:você|vocês)\s*tem\s+(.+)`, ProductQuerySearch},
+		{`(?:eu\s*)?(?:quero|preciso)\s+(?:de\s+)?(.+)`, ProductQuerySearch},
 	}
 
 	for _, p := range patterns {
@@ -78,6 +95,10 @@ func DetectProductQuery(message string) *ProductQuery {
 			// Если нашли поисковый термин
 			if len(matches) > 1 && matches[len(matches)-1] != "" {
 				query.SearchTerm = strings.TrimSpace(matches[len(matches)-1])
+				// Очищаем от знаков препинания в конце
+				query.SearchTerm = strings.TrimRight(query.SearchTerm, "?!.,;:")
+				query.SearchTerm = strings.TrimSpace(query.SearchTerm)
+
 				if query.Type == ProductQueryList {
 					query.Type = ProductQuerySearch
 				}
@@ -228,12 +249,42 @@ func handleProductSearch(ctx context.Context, storeClient *StoreClient, searchTe
 		return fmt.Sprintf("К сожалению, по запросу '%s' ничего не найдено. Попробуйте уточнить запрос или спросите про другие товары.", searchTerm), nil
 	}
 
+	// Если найден ровно один товар - показываем детальную информацию
+	if len(matchedProducts) == 1 {
+		return FormatProductDetails(matchedProducts[0]), nil
+	}
+
 	// Ограничиваем до 10 товаров для читаемости
 	if len(matchedProducts) > 10 {
 		matchedProducts = matchedProducts[:10]
 	}
 
-	return FormatProductsList(matchedProducts), nil
+	return fmt.Sprintf("Найдено несколько товаров по запросу '%s':\n\n%s\n\nУкажите более точное название для получения подробной информации.", searchTerm, FormatProductsList(matchedProducts)), nil
+}
+
+// FormatProductDetails форматирует детальную информацию о товаре
+func FormatProductDetails(product Product) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("🛒 **%s**\n\n", product.NameRu))
+
+	if product.Description != "" {
+		sb.WriteString(fmt.Sprintf("📝 Описание:\n%s\n\n", product.Description))
+	}
+
+	if product.Price != "" && product.Price != "0" && product.Price != "0.00" {
+		sb.WriteString(fmt.Sprintf("💰 Цена: **%s₾**\n", product.Price))
+	}
+
+	if product.StockQuantity > 0 || product.InStock {
+		sb.WriteString(fmt.Sprintf("✅ **В наличии** (доступно: %d)\n", product.StockQuantity))
+	} else {
+		sb.WriteString("❌ Нет в наличии\n")
+	}
+
+	sb.WriteString("\nДля оформления заказа добавьте товар в корзину на сайте [enddel.com](https://enddel.com).")
+
+	return sb.String()
 }
 
 // FormatProductsList форматирует список продуктов для отображения
@@ -248,8 +299,8 @@ func FormatProductsList(products []Product) string {
 	for i, p := range products {
 		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, p.NameRu))
 
-		if p.Price > 0 {
-			sb.WriteString(fmt.Sprintf("   Цена: %.2f₾\n", p.Price))
+		if p.Price != "" && p.Price != "0" && p.Price != "0.00" {
+			sb.WriteString(fmt.Sprintf("   Цена: %s₾\n", p.Price))
 		}
 
 		if p.Description != "" {
@@ -261,8 +312,8 @@ func FormatProductsList(products []Product) string {
 			sb.WriteString(fmt.Sprintf("   %s\n", desc))
 		}
 
-		if p.InStock {
-			sb.WriteString("   ✓ В наличии\n")
+		if p.StockQuantity > 0 || p.InStock {
+			sb.WriteString(fmt.Sprintf("   ✓ В наличии (%d шт.)\n", p.StockQuantity))
 		} else {
 			sb.WriteString("   ✗ Нет в наличии\n")
 		}
