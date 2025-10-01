@@ -369,3 +369,7 @@
 [GIN] 2025/10/01 - 19:50:05 | 200 |  3.359702709s |     177.54.4.72 | POST    /api/telegram/webhook
 2025/10/01 19:54:03 hub.go:326: Hub статистика: active=1, total=1, messages=1, disconnected=0
 2025/10/01 19:59:03 hub.go:326: Hub статистика: active=1, total=1, messages=1, disconnected=0
+2025/10/01 20:04:03 hub.go:326: Hub статистика: active=1, total=1, messages=1, disconnected=0
+2025/10/01 20:09:03 hub.go:326: Hub статистика: active=1, total=1, messages=1, disconnected=0
+2025/10/01 20:14:03 hub.go:326: Hub статистика: active=1, total=1, messages=1, disconnected=0
+2025/10/01 20:19:03 hub.go:326: Hub статистика: active=1, total=1, messages=1, disconnected=0

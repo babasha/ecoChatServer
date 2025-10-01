@@ -1,8 +1,0 @@
-[build]
-builder = "nixpacks"
-buildCommand = "cd ecochatserver && go build -o bin/ecochatserver"
-
-[deploy]
-startCommand = "cd ecochatserver && ./bin/ecochatserver"
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 10
