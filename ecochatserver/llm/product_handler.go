@@ -269,20 +269,20 @@ func FormatProductDetails(product Product) string {
 	sb.WriteString(fmt.Sprintf("🛒 **%s**\n\n", product.NameRu))
 
 	if product.Description != "" {
-		sb.WriteString(fmt.Sprintf("📝 Описание:\n%s\n\n", product.Description))
+		sb.WriteString(fmt.Sprintf("%s\n\n", product.Description))
 	}
 
 	if product.Price != "" && product.Price != "0" && product.Price != "0.00" {
-		sb.WriteString(fmt.Sprintf("💰 Цена: **%s₾**\n", product.Price))
+		sb.WriteString(fmt.Sprintf("Цена: **%s₾**\n", product.Price))
 	}
 
 	if product.StockQuantity > 0 || product.InStock {
-		sb.WriteString(fmt.Sprintf("✅ **В наличии** (доступно: %d)\n", product.StockQuantity))
+		sb.WriteString(fmt.Sprintf("В наличии: %d шт.\n", product.StockQuantity))
 	} else {
-		sb.WriteString("❌ Нет в наличии\n")
+		sb.WriteString("Сейчас нет в наличии\n")
 	}
 
-	sb.WriteString("\nДля оформления заказа добавьте товар в корзину на сайте [enddel.com](https://enddel.com).")
+	sb.WriteString("\nМожете добавить в корзину на сайте enddel.com")
 
 	return sb.String()
 }

@@ -103,10 +103,24 @@ func buildDSN() string {
 	dbname := env("PG_DATABASE", "ecochat")
 	sslmode := env("PG_SSL_MODE", "disable")
 
-	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode,
-	)
+	// Формируем DSN, пропуская пустой пароль
+	var dsn string
+	if password != "" {
+		dsn = fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			host, port, user, password, dbname, sslmode,
+		)
+	} else {
+		dsn = fmt.Sprintf(
+			"host=%s port=%s user=%s dbname=%s sslmode=%s",
+			host, port, user, dbname, sslmode,
+		)
+	}
+
+	// Логируем DSN без пароля для отладки
+	log.Printf("[DB] Connecting: host=%s port=%s user=%s dbname=%s sslmode=%s", host, port, user, dbname, sslmode)
+
+	return dsn
 }
 
 func env(k, def string) string {

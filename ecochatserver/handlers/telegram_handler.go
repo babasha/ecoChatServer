@@ -43,13 +43,14 @@ func InitAutoResponder() {
 		return
 	}
 
-	client := llm.NewLLMClient()
+	// Используем Gemini API вместо локальной LLM
+	client := llm.NewGeminiClient()
 	cfg := llm.GetDefaultConfig()
 	AutoResponder = llm.NewAutoResponder(client, cfg)
 
 	// Инициализируем сервис перевода
 	Translator = NewTranslationService(client)
-	log.Println("Сервис перевода успешно инициализирован")
+	log.Println("Сервис перевода успешно инициализирован (используется Gemini API)")
 
 	// Устанавливаем callback для отправки сообщений извинения
 	AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {

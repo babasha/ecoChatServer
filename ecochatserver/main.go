@@ -166,35 +166,45 @@ func getEnv(k, def string) string {
 
 // setupCORS настраивает CORS с улучшенной логикой
 func setupCORS(r *gin.Engine) {
-	allow := []string{"http://localhost:3000"}
-
-	// Добавляем адреса из переменных окружения
-	for _, key := range []string{"FRONTEND_URL", "ADDITIONAL_ALLOWED_ORIGINS"} {
-		if v := os.Getenv(key); v != "" {
-			for _, u := range strings.Split(v, ",") {
-				u = strings.TrimSpace(u)
-				if u != "" && !contains(allow, u) {
-					allow = append(allow, u)
-				}
-			}
-		}
-	}
-
-	log.Printf("CORS настроен для доменов: %v", allow)
-
-	conf := cors.Config{
-		AllowOrigins:     allow,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
-		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}
+	var conf cors.Config
 
 	// Если разрешены все источники
 	if os.Getenv("ALLOW_ALL_ORIGINS") == "true" {
-		conf.AllowAllOrigins = true
+		conf = cors.Config{
+			AllowAllOrigins:  true,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
+			ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
+			AllowCredentials: false, // Нельзя использовать credentials с AllowAllOrigins
+			MaxAge:           12 * time.Hour,
+		}
 		log.Println("ВНИМАНИЕ: Разрешены все источники CORS (ALLOW_ALL_ORIGINS=true)")
+	} else {
+		// Разрешаем только указанные домены
+		allow := []string{"http://localhost:3000"}
+
+		// Добавляем адреса из переменных окружения
+		for _, key := range []string{"FRONTEND_URL", "ADDITIONAL_ALLOWED_ORIGINS"} {
+			if v := os.Getenv(key); v != "" {
+				for _, u := range strings.Split(v, ",") {
+					u = strings.TrimSpace(u)
+					if u != "" && !contains(allow, u) {
+						allow = append(allow, u)
+					}
+				}
+			}
+		}
+
+		log.Printf("CORS настроен для доменов: %v", allow)
+
+		conf = cors.Config{
+			AllowOrigins:     allow,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
+			ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
+			AllowCredentials: true,
+			MaxAge:           12 * time.Hour,
+		}
 	}
 
 	r.Use(cors.New(conf))

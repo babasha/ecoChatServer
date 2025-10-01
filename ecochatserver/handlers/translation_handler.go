@@ -13,12 +13,12 @@ import (
 
 // TranslationService предоставляет функции для перевода сообщений
 type TranslationService struct {
-	llmClient *llm.LLMClient
+	llmClient llm.LLM // Используем интерфейс вместо конкретного типа
 	db        *sql.DB
 }
 
 // NewTranslationService создает новый TranslationService
-func NewTranslationService(llmClient *llm.LLMClient) *TranslationService {
+func NewTranslationService(llmClient llm.LLM) *TranslationService {
 	return &TranslationService{
 		llmClient: llmClient,
 		db:        database.DB,
