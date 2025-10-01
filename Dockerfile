@@ -3,6 +3,9 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
+# Set environment variable to prevent toolchain issues
+ENV GOTOOLCHAIN=local
+
 # Copy go mod files
 COPY ecochatserver/go.mod ecochatserver/go.sum ./
 RUN go mod download
