@@ -13,8 +13,8 @@ RUN go mod download
 # Copy source code
 COPY ecochatserver/ ./
 
-# Build the application
-RUN go build -o bin/ecochatserver .
+# Tidy dependencies and build
+RUN go mod tidy && go build -o bin/ecochatserver .
 
 # Runtime stage
 FROM alpine:latest
