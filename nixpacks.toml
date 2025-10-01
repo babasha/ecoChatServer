@@ -1,8 +1,15 @@
 [phases.setup]
-nixPkgs = ["go_1_21"]
+nixPkgs = ["go"]
+
+[phases.install]
+cmds = [
+  "curl -L https://go.dev/dl/go1.23.4.linux-amd64.tar.gz -o go.tar.gz",
+  "tar -C /usr/local -xzf go.tar.gz"
+]
 
 [phases.build]
 cmds = [
+  "export PATH=/usr/local/go/bin:$PATH",
   "cd ecochatserver",
   "go mod download",
   "go build -o bin/ecochatserver ."
