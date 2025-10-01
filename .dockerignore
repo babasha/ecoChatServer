@@ -1,0 +1,11 @@
+.git
+.gitignore
+.DS_Store
+*.log
+.env
+.idea
+ecochatserver/ecochatserver
+ecochatserver/server
+*.exe
+*.out
+ngrok.log

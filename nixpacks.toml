@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["go_1_22"]
+
+[phases.build]
+cmds = [
+  "cd ecochatserver",
+  "go mod download",
+  "go build -o bin/ecochatserver ."
+]
+
+[start]
+cmd = "cd ecochatserver && ./bin/ecochatserver"
