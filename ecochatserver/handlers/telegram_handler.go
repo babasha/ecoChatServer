@@ -124,6 +124,12 @@ func TelegramWebhook(c *gin.Context) {
 	log.Printf("TelegramWebhook: получен чат: ID=%s, ClientID=%s, UserID=%s",
 		chat.ID, chat.ClientID, chat.User.ID)
 
+	// ВАЖНО: Обновляем chat_id для виджета, если он подключен с временным ID
+	// Передаем chat.User.SourceID для проверки безопасности
+	if WebSocketHub.UpdateWidgetChatID(in.UserID, chat.ID, chat.User.SourceID) {
+		log.Printf("TelegramWebhook: виджет %s успешно обновлен с chat_id=%s", in.UserID, chat.ID)
+	}
+
 	// Переводим сообщение пользователя, если включен переводчик
 	messageContent := in.Content
 	messageMetadata := in.Metadata

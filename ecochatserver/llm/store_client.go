@@ -338,3 +338,130 @@ func FormatOrdersList(orders []Order) string {
 
 	return result
 }
+
+// Product представляет товар из магазина
+type Product struct {
+	ID          int     `json:"id"`
+	NameRu      string  `json:"name_ru"`
+	NameEn      string  `json:"name_en"`
+	NamePt      string  `json:"name_pt"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price"`
+	InStock     bool    `json:"in_stock"`
+	CategoryID  *int    `json:"category_id"`
+	ImageURL    string  `json:"image_url"`
+	Slug        string  `json:"slug"`
+}
+
+// Category представляет категорию товаров
+type Category struct {
+	ID       int     `json:"id"`
+	NameRu   string  `json:"name_ru"`
+	NameEn   string  `json:"name_en"`
+	NamePt   string  `json:"name_pt"`
+	NameEs   string  `json:"name_es"`
+	ParentID *int    `json:"parent_id"`
+}
+
+// GetAllProducts получает список всех доступных продуктов
+// searchQuery - опциональный параметр для поиска товаров по названию/описанию
+func (sc *StoreClient) GetAllProducts(ctx context.Context, searchQuery string) ([]Product, error) {
+	endpoint := fmt.Sprintf("%s/products", sc.baseURL)
+
+	// Добавляем параметр поиска если указан
+	if searchQuery != "" {
+		endpoint = fmt.Sprintf("%s?search=%s", endpoint, searchQuery)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := sc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("store API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("store API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Products []Product `json:"products"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return result.Products, nil
+}
+
+// GetAllCategories получает список всех категорий товаров из магазина
+func (sc *StoreClient) GetAllCategories(ctx context.Context) ([]Category, error) {
+	endpoint := fmt.Sprintf("%s/categories", sc.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := sc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("store API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("store API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var categories []Category
+	if err := json.NewDecoder(resp.Body).Decode(&categories); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return categories, nil
+}
+
+// GetProductBySlug получает информацию о конкретном продукте по slug
+func (sc *StoreClient) GetProductBySlug(ctx context.Context, slug string) (*Product, error) {
+	endpoint := fmt.Sprintf("%s/products/by-slug/%s", sc.baseURL, slug)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := sc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("store API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("product not found")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("store API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var product Product
+	if err := json.NewDecoder(resp.Body).Decode(&product); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return &product, nil
+}

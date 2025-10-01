@@ -4,6 +4,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -17,6 +19,7 @@ type Hub struct {
 	adminsByID  map[string]*Client
 	widgetsByID map[string]map[*Client]bool
 	chatClients map[string]map[*Client]bool
+	widgetsByUserID map[string]*Client  // Виджеты по userID для обновления chat_id
 
 	Broadcast  chan []byte
 	Register   chan *Client
@@ -51,13 +54,14 @@ type hubStatsInternal struct {
 // NewHub создаёт и инициализирует Hub.
 func NewHub() *Hub {
 	hub := &Hub{
-		clients:     make(map[*Client]bool),
-		adminsByID:  make(map[string]*Client),
-		widgetsByID: make(map[string]map[*Client]bool),
-		chatClients: make(map[string]map[*Client]bool),
-		Broadcast:   make(chan []byte),
-		Register:    make(chan *Client),
-		Unregister:  make(chan *Client),
+		clients:         make(map[*Client]bool),
+		adminsByID:      make(map[string]*Client),
+		widgetsByID:     make(map[string]map[*Client]bool),
+		chatClients:     make(map[string]map[*Client]bool),
+		widgetsByUserID: make(map[string]*Client),
+		Broadcast:       make(chan []byte),
+		Register:        make(chan *Client),
+		Unregister:      make(chan *Client),
 	}
 
 	// Запускаем очистку старых сообщений
@@ -118,6 +122,12 @@ func (h *Hub) registerClient(c *Client) {
 			h.widgetsByID[c.ChatID.String()] = make(map[*Client]bool)
 		}
 		h.widgetsByID[c.ChatID.String()][c] = true
+
+		// Если виджет подключился без chat_id, сохраняем по userID для последующего обновления
+		if c.ChatID == uuid.Nil || c.ChatID.String() == "00000000-0000-0000-0000-000000000000" {
+			h.widgetsByUserID[c.ID.String()] = c
+			log.Printf("Виджет сохранен по userID %s для последующего обновления chat_id", c.ID)
+		}
 	}
 
 	// Добавляем в карту клиентов чата
@@ -161,6 +171,8 @@ func (h *Hub) unregisterClient(c *Client) {
 				delete(h.widgetsByID, chatID)
 			}
 		}
+		// Удаляем из widgetsByUserID если там есть
+		delete(h.widgetsByUserID, c.ID.String())
 	}
 
 	// Удаляем из карты клиентов чата
@@ -352,6 +364,69 @@ func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
 	chatSent := h.SendToChat(chatID, message)
 	adminSent := h.SendToAllAdmins(message)
 	return chatSent + adminSent
+}
+
+// UpdateWidgetChatID обновляет chat_id для виджета после создания чата
+// БЕЗОПАСНОСТЬ: проверяет что виджет принадлежит этому userID
+func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSourceID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Находим виджет по userID
+	client, exists := h.widgetsByUserID[userID]
+	if !exists {
+		log.Printf("UpdateWidgetChatID: виджет с userID %s не найден", userID)
+		return false
+	}
+
+	// ПРОВЕРКА БЕЗОПАСНОСТИ: виджет может обновлять только свой чат
+	if chatUserSourceID != userID {
+		log.Printf("UpdateWidgetChatID: SECURITY WARNING - попытка обновить чужой чат! widgetUserID=%s, chatUserSourceID=%s",
+			userID, chatUserSourceID)
+		return false
+	}
+
+	oldChatID := client.ChatID
+	log.Printf("UpdateWidgetChatID: [SAFE] обновление chat_id для виджета %s: %s -> %s",
+		userID, oldChatID, newChatID)
+
+	// Удаляем из старых маппингов (только если был chat_id)
+	oldChatIDStr := oldChatID.String()
+	if oldChatIDStr != "" && oldChatIDStr != "00000000-0000-0000-0000-000000000000" {
+		if widgets, ok := h.widgetsByID[oldChatIDStr]; ok {
+			delete(widgets, client)
+			if len(widgets) == 0 {
+				delete(h.widgetsByID, oldChatIDStr)
+			}
+		}
+		if clients, ok := h.chatClients[oldChatIDStr]; ok {
+			delete(clients, client)
+			if len(clients) == 0 {
+				delete(h.chatClients, oldChatIDStr)
+			}
+		}
+	}
+
+	// Обновляем chat_id у клиента
+	client.ChatID = newChatID
+
+	// Добавляем в новые маппинги
+	newChatIDStr := newChatID.String()
+	if _, ok := h.widgetsByID[newChatIDStr]; !ok {
+		h.widgetsByID[newChatIDStr] = make(map[*Client]bool)
+	}
+	h.widgetsByID[newChatIDStr][client] = true
+
+	if _, ok := h.chatClients[newChatIDStr]; !ok {
+		h.chatClients[newChatIDStr] = make(map[*Client]bool)
+	}
+	h.chatClients[newChatIDStr][client] = true
+
+	// Удаляем из widgetsByUserID, так как chat_id теперь известен
+	delete(h.widgetsByUserID, userID)
+
+	log.Printf("UpdateWidgetChatID: виджет успешно перерегистрирован с новым chat_id %s", newChatID)
+	return true
 }
 
 // GetActiveClients возвращает текущее количество активных клиентов
