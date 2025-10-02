@@ -698,8 +698,14 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 		log.Printf("[FUNCTION_CALLING] Результат функции %s: %s", funcCall.Name, funcResult)
 
+		// 🌍 ВАЖНО: Добавляем напоминание про язык клиента
+		// Определяем язык последнего сообщения клиента
+		userLang := detectUserLanguage(msg.Content)
+		langReminder := fmt.Sprintf("[IMPORTANT: Respond in %s language to match customer's message]\n\n", userLang)
+		funcResultWithReminder := langReminder + funcResult
+
 		// Отправляем результат обратно LLM для финального ответа
-		finalResp, err := ar.client.ContinueWithFunctionResult(genCtx, hist, funcCall, funcResult)
+		finalResp, err := ar.client.ContinueWithFunctionResult(genCtx, hist, funcCall, funcResultWithReminder)
 		if err != nil {
 			return nil, fmt.Errorf("ContinueWithFunctionResult: %w", err)
 		}
@@ -1094,4 +1100,36 @@ func (ar *AutoResponder) ResetUnauthorizedAttempts(chatID string) {
 	delete(ar.unauthorizedAttempts, chatID)
 	ar.mu.Unlock()
 	log.Printf("[AUTORESPONDER] [SECURITY] Сброшен счетчик попыток для чата %s", chatID)
+}
+
+// detectUserLanguage определяет язык сообщения клиента по ключевым словам
+func detectUserLanguage(message string) string {
+	msgLower := strings.ToLower(message)
+
+	// Русский язык
+	russianKeywords := []string{"привет", "что", "как", "где", "когда", "почему", "чем", "вы", "ты", "мой", "мне", "есть", "товар", "продукт", "заказ"}
+	for _, keyword := range russianKeywords {
+		if strings.Contains(msgLower, keyword) {
+			return "Russian"
+		}
+	}
+
+	// Испанский
+	spanishKeywords := []string{"hola", "qué", "cómo", "dónde", "cuándo", "por qué", "usted", "mi", "producto", "pedido"}
+	for _, keyword := range spanishKeywords {
+		if strings.Contains(msgLower, keyword) {
+			return "Spanish"
+		}
+	}
+
+	// Португальский
+	portugueseKeywords := []string{"olá", "você", "produto", "pedido", "quando", "onde", "como"}
+	for _, keyword := range portugueseKeywords {
+		if strings.Contains(msgLower, keyword) {
+			return "Portuguese"
+		}
+	}
+
+	// По умолчанию English
+	return "English"
 }
