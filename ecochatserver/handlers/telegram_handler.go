@@ -223,7 +223,22 @@ func TelegramWebhook(c *gin.Context) {
 		)
 		if err != nil {
 			log.Printf("TelegramWebhook: AutoResponder.ProcessMessage error: %v", err)
-		} else if botMsg != nil {
+
+			// Если ошибка от Gemini API (перегрузка, таймаут и т.д.) - отправляем извинение
+			if strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "overloaded") {
+				botMsg = &models.Message{
+					ChatID:    chat.ID,
+					Content:   "Извините, сервис временно перегружен 😔 Попробуйте повторить запрос через несколько секунд.",
+					Sender:    "admin",
+					SenderID:  uuid.MustParse("00000000-0000-0000-0000-000000000000"),
+					Type:      "text",
+					Timestamp: time.Now(),
+					Metadata:  make(map[string]interface{}),
+				}
+			}
+		}
+
+		if botMsg != nil {
 			log.Printf("TelegramWebhook: автоответ сгенерирован, сохраняем в БД")
 			botUUID := botMsg.SenderID
 
