@@ -26,9 +26,15 @@ type GeminiMessage struct {
 
 // GeminiRequest описывает тело POST‑запроса к Gemini API
 type GeminiRequest struct {
-	Contents         []GeminiMessage        `json:"contents"`
-	GenerationConfig map[string]interface{} `json:"generationConfig,omitempty"`
-	Tools            []GeminiTool           `json:"tools,omitempty"`
+	Contents          []GeminiMessage        `json:"contents"`
+	SystemInstruction *GeminiSystemInstruction `json:"system_instruction,omitempty"`
+	GenerationConfig  map[string]interface{} `json:"generationConfig,omitempty"`
+	Tools             []GeminiTool           `json:"tools,omitempty"`
+}
+
+// GeminiSystemInstruction представляет системную инструкцию
+type GeminiSystemInstruction struct {
+	Parts []map[string]string `json:"parts"`
 }
 
 // GeminiTool описывает инструмент (функцию) доступный для LLM
@@ -113,8 +119,9 @@ func GetStoreFunctionTools() []GeminiTool {
 }
 
 // convertMessagesToGemini конвертирует историю чата в формат Gemini
-func convertMessagesToGemini(messages []Message) []GeminiMessage {
+func convertMessagesToGemini(messages []Message) ([]GeminiMessage, *GeminiSystemInstruction) {
 	var geminiMessages []GeminiMessage
+	var systemInstruction *GeminiSystemInstruction
 
 	for _, msg := range messages {
 		role := msg.Role
@@ -122,9 +129,14 @@ func convertMessagesToGemini(messages []Message) []GeminiMessage {
 		if role == "assistant" {
 			role = "model"
 		}
-		// Системные сообщения добавляем как user message с префиксом
+		// Системные сообщения выделяем отдельно
 		if role == "system" {
-			role = "user"
+			systemInstruction = &GeminiSystemInstruction{
+				Parts: []map[string]string{
+					{"text": msg.Content},
+				},
+			}
+			continue // Не добавляем в contents
 		}
 
 		geminiMessages = append(geminiMessages, GeminiMessage{
@@ -135,7 +147,7 @@ func convertMessagesToGemini(messages []Message) []GeminiMessage {
 		})
 	}
 
-	return geminiMessages
+	return geminiMessages, systemInstruction
 }
 
 // GenerateResponse отправляет историю диалога в Gemini API
@@ -162,11 +174,12 @@ func (c *GeminiClient) GenerateResponse(
 	})
 
 	// Конвертируем в формат Gemini
-	geminiMessages := convertMessagesToGemini(chatHistory)
+	geminiMessages, systemInstruction := convertMessagesToGemini(chatHistory)
 
 	// Формируем тело запроса
 	reqBody := GeminiRequest{
-		Contents: geminiMessages,
+		Contents:          geminiMessages,
+		SystemInstruction: systemInstruction,
 		GenerationConfig: map[string]interface{}{
 			"temperature":     0.7,
 			"maxOutputTokens": 1000,
@@ -246,11 +259,12 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	})
 
 	// Конвертируем в формат Gemini
-	geminiMessages := convertMessagesToGemini(chatHistory)
+	geminiMessages, systemInstruction := convertMessagesToGemini(chatHistory)
 
 	// Формируем тело запроса с Tools
 	reqBody := GeminiRequest{
-		Contents: geminiMessages,
+		Contents:          geminiMessages,
+		SystemInstruction: systemInstruction,
 		GenerationConfig: map[string]interface{}{
 			"temperature":     0.7,
 			"maxOutputTokens": 1000,
@@ -322,7 +336,7 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 	functionResult string,
 ) (string, error) {
 	// Конвертируем историю в формат Gemini
-	geminiMessages := convertMessagesToGemini(chatHistory)
+	geminiMessages, systemInstruction := convertMessagesToGemini(chatHistory)
 
 	// Добавляем ответ модели с function call
 	geminiMessages = append(geminiMessages, GeminiMessage{
@@ -348,7 +362,8 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 
 	// Формируем запрос
 	reqBody := GeminiRequest{
-		Contents: geminiMessages,
+		Contents:          geminiMessages,
+		SystemInstruction: systemInstruction,
 		GenerationConfig: map[string]interface{}{
 			"temperature":     0.7,
 			"maxOutputTokens": 1000,
