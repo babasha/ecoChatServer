@@ -20,8 +20,8 @@ type GeminiClient struct {
 
 // GeminiMessage представляет сообщение в формате Gemini
 type GeminiMessage struct {
-	Role  string               `json:"role"`
-	Parts []map[string]string  `json:"parts"`
+	Role  string                 `json:"role"`
+	Parts []map[string]interface{} `json:"parts"`
 }
 
 // GeminiRequest описывает тело POST‑запроса к Gemini API
@@ -34,7 +34,7 @@ type GeminiRequest struct {
 
 // GeminiSystemInstruction представляет системную инструкцию
 type GeminiSystemInstruction struct {
-	Parts []map[string]string `json:"parts"`
+	Parts []map[string]interface{} `json:"parts"`
 }
 
 // GeminiTool описывает инструмент (функцию) доступный для LLM
@@ -132,7 +132,7 @@ func convertMessagesToGemini(messages []Message) ([]GeminiMessage, *GeminiSystem
 		// Системные сообщения выделяем отдельно
 		if role == "system" {
 			systemInstruction = &GeminiSystemInstruction{
-				Parts: []map[string]string{
+				Parts: []map[string]interface{}{
 					{"text": msg.Content},
 				},
 			}
@@ -141,7 +141,7 @@ func convertMessagesToGemini(messages []Message) ([]GeminiMessage, *GeminiSystem
 
 		geminiMessages = append(geminiMessages, GeminiMessage{
 			Role: role,
-			Parts: []map[string]string{
+			Parts: []map[string]interface{}{
 				{"text": msg.Content},
 			},
 		})
@@ -231,7 +231,12 @@ func (c *GeminiClient) GenerateResponse(
 		return "", fmt.Errorf("Gemini API returned empty content")
 	}
 
-	return geminiResp.Candidates[0].Content.Parts[0]["text"], nil
+	// Извлекаем текст из Parts
+	if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok {
+		return text, nil
+	}
+
+	return "", fmt.Errorf("Gemini API returned invalid content format")
 }
 
 // GenerateResponseWithTools отправляет запрос с поддержкой function calling
@@ -325,7 +330,12 @@ func (c *GeminiClient) GenerateResponseWithTools(
 		return "", nil, fmt.Errorf("Gemini API returned empty content")
 	}
 
-	return candidate.Content.Parts[0]["text"], nil, nil
+	// Извлекаем текст из Parts
+	if text, ok := candidate.Content.Parts[0]["text"].(string); ok {
+		return text, nil, nil
+	}
+
+	return "", nil, fmt.Errorf("Gemini API returned invalid content format")
 }
 
 // ContinueWithFunctionResult отправляет результат выполнения функции обратно LLM
@@ -341,21 +351,25 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 	// Добавляем ответ модели с function call
 	geminiMessages = append(geminiMessages, GeminiMessage{
 		Role: "model",
-		Parts: []map[string]string{
-			{"functionCall": fmt.Sprintf(`{"name":"%s","args":%s}`,
-				functionCall.Name,
-				marshalArgs(functionCall.Args))},
+		Parts: []map[string]interface{}{
+			{"functionCall": map[string]interface{}{
+				"name": functionCall.Name,
+				"args": functionCall.Args,
+			}},
 		},
 	})
 
 	// Добавляем результат функции
 	geminiMessages = append(geminiMessages, GeminiMessage{
 		Role: "function",
-		Parts: []map[string]string{
+		Parts: []map[string]interface{}{
 			{
-				"functionResponse": fmt.Sprintf(`{"name":"%s","response":{"result":%s}}`,
-					functionCall.Name,
-					quote(functionResult)),
+				"functionResponse": map[string]interface{}{
+					"name": functionCall.Name,
+					"response": map[string]interface{}{
+						"result": functionResult,
+					},
+				},
 			},
 		},
 	})
@@ -410,7 +424,12 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 		return "", fmt.Errorf("Gemini API returned empty content")
 	}
 
-	return geminiResp.Candidates[0].Content.Parts[0]["text"], nil
+	// Извлекаем текст из Parts
+	if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok {
+		return text, nil
+	}
+
+	return "", fmt.Errorf("Gemini API returned invalid content format")
 }
 
 // marshalArgs конвертирует args в JSON строку
