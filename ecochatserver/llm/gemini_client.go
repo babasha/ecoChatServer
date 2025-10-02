@@ -126,6 +126,19 @@ func GetStoreFunctionTools() []GeminiTool {
 						},
 					},
 				},
+				{
+					Name:        "inspect_website_page",
+					Description: "Inspect a page on enddel.com website to see its structure, UI elements, and how it works. Use when customer asks about website interface, how to do something on the site, where to find features, checkout process, registration, etc. Returns simplified HTML structure and key UI elements.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"page_path": map[string]interface{}{
+								"type":        "string",
+								"description": "Page path to inspect. Examples: '/' (home page), '/cart' (shopping cart), '/checkout' (checkout page), '/products' (products page). Default is '/' if not specified.",
+							},
+						},
+					},
+				},
 			},
 		},
 	}

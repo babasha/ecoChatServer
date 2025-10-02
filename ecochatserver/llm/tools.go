@@ -88,6 +88,13 @@ func ExecuteTool(ctx context.Context, storeClient *StoreClient, toolCall ToolCal
 		}
 		return executeSearchProduct(ctx, storeClient, productName)
 
+	case "inspect_website_page":
+		pagePath := "/"
+		if path, ok := toolCall.Arguments["page_path"].(string); ok {
+			pagePath = path
+		}
+		return executeInspectWebsite(ctx, storeClient, pagePath)
+
 	default:
 		return "", fmt.Errorf("unknown tool: %s", toolCall.Name)
 	}
@@ -152,6 +159,19 @@ func executeSearchProduct(ctx context.Context, storeClient *StoreClient, product
 		products = products[:10]
 	}
 	return FormatProductsList(products), nil
+}
+
+func executeInspectWebsite(ctx context.Context, storeClient *StoreClient, pagePath string) (string, error) {
+	// Используем базовый URL из store client
+	inspector := NewWebsiteInspector(storeClient.baseURL)
+
+	pageInfo, err := inspector.InspectPage(ctx, pagePath)
+	if err != nil {
+		log.Printf("[TOOLS] Error inspecting website page %s: %v", pagePath, err)
+		return fmt.Sprintf("Error inspecting page %s: %v. The page might not be accessible or doesn't exist.", pagePath, err), nil
+	}
+
+	return pageInfo, nil
 }
 
 // FormatToolsForPrompt форматирует инструменты для добавления в промпт
