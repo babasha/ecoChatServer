@@ -2,34 +2,41 @@
 package llm
 
 import (
-	"regexp"
 	"strings"
 )
 
-// forbiddenTerms — слова/фразы, при которых диалог эскалируется.
+// forbiddenTerms — слова/фразы, при которых LLM раскрывает свою природу
+// ВАЖНО: Эти термины вызывают ЭСКАЛАЦИЮ, а не просто фильтрацию
+// Основные языки: RU, EN (остальные обрабатываются через LLM промпт)
 var forbiddenTerms = []string{
-	// RU + EN варианты
-	"бот", "bot", "робот",
-	"ai", "ии",
-	"нейросеть", "neural",
-	"language model", "llm",
-	"gpt", "chatgpt", "openai",
-	"искусственный интеллект",
-	"алгоритм", "model", "модель",
-	"создан", "создана", "созданный",
-	"разработан", "разработана",
-	"программа", "software", "script",
-	"виртуальный", "digital agent",
+	// Русский - основные фразы
+	"вы бот", "вы робот", "ты бот", "ты робот", "это бот",
+
+	// English - основные фразы
+	"are you a bot", "are you a robot", "you are a bot", "this is a bot",
 }
 
 // escalationTriggers — фразы, которые требуют вмешательства человека
+// ВАЖНО: Сделаны более специфичными, чтобы не блокировать нормальные фразы
+// Основные языки: RU, EN (остальные обрабатываются через LLM промпт)
 var escalationTriggers = []string{
-	"не понимаю", "не знаю", "не могу помочь",
+	// ── Русский - явные признаки неспособности помочь ──
+	"я не понимаю", "я не знаю", "я не могу помочь",
+	"не могу вам помочь", "не могу ответить",
+	"извините, но я не", "к сожалению я не",
+	"обратитесь к специалисту", "свяжитесь со специалистом",
+	"нужен специалист", "требуется менеджер",
+
+	// ── English - явные признаки неспособности помочь ──
 	"i don't understand", "i don't know", "i can't help",
-	"извините, но", "sorry, but",
-	"к сожалению", "unfortunately",
-	"это сложный вопрос", "this is complex",
-	"обратитесь к", "contact", "свяжитесь с",
+	"i cannot help you", "i cannot answer",
+	"sorry, but i can't", "unfortunately i cannot",
+	"sorry but i don't", "unfortunately i don't",
+	"contact specialist", "need specialist",
+	"requires manager", "need to escalate",
+
+	// ── Универсальные маркеры эскалации ──
+	"#эскалация", "#escalate",
 }
 
 // sanitize проверяет текст LLM. escalate=true => нужен живой оператор.
@@ -39,21 +46,23 @@ func sanitize(resp string) (clean string, escalate bool) {
 	// Проверяем запрещенные термины (раскрытие природы AI)
 	for _, term := range forbiddenTerms {
 		if strings.Contains(lower, term) {
-			return "", true
+			// LLM пытается раскрыть свою природу - нужен человек
+			return "Сейчас подключу нашего специалиста, который сможет вам помочь. Одну минутку! 🙏", true
 		}
 	}
 
 	// Проверяем триггеры эскалации (LLM не может помочь)
 	for _, trigger := range escalationTriggers {
 		if strings.Contains(lower, trigger) {
-			return "", true
+			// LLM не справился - эскалируем
+			// Если в ответе уже есть вежливое объяснение, оставляем его
+			if strings.Contains(lower, "специалист") || strings.Contains(lower, "менеджер") {
+				return resp, true
+			}
+			return "Позвольте подключить нашего специалиста для решения этого вопроса. 🙏", true
 		}
 	}
 
-	// подчищаем единичные «AI-слова», чтобы не мелькали по ошибке
-	for _, term := range forbiddenTerms {
-		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(term) + `\b`)
-		resp = re.ReplaceAllString(resp, "")
-	}
+	// Текст чистый, дополнительная очистка не нужна
 	return strings.TrimSpace(resp), false
 }

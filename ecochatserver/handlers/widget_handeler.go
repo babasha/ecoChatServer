@@ -3,24 +3,16 @@ package handlers
 import (
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/egor/ecochatserver/database"
 )
 
 // GetWidgetChatMessages возвращает историю сообщений чата для виджета
 func GetWidgetChatMessages(c *gin.Context) {
-	chatIDStr := c.Param("id")
 	userIDStr := c.GetHeader("X-Widget-User-ID")
 	apiKey := c.GetHeader("X-API-Key")
-
-	if chatIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID чата не указан"})
-		return
-	}
 
 	if userIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ID пользователя не указан"})
@@ -33,31 +25,18 @@ func GetWidgetChatMessages(c *gin.Context) {
 	}
 
 	// Парсим chatID
-	chatID, err := uuid.Parse(chatIDStr)
+	chatID, err := parseChatID(c)
 	if err != nil {
-		log.Printf("GetWidgetChatMessages: неверный UUID чата: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
 		return
 	}
 
 	// Получаем параметры пагинации
-	pageStr := c.DefaultQuery("page", "1")
-	sizeStr := c.DefaultQuery("size", "50")
+	page, size := parsePagination(c)
 
-	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 1 {
-		page = 1
-	}
-
-	size, err := strconv.Atoi(sizeStr)
-	if err != nil || size < 1 || size > 100 {
-		size = 50
-	}
-
-	log.Printf("GetWidgetChatMessages: загрузка истории чата %s для пользователя %s", chatIDStr, userIDStr)
+	log.Printf("GetWidgetChatMessages: загрузка истории чата %s для пользователя %s", chatID, userIDStr)
 
 	// Получаем чат из базы данных
-	chat, totalMessages, err := database.GetChatByID(chatID, page-1, size)
+	chat, totalMessages, err := database.GetChatByID(chatID, page, size)
 	if err != nil {
 		log.Printf("GetWidgetChatMessages: ошибка получения чата: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден"})

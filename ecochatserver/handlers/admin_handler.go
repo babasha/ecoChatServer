@@ -3,8 +3,6 @@ package handlers
 import (
 	"log"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
@@ -16,15 +14,7 @@ import (
 // GetChats возвращает список чатов для админки
 func GetChats(c *gin.Context) {
 	// Получаем параметры пагинации
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
-
-	if page < 1 {
-		page = 1
-	}
-	if size < 1 || size > 100 {
-		size = 50
-	}
+	page, size := parsePagination(c)
 
 	// Для админки получаем ВСЕ чаты всех клиентов
 	// Используем специальное значение для обозначения "все клиенты"
@@ -39,7 +29,7 @@ func GetChats(c *gin.Context) {
 		adminID = uuid.Nil
 	}
 
-	chats, total, err := database.GetChats(clientID, adminID, page-1, size)
+	chats, total, err := database.GetChats(clientID, adminID, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Ошибка получения чатов",
@@ -61,27 +51,15 @@ func GetChats(c *gin.Context) {
 
 // GetChatByID возвращает конкретный чат с сообщениями
 func GetChatByID(c *gin.Context) {
-	chatIDStr := c.Param("id")
-	chatID, err := uuid.Parse(chatIDStr)
+	chatID, err := parseChatID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Неверный ID чата",
-		})
 		return
 	}
 
 	// Получаем параметры пагинации для сообщений
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
+	page, size := parsePagination(c)
 
-	if page < 1 {
-		page = 1
-	}
-	if size < 1 || size > 100 {
-		size = 50
-	}
-
-	chat, total, err := database.GetChatByID(chatID, page-1, size)
+	chat, total, err := database.GetChatByID(chatID, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Ошибка получения чата",
@@ -103,11 +81,8 @@ func GetChatByID(c *gin.Context) {
 
 // SendMessageToChat отправляет сообщение от админа в чат
 func SendMessageToChat(c *gin.Context) {
-	chatIDStr := c.Param("id")
-	chatID, err := uuid.Parse(chatIDStr)
+	chatID, err := parseChatID(c)
 	if err != nil {
-		log.Printf("SendMessageToChat: неверный UUID чата: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
 		return
 	}
 
@@ -127,20 +102,11 @@ func SendMessageToChat(c *gin.Context) {
 		return
 	}
 
-	log.Printf("SendMessageToChat: отправка сообщения в чат %s от админа", chatIDStr)
+	log.Printf("SendMessageToChat: отправка сообщения в чат %s от админа", chatID)
 
 	// Получаем реальный ID админа из JWT токена
-	adminIDStr, exists := c.Get("adminID")
-	if !exists {
-		log.Printf("SendMessageToChat: adminID не найден в контексте")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
-		return
-	}
-
-	adminID, err := uuid.Parse(adminIDStr.(string))
+	adminID, err := getAdminID(c)
 	if err != nil {
-		log.Printf("SendMessageToChat: ошибка парсинга adminID: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Некорректный ID администратора"})
 		return
 	}
 
@@ -187,26 +153,10 @@ func SendMessageToChat(c *gin.Context) {
 	log.Printf("SendMessageToChat: сообщение сохранено: ID=%s", message.ID)
 
 	// Обновляем время чата
-	if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
-		log.Printf("SendMessageToChat: ошибка обновления времени чата: %v", err)
-	}
+	updateChatTimestamp(chatID)
 
 	// Отправляем WebSocket уведомление в формате совместимом с виджетом и админкой
-	messagePayload := map[string]interface{}{
-		"id":        message.ID.String(),
-		"chatId":    chatID.String(),
-		"content":   message.Content,
-		"sender":    message.Sender,
-		"senderId":  message.SenderID.String(),
-		"timestamp": message.Timestamp.Format(time.RFC3339),
-		"read":      false,
-		"type":      message.Type,
-	}
-
-	// Добавляем metadata, если есть
-	if message.Metadata != nil {
-		messagePayload["metadata"] = message.Metadata
-	}
+	messagePayload := createMessagePayload(message, chatID)
 
 	payload := map[string]interface{}{
 		"chatId":  chatID.String(), // для админки
@@ -229,11 +179,8 @@ func SendMessageToChat(c *gin.Context) {
 
 // ToggleAutoResponder включает/выключает автоответчик для чата
 func ToggleAutoResponder(c *gin.Context) {
-	chatIDStr := c.Param("id")
-	chatID, err := uuid.Parse(chatIDStr)
+	chatID, err := parseChatID(c)
 	if err != nil {
-		log.Printf("ToggleAutoResponder: неверный UUID чата: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
 		return
 	}
 
@@ -248,7 +195,7 @@ func ToggleAutoResponder(c *gin.Context) {
 		return
 	}
 
-	log.Printf("ToggleAutoResponder: обновление автоответчика для чата %s, enabled=%t", chatIDStr, request.Enabled)
+	log.Printf("ToggleAutoResponder: обновление автоответчика для чата %s, enabled=%t", chatID, request.Enabled)
 
 	// Обновляем статус автоответчика в базе данных
 	if err := queries.UpdateAutoResponder(database.DB, chatID, request.Enabled); err != nil {
@@ -257,7 +204,7 @@ func ToggleAutoResponder(c *gin.Context) {
 		return
 	}
 
-	log.Printf("ToggleAutoResponder: автоответчик успешно обновлен для чата %s", chatIDStr)
+	log.Printf("ToggleAutoResponder: автоответчик успешно обновлен для чата %s", chatID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -269,17 +216,8 @@ func ToggleAutoResponder(c *gin.Context) {
 // GetAdminSettings возвращает настройки админа
 func GetAdminSettings(c *gin.Context) {
 	// Получаем adminID из JWT токена
-	adminIDStr, exists := c.Get("adminID")
-	if !exists {
-		log.Printf("GetAdminSettings: adminID отсутствует в контексте")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
-		return
-	}
-
-	adminID, err := uuid.Parse(adminIDStr.(string))
+	adminID, err := getAdminID(c)
 	if err != nil {
-		log.Printf("GetAdminSettings: неверный UUID админа: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID админа"})
 		return
 	}
 
@@ -301,17 +239,8 @@ func GetAdminSettings(c *gin.Context) {
 // UpdateAdminSettings обновляет настройки админа
 func UpdateAdminSettings(c *gin.Context) {
 	// Получаем adminID из JWT токена
-	adminIDStr, exists := c.Get("adminID")
-	if !exists {
-		log.Printf("UpdateAdminSettings: adminID отсутствует в контексте")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не авторизован"})
-		return
-	}
-
-	adminID, err := uuid.Parse(adminIDStr.(string))
+	adminID, err := getAdminID(c)
 	if err != nil {
-		log.Printf("UpdateAdminSettings: неверный UUID админа: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID админа"})
 		return
 	}
 
@@ -359,15 +288,12 @@ func UpdateAdminSettings(c *gin.Context) {
 
 // MarkChatMessagesAsRead помечает все сообщения в чате как прочитанные
 func MarkChatMessagesAsRead(c *gin.Context) {
-	chatIDStr := c.Param("id")
-	chatID, err := uuid.Parse(chatIDStr)
+	chatID, err := parseChatID(c)
 	if err != nil {
-		log.Printf("MarkChatMessagesAsRead: неверный UUID чата: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат ID чата"})
 		return
 	}
 
-	log.Printf("MarkChatMessagesAsRead: пометка сообщений в чате %s как прочитанных", chatIDStr)
+	log.Printf("MarkChatMessagesAsRead: пометка сообщений в чате %s как прочитанных", chatID)
 
 	// Помечаем сообщения как прочитанные
 	if err := database.MarkMessagesAsRead(chatID); err != nil {
@@ -376,7 +302,7 @@ func MarkChatMessagesAsRead(c *gin.Context) {
 		return
 	}
 
-	log.Printf("MarkChatMessagesAsRead: сообщения в чате %s успешно помечены как прочитанные", chatIDStr)
+	log.Printf("MarkChatMessagesAsRead: сообщения в чате %s успешно помечены как прочитанные", chatID)
 
 	// Отправляем WebSocket уведомление о прочтении сообщений
 	readNotification := map[string]interface{}{

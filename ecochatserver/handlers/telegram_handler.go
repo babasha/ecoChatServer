@@ -106,8 +106,6 @@ func TelegramWebhook(c *gin.Context) {
 		log.Printf("TelegramWebhook: используем ClientID: %s", in.ClientID)
 	}
 
-	messageTime := time.Now()
-
 	// Создаём или получаем чат
 	log.Printf("TelegramWebhook: создаем/получаем чат для user=%s, source=%s, botID=%s, clientID=%s",
 		in.UserID, in.Source, in.BotID, in.ClientID)
@@ -166,26 +164,20 @@ func TelegramWebhook(c *gin.Context) {
 		log.Printf("TelegramWebhook: создан детерминированный UUID для userID %s: %s", in.UserID, userUUID.String())
 	}
 
-	// Создаем детерминированный ID для сообщения (дедупликация)
-	// Используем оригинальный content для ID, чтобы избежать дублей при переводе
-	messageID := generateMessageID(chat.ID, userUUID, in.Content, messageTime)
-
-	// Добавляем сообщение пользователя с детерминированным ID
+	// Добавляем сообщение пользователя
 	msgType := "text"
 	if in.MessageType != "" {
 		msgType = in.MessageType
 	}
 
-	log.Printf("TelegramWebhook: добавляем сообщение в чат %s от пользователя %s с ID %s",
-		chat.ID, userUUID, messageID)
+	log.Printf("TelegramWebhook: добавляем сообщение в чат %s от пользователя %s",
+		chat.ID, userUUID)
 
-	userMsg, err := database.AddMessageWithID(
-		messageID,
+	userMsg, err := database.AddMessage(
 		chat.ID,
 		messageContent,    // Используем переведенный контент
 		"user",
 		userUUID,
-		messageTime,
 		msgType,
 		messageMetadata,   // Используем обогащенные метаданные
 	)
@@ -198,9 +190,7 @@ func TelegramWebhook(c *gin.Context) {
 	log.Printf("TelegramWebhook: сообщение добавлено: ID=%s", userMsg.ID)
 
 	// Быстро обновляем время чата
-	if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
-		log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
-	}
+	updateChatTimestamp(chat.ID)
 
 	// Генерируем автоответ, если включено
 	var botMsg *models.Message
@@ -240,9 +230,7 @@ func TelegramWebhook(c *gin.Context) {
 				log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botMsg.ID)
 
 				// Обновляем время чата
-				if err := queries.UpdateChatTimestamp(database.DB, chat.ID); err != nil {
-					log.Printf("TelegramWebhook: ошибка обновления времени: %v", err)
-				}
+				updateChatTimestamp(chat.ID)
 
 				// Проверяем нужна ли эскалация
 				if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok {

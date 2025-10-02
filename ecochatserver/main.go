@@ -2,15 +2,18 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	"github.com/egor/ecochatserver/database"
@@ -19,13 +22,14 @@ import (
 	"github.com/egor/ecochatserver/websocket"
 )
 
-// Простой in-memory кэш для последних чатов
-var recentChats sync.Map
-
 func main() {
 	// Логи по файлу и строке
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("EcoChat server starting with anti-duplication optimizations…")
+
+	// Создаем context для graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Загружаем .env (только для dev)
 	if err := godotenv.Load(); err != nil {
@@ -42,17 +46,23 @@ func main() {
 	log.Println("Простое кэширование инициализировано")
 
 	// Периодически обновляем партиции
-	go func() {
+	go func(ctx context.Context) {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
-		for range ticker.C {
-			if err := database.RefreshPartitions(); err != nil {
-				log.Printf("Ошибка обновления партиций: %v", err)
-			} else {
-				log.Println("Успешное обновление партиций")
+		for {
+			select {
+			case <-ticker.C:
+				if err := database.RefreshPartitions(); err != nil {
+					log.Printf("Ошибка обновления партиций: %v", err)
+				} else {
+					log.Println("Успешное обновление партиций")
+				}
+			case <-ctx.Done():
+				log.Println("Остановка обновления партиций...")
+				return
 			}
 		}
-	}()
+	}(ctx)
 
 	// ─── Gin & middleware ───────────────────────────────────────────────────
 	gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
@@ -72,7 +82,7 @@ func main() {
 	handlers.WebSocketHub = hub
 
 	// Запускаем веб-сервер для статистики WebSocket (опционально)
-	go startStatsServer(hub)
+	go startStatsServer(ctx, hub)
 
 	// ─── Автоответчик (если используется) ───────────────────────────────────
 	handlers.InitAutoResponder()
@@ -94,9 +104,34 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Ошибка запуска HTTP сервера: %v", err)
+	// Запускаем сервер в отдельной горутине
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Ошибка запуска HTTP сервера: %v", err)
+		}
+	}()
+
+	log.Println("✓ Сервер запущен успешно")
+
+	// Ожидаем сигнал остановки (Ctrl+C или SIGTERM)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Получен сигнал остановки, начинаем graceful shutdown...")
+
+	// Отменяем context для всех горутин
+	cancel()
+
+	// Graceful shutdown HTTP сервера
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Ошибка при остановке сервера: %v", err)
 	}
+
+	log.Println("✓ Сервер остановлен успешно")
 }
 
 // SimpleDeduplicationMiddleware простой middleware для дедупликации HTTP запросов
@@ -122,7 +157,7 @@ func SimpleDeduplicationMiddleware() gin.HandlerFunc {
 }
 
 // startStatsServer запускает отдельный сервер для статистики WebSocket
-func startStatsServer(hub *websocket.Hub) {
+func startStatsServer(ctx context.Context, hub *websocket.Hub) {
 	if os.Getenv("ENABLE_STATS_SERVER") != "true" {
 		return
 	}
@@ -150,9 +185,26 @@ func startStatsServer(hub *websocket.Hub) {
 		})
 	})
 
-	log.Printf("Статистический сервер запускается на порту %s", statsPort)
-	if err := statsRouter.Run(":" + statsPort); err != nil {
-		log.Printf("Ошибка запуска статистического сервера: %v", err)
+	statsServer := &http.Server{
+		Addr:    ":" + statsPort,
+		Handler: statsRouter,
+	}
+
+	// Запускаем сервер в отдельной горутине
+	go func() {
+		log.Printf("Статистический сервер запускается на порту %s", statsPort)
+		if err := statsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Ошибка запуска статистического сервера: %v", err)
+		}
+	}()
+
+	// Ждем сигнала остановки
+	<-ctx.Done()
+	log.Println("Остановка статистического сервера...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := statsServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Ошибка остановки статистического сервера: %v", err)
 	}
 }
 
@@ -211,7 +263,9 @@ func setupCORS(r *gin.Engine) {
 
 	// Добавляем Request ID middleware
 	r.Use(func(c *gin.Context) {
-		c.Header("X-Request-ID", c.GetString("requestId"))
+		requestID := uuid.New().String()
+		c.Set("requestId", requestID)
+		c.Header("X-Request-ID", requestID)
 		c.Next()
 	})
 }

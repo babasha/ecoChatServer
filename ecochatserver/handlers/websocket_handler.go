@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -256,51 +255,26 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		sender = "user"
 	}
 
-	messageTime := time.Now()
+	// Добавляем сообщение в базу с auto-generated UUID
+	log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s): %s",
+		chatID, sender, senderID, p.Content)
 
-	// Создаем детерминированный ID для сообщения (дедупликация)
-	messageID := generateMessageID(chatID, senderID, p.Content, messageTime)
-
-	// Добавляем сообщение в базу с детерминированным ID
-	log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s) с ID %s: %s",
-		chatID, sender, senderID, messageID, p.Content)
-
-	message, err := database.AddMessageWithID(
-		messageID,
+	message, err := database.AddMessage(
 		chatID,
 		p.Content,
 		sender,
 		senderID,
-		messageTime,
 		p.Type,
 		p.Metadata,
 	)
 	if err != nil {
-		// Проверяем, не является ли это ошибкой дублирования
-		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
-			log.Printf("processSendMessage: сообщение уже существует в базе: %s", messageID)
-			// Отправляем подтверждение о том, что сообщение уже обработано
-			response := map[string]interface{}{
-				"type": "messageDuplicate",
-				"payload": map[string]interface{}{
-					"messageID": messageID.String(),
-					"chatID":    p.ChatID,
-					"status":    "already_exists",
-				},
-			}
-			client.SendJSON(response)
-			return
-		}
-
 		log.Printf("processSendMessage: ошибка добавления сообщения: %v", err)
 		client.SendError("db_error", "Ошибка сохранения сообщения")
 		return
 	}
 
 	// Быстро обновляем время чата
-	if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
-		log.Printf("processSendMessage: ошибка обновления времени: %v", err)
-	}
+	updateChatTimestamp(chatID)
 
 	// Если это сообщение от админа, очищаем состояние эскалации
 	if sender == "admin" && AutoResponder != nil {
@@ -340,9 +314,7 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					botMsg = saved
 
 					// Обновляем время чата
-					if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
-						log.Printf("processSendMessage: ошибка обновления времени: %v", err)
-					}
+					updateChatTimestamp(chatID)
 
 					// Отправляем ОДНО комплексное сообщение
 					notification := createChatNotification(chatID, message, botMsg)
