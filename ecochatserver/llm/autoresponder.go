@@ -661,10 +661,14 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 	// 🔧 FUNCTION CALLING: Пробуем использовать function calling для product queries
 	tools := GetStoreFunctionTools()
+	log.Printf("[AUTORESPONDER] Отправляем запрос в LLM с %d tools, сообщение: %s", len(tools), msg.Content)
 	textResp, funcCall, err := ar.client.GenerateResponseWithTools(genCtx, msg.Content, hist, tools)
 	if err != nil {
+		log.Printf("[AUTORESPONDER] Ошибка GenerateResponseWithTools: %v", err)
 		return nil, fmt.Errorf("GenerateResponseWithTools: %w", err)
 	}
+
+	log.Printf("[AUTORESPONDER] Получен ответ от LLM: funcCall=%v, textResp=%s", funcCall != nil, textResp)
 
 	var rawResp string
 
