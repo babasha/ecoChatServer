@@ -26,10 +26,22 @@ type GeminiMessage struct {
 
 // GeminiRequest описывает тело POST‑запроса к Gemini API
 type GeminiRequest struct {
-	Contents          []GeminiMessage        `json:"contents"`
+	Contents          []GeminiMessage          `json:"contents"`
 	SystemInstruction *GeminiSystemInstruction `json:"system_instruction,omitempty"`
-	GenerationConfig  map[string]interface{} `json:"generationConfig,omitempty"`
-	Tools             []GeminiTool           `json:"tools,omitempty"`
+	GenerationConfig  map[string]interface{}   `json:"generationConfig,omitempty"`
+	Tools             []GeminiTool             `json:"tools,omitempty"`
+	ToolConfig        *GeminiToolConfig        `json:"toolConfig,omitempty"`
+}
+
+// GeminiToolConfig конфигурация для function calling
+type GeminiToolConfig struct {
+	FunctionCallingConfig GeminiFunctionCallingConfig `json:"functionCallingConfig"`
+}
+
+// GeminiFunctionCallingConfig режим вызова функций
+type GeminiFunctionCallingConfig struct {
+	Mode                 string   `json:"mode"`                           // "AUTO", "ANY", "NONE"
+	AllowedFunctionNames []string `json:"allowedFunctionNames,omitempty"` // Опционально
 }
 
 // GeminiSystemInstruction представляет системную инструкцию
@@ -267,6 +279,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	geminiMessages, systemInstruction := convertMessagesToGemini(chatHistory)
 
 	// Формируем тело запроса с Tools
+	// Используем режим ANY чтобы заставить LLM вызывать функции
 	reqBody := GeminiRequest{
 		Contents:          geminiMessages,
 		SystemInstruction: systemInstruction,
@@ -275,6 +288,11 @@ func (c *GeminiClient) GenerateResponseWithTools(
 			"maxOutputTokens": 1000,
 		},
 		Tools: tools,
+		ToolConfig: &GeminiToolConfig{
+			FunctionCallingConfig: GeminiFunctionCallingConfig{
+				Mode: "ANY", // Принудительно вызывать функции
+			},
+		},
 	}
 
 	payload, err := json.Marshal(reqBody)
