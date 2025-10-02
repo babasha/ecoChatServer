@@ -36,23 +36,15 @@ import (
 const systemPromptUnauthorized = `
 You work in customer support for "enddel" - online grocery delivery service.
 
-🌍 LANGUAGE RULE #1 - CRITICAL - READ THIS FIRST:
+🌍 RULE #0 - HIGHEST PRIORITY - LANGUAGE MATCHING:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ALWAYS respond in the SAME language as customer's last message!
+YOU MUST RESPOND IN THE EXACT SAME LANGUAGE AS THE CUSTOMER'S MESSAGE.
 
-Detection rules:
-• Customer writes in Russian → You respond in Russian
-• Customer writes in English → You respond in English
-• Customer writes in Spanish → You respond in Spanish
-• Customer writes in ANY language → You respond in THAT language
+If customer writes in Russian (Cyrillic) → respond in Russian
+If customer writes in English (Latin) → respond in English
+If customer writes in Spanish → respond in Spanish
 
-Examples:
-  Customer: "отвечай на русском" → You: "Конечно! Как могу помочь?"
-  Customer: "what do you do?" → You: "I help with grocery shopping!"
-  Customer: "что ты делаешь?" → You: "Я помогаю с покупкой продуктов!"
-
-⚠️ NEVER ignore customer's language preference!
-⚠️ If customer asks "answer in Russian" - switch to Russian IMMEDIATELY!
+This is NON-NEGOTIABLE. Language matching takes priority over ALL other rules.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🎯 MAIN RULE: Talk like a REAL HUMAN, not a robot!
@@ -214,23 +206,15 @@ Your task: help customers quickly and humanly.
 const systemPromptAuthorized = `
 You work in customer support for "enddel" - online grocery delivery service.
 
-🌍 LANGUAGE RULE #1 - CRITICAL - READ THIS FIRST:
+🌍 RULE #0 - HIGHEST PRIORITY - LANGUAGE MATCHING:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ALWAYS respond in the SAME language as customer's last message!
+YOU MUST RESPOND IN THE EXACT SAME LANGUAGE AS THE CUSTOMER'S MESSAGE.
 
-Detection rules:
-• Customer writes in Russian → You respond in Russian
-• Customer writes in English → You respond in English
-• Customer writes in Spanish → You respond in Spanish
-• Customer writes in ANY language → You respond in THAT language
+If customer writes in Russian (Cyrillic) → respond in Russian
+If customer writes in English (Latin) → respond in English
+If customer writes in Spanish → respond in Spanish
 
-Examples:
-  Customer: "отвечай на русском" → You: "Конечно! Как могу помочь?"
-  Customer: "what do you do?" → You: "I help with grocery shopping!"
-  Customer: "что ты делаешь?" → You: "Я помогаю с покупкой продуктов!"
-
-⚠️ NEVER ignore customer's language preference!
-⚠️ If customer asks "answer in Russian" - switch to Russian IMMEDIATELY!
+This is NON-NEGOTIABLE. Language matching takes priority over ALL other rules.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🎯 MAIN RULE: Talk like a REAL HUMAN, not a robot!
@@ -652,7 +636,10 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 		hist = []Message{{Role: "system", Content: selectedPrompt}}
 	}
 
-	hist = append(hist, Message{Role: "user", Content: msg.Content})
+	// Добавляем сообщение пользователя с префиксом-напоминанием про язык
+	// LLM сама определит язык и будет отвечать на нём
+	userMessageWithReminder := fmt.Sprintf("[Respond in customer's language] %s", msg.Content)
+	hist = append(hist, Message{Role: "user", Content: userMessageWithReminder})
 
 	// Обрезаем историю до разумного размера
 	hist = ar.historyMgr.TrimHistory(hist)
@@ -698,14 +685,9 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 		log.Printf("[FUNCTION_CALLING] Результат функции %s: %s", funcCall.Name, funcResult)
 
-		// 🌍 ВАЖНО: Добавляем напоминание про язык клиента
-		// Определяем язык последнего сообщения клиента
-		userLang := detectUserLanguage(msg.Content)
-		langReminder := fmt.Sprintf("[IMPORTANT: Respond in %s language to match customer's message]\n\n", userLang)
-		funcResultWithReminder := langReminder + funcResult
-
 		// Отправляем результат обратно LLM для финального ответа
-		finalResp, err := ar.client.ContinueWithFunctionResult(genCtx, hist, funcCall, funcResultWithReminder)
+		// LLM уже знает язык из исходного сообщения пользователя
+		finalResp, err := ar.client.ContinueWithFunctionResult(genCtx, hist, funcCall, funcResult)
 		if err != nil {
 			return nil, fmt.Errorf("ContinueWithFunctionResult: %w", err)
 		}
@@ -1102,34 +1084,3 @@ func (ar *AutoResponder) ResetUnauthorizedAttempts(chatID string) {
 	log.Printf("[AUTORESPONDER] [SECURITY] Сброшен счетчик попыток для чата %s", chatID)
 }
 
-// detectUserLanguage определяет язык сообщения клиента по ключевым словам
-func detectUserLanguage(message string) string {
-	msgLower := strings.ToLower(message)
-
-	// Русский язык
-	russianKeywords := []string{"привет", "что", "как", "где", "когда", "почему", "чем", "вы", "ты", "мой", "мне", "есть", "товар", "продукт", "заказ"}
-	for _, keyword := range russianKeywords {
-		if strings.Contains(msgLower, keyword) {
-			return "Russian"
-		}
-	}
-
-	// Испанский
-	spanishKeywords := []string{"hola", "qué", "cómo", "dónde", "cuándo", "por qué", "usted", "mi", "producto", "pedido"}
-	for _, keyword := range spanishKeywords {
-		if strings.Contains(msgLower, keyword) {
-			return "Spanish"
-		}
-	}
-
-	// Португальский
-	portugueseKeywords := []string{"olá", "você", "produto", "pedido", "quando", "onde", "como"}
-	for _, keyword := range portugueseKeywords {
-		if strings.Contains(msgLower, keyword) {
-			return "Portuguese"
-		}
-	}
-
-	// По умолчанию English
-	return "English"
-}
