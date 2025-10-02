@@ -193,7 +193,7 @@ func (c *GeminiClient) GenerateResponse(
 
 	// URL Gemini API
 	endpoint := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=%s",
+		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
 		c.apiKey,
 	)
 
@@ -284,7 +284,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 
 	// URL Gemini API
 	endpoint := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=%s",
+		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
 		c.apiKey,
 	)
 
@@ -390,7 +390,7 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 	}
 
 	endpoint := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=%s",
+		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
 		c.apiKey,
 	)
 
