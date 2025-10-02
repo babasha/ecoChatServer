@@ -402,6 +402,7 @@ func (sc *StoreClient) GetAllProducts(ctx context.Context, searchQuery string) (
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", sc.apiKey)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; EcoChatBot/1.0)")
 
 	resp, err := sc.client.Do(req)
 	if err != nil {
