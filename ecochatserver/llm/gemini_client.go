@@ -343,23 +343,38 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	candidateJSON, _ := json.Marshal(candidate)
 	log.Printf("[GEMINI] Candidate response: %s", string(candidateJSON))
 
-	// Проверяем есть ли function call
+	// Проверяем есть ли function call в candidate.FunctionCall (старый формат)
 	if candidate.FunctionCall != nil {
-		log.Printf("[GEMINI] Function call detected: %s", candidate.FunctionCall.Name)
+		log.Printf("[GEMINI] Function call detected (top-level): %s", candidate.FunctionCall.Name)
 		return "", candidate.FunctionCall, nil
 	}
 
-	// Иначе возвращаем текстовый ответ
+	// Проверяем есть ли function call в Parts[0].functionCall (новый формат)
+	if len(candidate.Content.Parts) > 0 {
+		if funcCallData, ok := candidate.Content.Parts[0]["functionCall"].(map[string]interface{}); ok {
+			log.Printf("[GEMINI] Function call detected (in parts): %v", funcCallData)
+
+			// Извлекаем name и args
+			name, _ := funcCallData["name"].(string)
+			args, _ := funcCallData["args"].(map[string]interface{})
+
+			return "", &GeminiFunctionCall{
+				Name: name,
+				Args: args,
+			}, nil
+		}
+
+		// Извлекаем текст из Parts
+		if text, ok := candidate.Content.Parts[0]["text"].(string); ok {
+			return text, nil, nil
+		}
+	}
+
+	// Если ничего не нашли
 	if len(candidate.Content.Parts) == 0 {
 		return "", nil, fmt.Errorf("Gemini API returned empty content")
 	}
 
-	// Извлекаем текст из Parts
-	if text, ok := candidate.Content.Parts[0]["text"].(string); ok {
-		return text, nil, nil
-	}
-
-	// Если не удалось извлечь текст, показываем что там есть
 	partsJSON, _ := json.Marshal(candidate.Content.Parts[0])
 	return "", nil, fmt.Errorf("Gemini API returned invalid content format, parts[0]: %s", string(partsJSON))
 }
