@@ -136,6 +136,9 @@ func TelegramWebhook(c *gin.Context) {
 		messageMetadata = make(map[string]interface{})
 	}
 
+	// Сохраняем оригинальный текст для LLM
+	originalContent := in.Content
+
 	if Translator != nil {
 		log.Printf("TelegramWebhook: перевод сообщения пользователя")
 		result, err := Translator.TranslateUserMessage(c.Request.Context(), in.Content, chat.ID)
@@ -143,11 +146,15 @@ func TelegramWebhook(c *gin.Context) {
 			log.Printf("TelegramWebhook: ошибка перевода сообщения: %v", err)
 			// Продолжаем с оригинальным текстом
 		} else if result != nil {
-			// Используем переведенный текст (или оригинал, если перевод не нужен)
+			// Используем переведенный текст для сохранения (для админа)
 			messageContent = result.Content
 			// Добавляем метаданные перевода
 			for k, v := range result.Metadata {
 				messageMetadata[k] = v
+			}
+			// Сохраняем оригинальный текст в метаданных
+			if result.WasTranslated {
+				messageMetadata["originalText"] = originalContent
 			}
 			log.Printf("TelegramWebhook: перевод завершен, wasTranslated=%v, detectedLang=%s",
 				result.WasTranslated, result.DetectedLanguage)
@@ -204,10 +211,15 @@ func TelegramWebhook(c *gin.Context) {
 			lightChat = chat // Используем уже загруженный чат
 		}
 
+		// ВАЖНО: Передаём оригинальный текст в LLM, а не переведённый!
+		// LLM должна видеть язык клиента чтобы ответить на том же языке
+		userMsgForLLM := *userMsg
+		userMsgForLLM.Content = originalContent
+
 		botMsg, err = AutoResponder.ProcessMessage(
 			c.Request.Context(),
 			lightChat,
-			userMsg,
+			&userMsgForLLM,
 		)
 		if err != nil {
 			log.Printf("TelegramWebhook: AutoResponder.ProcessMessage error: %v", err)
