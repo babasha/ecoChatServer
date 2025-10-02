@@ -367,18 +367,8 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 	chatKey := chat.ID.String()
 
-	// Проверяем состояние эскалации
-	ar.mu.Lock()
-	escalation := ar.escalations[chatKey]
-	ar.mu.Unlock()
-
-	// Если чат эскалирован, проверяем нужно ли вернуть LLM
-	if escalation != nil {
-		return ar.handleEscalatedChat(ctx, chat, msg, escalation)
-	}
-
-	// ── проверка запросов о продуктах ───────────────────────
-	// Продукты публичные - не требуют авторизации
+	// ── проверка запросов о продуктах ПЕРЕД эскалацией ───────────────────────
+	// Продукты публичные - не требуют авторизации, обрабатываем всегда
 	// Используем оригинальный текст для поиска продуктов, если доступен (до перевода)
 	contentToCheck := msg.Content
 	if msg.Metadata != nil {
@@ -412,6 +402,16 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 				},
 			}, nil
 		}
+	}
+
+	// Проверяем состояние эскалации (после проверки продуктов)
+	ar.mu.Lock()
+	escalation := ar.escalations[chatKey]
+	ar.mu.Unlock()
+
+	// Если чат эскалирован, проверяем нужно ли вернуть LLM
+	if escalation != nil {
+		return ar.handleEscalatedChat(ctx, chat, msg, escalation)
 	}
 
 	// ── проверка запросов о заказах ──────────────────────────
