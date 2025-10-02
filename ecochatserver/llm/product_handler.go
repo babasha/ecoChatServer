@@ -8,6 +8,24 @@ import (
 	"strings"
 )
 
+// ════════════════════════════════════════════════════════════════════════
+// ⚠️ DEPRECATED: Regex-based product query detection
+// ════════════════════════════════════════════════════════════════════════
+// Этот файл содержит старую логику распознавания запросов через regex паттерны.
+//
+// ❌ DetectProductQuery() и HandleProductQuery() БОЛЬШЕ НЕ ИСПОЛЬЗУЮТСЯ
+//
+// ✅ Вместо этого используется Function Calling (см. gemini_client.go + tools.go):
+//    - LLM сама понимает когда нужно вызвать функцию get_product_categories или search_products
+//    - Работает на всех языках без хардкода паттернов
+//    - Понимает опечатки и контекст
+//
+// 📝 Этот файл оставлен только для:
+//    - FormatProductsList() - используется в tools.go
+//    - FormatProductDetails() - используется в tools.go
+//    - Исторических целей (можно удалить позже)
+// ════════════════════════════════════════════════════════════════════════
+
 // ProductQueryType представляет тип запроса о продукте
 type ProductQueryType int
 
@@ -26,6 +44,7 @@ type ProductQuery struct {
 }
 
 // DetectProductQuery пытается распознать запрос о продуктах в сообщении пользователя
+// ⚠️ DEPRECATED: Больше не используется, заменено на Function Calling
 func DetectProductQuery(message string) *ProductQuery {
 	msgLower := strings.ToLower(message)
 
@@ -40,8 +59,8 @@ func DetectProductQuery(message string) *ProductQuery {
 		{`что\s*у\s*вас\s*есть`, ProductQueryList},
 		{`покажи\s*(?:товар|продукт|ассортимент)`, ProductQueryList},
 		{`что\s*продаете`, ProductQueryList},
-		{`какой\s*ассортимент`, ProductQueryList},
-		{`ассортимент`, ProductQueryList},
+		{`какой\s*(?:у\s*вас\s*)?[ао]сортимент`, ProductQueryList}, // Учитываем опечатку: ассортимент/асортимент
+		{`[ао]сортимент`, ProductQueryList},
 		{`каталог`, ProductQueryList},
 
 		// ═══ ENGLISH - ОБЩИЕ ЗАПРОСЫ (приоритет!) ═══
@@ -112,7 +131,8 @@ func DetectProductQuery(message string) *ProductQuery {
 	return nil
 }
 
-// HandleProductQuery обрабатывает запрос о продукте и возвращает ответ
+// HandleProductQuery обрабатывает запрос о продуктах
+// ⚠️ DEPRECATED: Больше не используется, заменено на ExecuteTool() в tools.go
 func HandleProductQuery(ctx context.Context, storeClient *StoreClient, query *ProductQuery) (string, error) {
 	if storeClient == nil {
 		return "", fmt.Errorf("store client not initialized")

@@ -86,6 +86,12 @@ A: "Oh no, that's unacceptable! So sorry 😔 Let me connect you with our specia
 📦 Service Info "enddel"
 ─────────────────────────
 
+⚠️ IMPORTANT - Product Queries:
+• When customer asks about products/catalog/assortment - DON'T list from memory!
+• Say: "Let me check current inventory! 📦" or similar
+• System automatically detects product queries and fetches real-time data from store API
+• Never invent product lists - inventory changes daily
+
 About us:
 • Online fresh grocery delivery service
 • Wide range: food, household chemicals, home goods
@@ -258,6 +264,12 @@ A: "Got it! Let me connect you with a specialist who will help cancel the order.
 📦 Service Info "enddel"
 ─────────────────────────
 
+⚠️ IMPORTANT - Product Queries:
+• When customer asks about products/catalog/assortment - DON'T list from memory!
+• Say: "Let me check current inventory! 📦" or similar
+• System automatically detects product queries and fetches real-time data from store API
+• Never invent product lists - inventory changes daily
+
 About us:
 • Online fresh grocery delivery service
 • Wide range: food, household chemicals, home goods
@@ -377,6 +389,8 @@ type Message struct {
 
 type LLM interface {
 	GenerateResponse(ctx context.Context, input string, history []Message) (string, error)
+	GenerateResponseWithTools(ctx context.Context, userMessage string, chatHistory []Message, tools []GeminiTool) (textResponse string, functionCall *GeminiFunctionCall, err error)
+	ContinueWithFunctionResult(ctx context.Context, chatHistory []Message, functionCall *GeminiFunctionCall, functionResult string) (string, error)
 	DetectLanguage(ctx context.Context, text string) (string, error)
 	TranslateText(ctx context.Context, text, fromLang, toLang string) (string, error)
 }
@@ -468,41 +482,13 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	// ── проверка запросов о продуктах ПЕРЕД эскалацией ───────────────────────
 	// Продукты публичные - не требуют авторизации, обрабатываем всегда
 	// Используем оригинальный текст для поиска продуктов, если доступен (до перевода)
-	contentToCheck := msg.Content
-	if msg.Metadata != nil {
-		if originalText, ok := msg.Metadata["originalText"].(string); ok && originalText != "" {
-			contentToCheck = originalText
-			log.Printf("[AUTORESPONDER] Используем оригинальный текст для поиска продуктов: '%s'", originalText)
-		}
-	}
+	// ─────────────────────────────────────────────────────────
+	// ⚠️ УДАЛЕНА СТАРАЯ ЛОГИКА DetectProductQuery + HandleProductQuery
+	// Теперь используется Function Calling - LLM сама решает когда
+	// вызывать функции get_product_categories / search_products
+	// ─────────────────────────────────────────────────────────
 
-	if productQuery := DetectProductQuery(contentToCheck); productQuery != nil {
-		log.Printf("[AUTORESPONDER] Обнаружен запрос о продуктах в чате %s", chatKey)
-
-		productInfo, err := HandleProductQuery(ctx, ar.storeClient, productQuery)
-		if err != nil {
-			log.Printf("[AUTORESPONDER] Ошибка обработки запроса о продуктах: %v", err)
-			// Продолжаем нормальную обработку через LLM
-		} else if productInfo != "" {
-			// Успешно получили информацию о продуктах
-			now := time.Now()
-			return &models.Message{
-				ChatID:    chat.ID,
-				Content:   productInfo,
-				Sender:    "admin",
-				SenderID:  uuid.Nil,
-				Timestamp: now,
-				Read:      true,
-				Type:      "text",
-				Metadata: map[string]interface{}{
-					"isAutoResponse": true,
-					"productInfo":    true,
-				},
-			}, nil
-		}
-	}
-
-	// Проверяем состояние эскалации (после проверки продуктов)
+	// Проверяем состояние эскалации
 	ar.mu.Lock()
 	escalation := ar.escalations[chatKey]
 	ar.mu.Unlock()
@@ -666,9 +652,43 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
 	defer cancel()
 
-	rawResp, err := ar.client.GenerateResponse(genCtx, msg.Content, hist)
+	// 🔧 FUNCTION CALLING: Пробуем использовать function calling для product queries
+	tools := GetStoreFunctionTools()
+	textResp, funcCall, err := ar.client.GenerateResponseWithTools(genCtx, msg.Content, hist, tools)
 	if err != nil {
-		return nil, fmt.Errorf("GenerateResponse: %w", err)
+		return nil, fmt.Errorf("GenerateResponseWithTools: %w", err)
+	}
+
+	var rawResp string
+
+	// Если LLM хочет вызвать функцию - выполняем её
+	if funcCall != nil {
+		log.Printf("[FUNCTION_CALLING] LLM вызывает функцию: %s с аргументами: %+v", funcCall.Name, funcCall.Args)
+
+		// Выполняем функцию
+		toolCall := ToolCall{
+			Name:      funcCall.Name,
+			Arguments: funcCall.Args,
+		}
+		funcResult, err := ExecuteTool(genCtx, ar.storeClient, toolCall)
+		if err != nil {
+			log.Printf("[FUNCTION_CALLING] Ошибка выполнения функции %s: %v", funcCall.Name, err)
+			funcResult = fmt.Sprintf("Error executing function: %v", err)
+		}
+
+		log.Printf("[FUNCTION_CALLING] Результат функции %s: %s", funcCall.Name, funcResult)
+
+		// Отправляем результат обратно LLM для финального ответа
+		finalResp, err := ar.client.ContinueWithFunctionResult(genCtx, hist, funcCall, funcResult)
+		if err != nil {
+			return nil, fmt.Errorf("ContinueWithFunctionResult: %w", err)
+		}
+
+		rawResp = finalResp
+		log.Printf("[FUNCTION_CALLING] Финальный ответ LLM: %s", rawResp)
+	} else {
+		// Обычный текстовый ответ без function call
+		rawResp = textResp
 	}
 
 	// ── фильтр самоидентификации и проверка тегов эскалации ──
