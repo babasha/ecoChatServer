@@ -94,6 +94,16 @@ func (w *WebsiteInspector) extractPageInfo(doc *html.Node, pagePath string) stri
 		result.WriteString(fmt.Sprintf("Page Title: %s\n\n", title))
 	}
 
+	// 🤖 ПРИОРИТЕТ: Ищем AI-специфичные метаданные (data-ai-*)
+	aiElements := w.findAIElements(doc)
+	if len(aiElements) > 0 {
+		result.WriteString("🤖 AI Instructions (from website):\n")
+		for _, elem := range aiElements {
+			result.WriteString(fmt.Sprintf("  • %s\n", elem))
+		}
+		result.WriteString("\n")
+	}
+
 	// Извлекаем meta description
 	if desc := w.findMetaDescription(doc); desc != "" {
 		result.WriteString(fmt.Sprintf("Description: %s\n\n", desc))
@@ -422,4 +432,77 @@ func cleanText(s string) string {
 	space := regexp.MustCompile(`\s+`)
 	s = space.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
+}
+
+// findAIElements находит элементы с data-ai-* атрибутами
+func (w *WebsiteInspector) findAIElements(n *html.Node) []string {
+	var elements []string
+	seen := make(map[string]bool)
+
+	w.walkNode(n, func(node *html.Node) {
+		if node.Type == html.ElementNode {
+			var aiPage, aiElement, aiAction, aiHelp, aiStep, aiLocation string
+
+			// Собираем все data-ai-* атрибуты
+			for _, attr := range node.Attr {
+				switch attr.Key {
+				case "data-ai-page":
+					aiPage = attr.Val
+				case "data-ai-element":
+					aiElement = attr.Val
+				case "data-ai-action":
+					aiAction = attr.Val
+				case "data-ai-help":
+					aiHelp = attr.Val
+				case "data-ai-step":
+					aiStep = attr.Val
+				case "data-ai-location":
+					aiLocation = attr.Val
+				}
+			}
+
+			// Формируем описание если есть хоть что-то AI-специфичное
+			if aiPage != "" || aiElement != "" || aiAction != "" {
+				var desc strings.Builder
+
+				// Приоритет: страница
+				if aiPage != "" {
+					desc.WriteString(fmt.Sprintf("[PAGE: %s] ", aiPage))
+				}
+
+				// Шаг процесса
+				if aiStep != "" {
+					desc.WriteString(fmt.Sprintf("Step %s: ", aiStep))
+				}
+
+				// Элемент или действие
+				if aiElement != "" {
+					desc.WriteString(aiElement)
+				} else if aiAction != "" {
+					desc.WriteString(aiAction)
+				}
+
+				// Локация
+				if aiLocation != "" {
+					desc.WriteString(fmt.Sprintf(" (located: %s)", aiLocation))
+				}
+
+				// Помощь/инструкция
+				if aiHelp != "" {
+					if desc.Len() > 0 {
+						desc.WriteString(" - ")
+					}
+					desc.WriteString(aiHelp)
+				}
+
+				descStr := strings.TrimSpace(desc.String())
+				if descStr != "" && !seen[descStr] {
+					elements = append(elements, descStr)
+					seen[descStr] = true
+				}
+			}
+		}
+	})
+
+	return elements
 }
