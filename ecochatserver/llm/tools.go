@@ -72,13 +72,19 @@ func ExecuteTool(ctx context.Context, storeClient *StoreClient, toolCall ToolCal
 		}
 		return executeGetProducts(ctx, storeClient, searchQuery)
 
-	case "get_categories":
+	case "get_categories", "get_product_categories":
 		return executeGetCategories(ctx, storeClient)
 
-	case "search_product":
-		productName, ok := toolCall.Arguments["product_name"].(string)
-		if !ok {
-			return "", fmt.Errorf("product_name is required")
+	case "search_product", "search_products":
+		// Поддерживаем оба варианта аргументов
+		productName := ""
+		if name, ok := toolCall.Arguments["product_name"].(string); ok {
+			productName = name
+		} else if query, ok := toolCall.Arguments["query"].(string); ok {
+			productName = query
+		}
+		if productName == "" {
+			return executeGetProducts(ctx, storeClient, "") // Возвращаем все продукты
 		}
 		return executeSearchProduct(ctx, storeClient, productName)
 
