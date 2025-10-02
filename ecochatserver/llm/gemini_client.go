@@ -293,7 +293,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	geminiMessages, systemInstruction := convertMessagesToGemini(chatHistory)
 
 	// Формируем тело запроса с Tools
-	// Используем режим ANY чтобы заставить LLM вызывать функции
+	// Используем режим AUTO - LLM сама решает когда вызывать функции
 	reqBody := GeminiRequest{
 		Contents:          geminiMessages,
 		SystemInstruction: systemInstruction,
@@ -304,7 +304,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 		Tools: tools,
 		ToolConfig: &GeminiToolConfig{
 			FunctionCallingConfig: GeminiFunctionCallingConfig{
-				Mode: "ANY", // Принудительно вызывать функции
+				Mode: "AUTO", // LLM сама решает когда нужны функции
 			},
 		},
 	}
