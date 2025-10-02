@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -338,8 +339,13 @@ func (c *GeminiClient) GenerateResponseWithTools(
 
 	candidate := geminiResp.Candidates[0]
 
+	// Логируем для отладки
+	candidateJSON, _ := json.Marshal(candidate)
+	log.Printf("[GEMINI] Candidate response: %s", string(candidateJSON))
+
 	// Проверяем есть ли function call
 	if candidate.FunctionCall != nil {
+		log.Printf("[GEMINI] Function call detected: %s", candidate.FunctionCall.Name)
 		return "", candidate.FunctionCall, nil
 	}
 
@@ -353,7 +359,9 @@ func (c *GeminiClient) GenerateResponseWithTools(
 		return text, nil, nil
 	}
 
-	return "", nil, fmt.Errorf("Gemini API returned invalid content format")
+	// Если не удалось извлечь текст, показываем что там есть
+	partsJSON, _ := json.Marshal(candidate.Content.Parts[0])
+	return "", nil, fmt.Errorf("Gemini API returned invalid content format, parts[0]: %s", string(partsJSON))
 }
 
 // ContinueWithFunctionResult отправляет результат выполнения функции обратно LLM
