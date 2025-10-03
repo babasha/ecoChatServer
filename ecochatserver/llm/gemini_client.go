@@ -376,9 +376,6 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	}
 
 	// Проверяем есть ли function call в любом из Parts (новый формат)
-	var textResponse string
-	var functionCall *GeminiFunctionCall
-
 	if len(candidate.Content.Parts) > 0 {
 		for i, part := range candidate.Content.Parts {
 			// Проверяем на function call
