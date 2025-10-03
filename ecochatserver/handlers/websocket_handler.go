@@ -134,7 +134,14 @@ func ServeWs(c *gin.Context) {
 		// Получаем userID из заголовка для виджета, если есть
 		userIDStr := c.GetHeader("X-Widget-User-ID")
 		if userIDStr != "" {
-			adminID, _ = uuid.Parse(userIDStr)
+			// Преобразуем userID в UUID таким же образом, как в telegram_handler
+			if parsedUUID, err := uuid.Parse(userIDStr); err == nil {
+				adminID = parsedUUID
+				log.Printf("ServeWs: UserID %s уже является валидным UUID", userIDStr)
+			} else {
+				adminID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(userIDStr))
+				log.Printf("ServeWs: создан детерминированный UUID для userID %s: %s", userIDStr, adminID.String())
+			}
 		}
 
 		log.Printf("ServeWs: подключение виджета, chatID: %s, userID: %s", chatID, adminID)
@@ -154,6 +161,14 @@ func ServeWs(c *gin.Context) {
 	// Создаем нового клиента
 	client := websocketpkg.NewClient(WebSocketHub, conn, clientType, adminID, chatID)
 	client.Context = c
+
+	// Для виджета сохраняем исходный строковый userID
+	if clientType == "widget" {
+		userIDStr := c.GetHeader("X-Widget-User-ID")
+		if userIDStr != "" {
+			client.UserIDString = userIDStr
+		}
+	}
 
 	// Регистрируем клиента в хабе
 	WebSocketHub.Register <- client

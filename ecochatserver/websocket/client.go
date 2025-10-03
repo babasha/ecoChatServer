@@ -25,13 +25,14 @@ var (
 
 // Client представляет одно WebSocket-соединение.
 type Client struct {
-	hub        *Hub
-	conn       *websocket.Conn
-	send       chan []byte  // исходящие сообщения
-	ClientType string       // ЭКСПОРТИРОВАНО: "admin" или "widget"
-	ID         uuid.UUID    // ЭКСПОРТИРОВАНО: adminID или widget-userID
-	ChatID     uuid.UUID    // ЭКСПОРТИРОВАНО: для виджета — chatID
-	Context    *gin.Context // Gin context для доступа к данным запроса/аутентификации
+	hub          *Hub
+	conn         *websocket.Conn
+	send         chan []byte  // исходящие сообщения
+	ClientType   string       // ЭКСПОРТИРОВАНО: "admin" или "widget"
+	ID           uuid.UUID    // ЭКСПОРТИРОВАНО: adminID или widget-userID (UUID)
+	UserIDString string       // ЭКСПОРТИРОВАНО: исходный строковый userID для виджета
+	ChatID       uuid.UUID    // ЭКСПОРТИРОВАНО: для виджета — chatID
+	Context      *gin.Context // Gin context для доступа к данным запроса/аутентификации
 }
 
 // NewClient создает нового WebSocket клиента

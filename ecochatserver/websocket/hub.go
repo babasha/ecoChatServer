@@ -123,10 +123,16 @@ func (h *Hub) registerClient(c *Client) {
 		}
 		h.widgetsByID[c.ChatID.String()][c] = true
 
-		// Если виджет подключился без chat_id, сохраняем по userID для последующего обновления
+		// Если виджет подключился без chat_id, сохраняем по строковому userID для последующего обновления
 		if c.ChatID == uuid.Nil || c.ChatID.String() == "00000000-0000-0000-0000-000000000000" {
-			h.widgetsByUserID[c.ID.String()] = c
-			log.Printf("Виджет сохранен по userID %s для последующего обновления chat_id", c.ID)
+			if c.UserIDString != "" {
+				h.widgetsByUserID[c.UserIDString] = c
+				log.Printf("Виджет сохранен по userID %s (string) для последующего обновления chat_id", c.UserIDString)
+			} else {
+				// Fallback на UUID если по какой-то причине строкового ID нет
+				h.widgetsByUserID[c.ID.String()] = c
+				log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
+			}
 		}
 	}
 
@@ -171,7 +177,10 @@ func (h *Hub) unregisterClient(c *Client) {
 				delete(h.widgetsByID, chatID)
 			}
 		}
-		// Удаляем из widgetsByUserID если там есть
+		// Удаляем из widgetsByUserID если там есть (попробуем оба варианта)
+		if c.UserIDString != "" {
+			delete(h.widgetsByUserID, c.UserIDString)
+		}
 		delete(h.widgetsByUserID, c.ID.String())
 	}
 
