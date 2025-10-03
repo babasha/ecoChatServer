@@ -68,11 +68,18 @@ type GeminiFunctionCall struct {
 	Args map[string]interface{} `json:"args"`
 }
 
+// GeminiThoughtContent содержит текст с подписью мыслей (Gemini 2.0 thinking mode)
+type GeminiThoughtContent struct {
+	ThoughtSignature string `json:"thoughtSignature"`
+	Text             string `json:"text"`
+}
+
 // GeminiCandidate представляет один из вариантов ответа
 type GeminiCandidate struct {
-	Content      GeminiMessage       `json:"content"`
-	FunctionCall *GeminiFunctionCall `json:"functionCall,omitempty"`
-	FinishReason string              `json:"finishReason"`
+	Content        GeminiMessage         `json:"content"`
+	ThoughtContent *GeminiThoughtContent `json:"thoughtContent,omitempty"`
+	FunctionCall   *GeminiFunctionCall   `json:"functionCall,omitempty"`
+	FinishReason   string                `json:"finishReason"`
 }
 
 // GeminiResponse описывает ответ Gemini API
@@ -504,13 +511,22 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 		return "", fmt.Errorf("Gemini API returned no candidates")
 	}
 
-	if len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		log.Printf("[GEMINI] WARNING: Empty Parts in response, finishReason=%s", geminiResp.Candidates[0].FinishReason)
-		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", geminiResp.Candidates[0].FinishReason)
+	candidate := geminiResp.Candidates[0]
+
+	// Проверяем thoughtContent (Gemini 2.0 thinking mode)
+	if candidate.ThoughtContent != nil && candidate.ThoughtContent.Text != "" {
+		log.Printf("[GEMINI] Extracted text from thoughtContent")
+		return candidate.ThoughtContent.Text, nil
+	}
+
+	// Проверяем обычный content.parts
+	if len(candidate.Content.Parts) == 0 {
+		log.Printf("[GEMINI] WARNING: Empty Parts and no thoughtContent, finishReason=%s", candidate.FinishReason)
+		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", candidate.FinishReason)
 	}
 
 	// Извлекаем текст из Parts
-	if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok {
+	if text, ok := candidate.Content.Parts[0]["text"].(string); ok {
 		return text, nil
 	}
 
