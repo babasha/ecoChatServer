@@ -283,26 +283,27 @@ func handleProductSearch(ctx context.Context, storeClient *StoreClient, searchTe
 }
 
 // FormatProductDetails форматирует детальную информацию о товаре
+// Используется когда клиент спрашивает о конкретном товаре
 func FormatProductDetails(product Product) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("🛒 **%s**\n\n", product.NameRu))
+	sb.WriteString(fmt.Sprintf("Product: %s\n\n", product.NameRu))
 
 	if product.Description != "" {
-		sb.WriteString(fmt.Sprintf("%s\n\n", product.Description))
+		sb.WriteString(fmt.Sprintf("Description: %s\n\n", product.Description))
 	}
 
 	if product.Price != "" && product.Price != "0" && product.Price != "0.00" {
-		sb.WriteString(fmt.Sprintf("Цена: **%s₾**\n", product.Price))
+		sb.WriteString(fmt.Sprintf("Price: %s₾\n", product.Price))
 	}
 
 	if product.StockQuantity > 0 || product.InStock {
-		sb.WriteString(fmt.Sprintf("В наличии: %d шт.\n", product.StockQuantity))
+		sb.WriteString(fmt.Sprintf("In stock: %d units\n", product.StockQuantity))
 	} else {
-		sb.WriteString("Сейчас нет в наличии\n")
+		sb.WriteString("Currently out of stock\n")
 	}
 
-	sb.WriteString("\nМожете добавить в корзину на сайте enddel.com")
+	sb.WriteString("\nNote: Customer asked about specific product - present ALL details naturally (price, stock, description).")
 
 	return sb.String()
 }
