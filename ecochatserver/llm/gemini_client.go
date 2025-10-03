@@ -159,6 +159,20 @@ func GetStoreFunctionTools() []GeminiTool {
 						},
 					},
 				},
+				{
+					Name:        "get_store_info",
+					Description: "Get key store information and FAQ answers. Use when customer asks about: delivery cost, working hours, payment methods, minimum order, delivery time, return policy, etc. This provides quick answers without needing to inspect website.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"info_type": map[string]interface{}{
+								"type":        "string",
+								"description": "Type of info needed: 'delivery', 'payment', 'hours', 'policies', 'all'. Default: 'all'",
+								"enum":        []string{"delivery", "payment", "hours", "policies", "all"},
+							},
+						},
+					},
+				},
 			},
 		},
 	}

@@ -104,6 +104,16 @@ func (w *WebsiteInspector) extractPageInfo(doc *html.Node, pagePath string) stri
 		result.WriteString("\n")
 	}
 
+	// Извлекаем AI-friendly meta теги
+	aiMeta := w.findAIMetaTags(doc)
+	if len(aiMeta) > 0 {
+		result.WriteString("📋 Store Quick Info:\n")
+		for key, value := range aiMeta {
+			result.WriteString(fmt.Sprintf("  • %s: %s\n", key, value))
+		}
+		result.WriteString("\n")
+	}
+
 	// Извлекаем meta description
 	if desc := w.findMetaDescription(doc); desc != "" {
 		result.WriteString(fmt.Sprintf("Description: %s\n\n", desc))
@@ -505,4 +515,40 @@ func (w *WebsiteInspector) findAIElements(n *html.Node) []string {
 	})
 
 	return elements
+}
+
+// findAIMetaTags извлекает AI-friendly meta теги для быстрого доступа к FAQ
+func (w *WebsiteInspector) findAIMetaTags(doc *html.Node) map[string]string {
+	aiMeta := make(map[string]string)
+
+	var traverse func(*html.Node)
+	traverse = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "meta" {
+			var name, content string
+			for _, attr := range n.Attr {
+				if attr.Key == "name" {
+					name = attr.Val
+				} else if attr.Key == "content" {
+					content = attr.Val
+				}
+			}
+
+			// Ищем meta теги начинающиеся с "ai-store-" или "ai-"
+			if strings.HasPrefix(name, "ai-store-") || strings.HasPrefix(name, "ai-") {
+				// Убираем префикс для читаемости
+				cleanName := strings.TrimPrefix(name, "ai-store-")
+				cleanName = strings.TrimPrefix(cleanName, "ai-")
+				cleanName = strings.ReplaceAll(cleanName, "-", " ")
+				cleanName = strings.Title(cleanName)
+				aiMeta[cleanName] = content
+			}
+		}
+
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			traverse(child)
+		}
+	}
+
+	traverse(doc)
+	return aiMeta
 }

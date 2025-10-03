@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 )
 
 // Tool представляет инструмент, который может использовать LLM
@@ -95,6 +96,13 @@ func ExecuteTool(ctx context.Context, storeClient *StoreClient, toolCall ToolCal
 		}
 		return executeInspectWebsite(ctx, storeClient, pagePath)
 
+	case "get_store_info":
+		infoType := "all"
+		if t, ok := toolCall.Arguments["info_type"].(string); ok {
+			infoType = t
+		}
+		return executeGetStoreInfo(infoType)
+
 	default:
 		return "", fmt.Errorf("unknown tool: %s", toolCall.Name)
 	}
@@ -172,6 +180,61 @@ func executeInspectWebsite(ctx context.Context, storeClient *StoreClient, pagePa
 	}
 
 	return pageInfo, nil
+}
+
+// executeGetStoreInfo возвращает ключевую информацию о магазине и FAQ
+func executeGetStoreInfo(infoType string) (string, error) {
+	log.Printf("[TOOLS] Getting store info: type=%s", infoType)
+
+	var result strings.Builder
+	result.WriteString("📋 Enddel Store Information\n\n")
+
+	// Информация о доставке
+	if infoType == "all" || infoType == "delivery" {
+		result.WriteString("🚚 DELIVERY:\n")
+		result.WriteString("  • Delivery Cost: 3₾ for orders under 50₾, FREE for orders 50₾ and above\n")
+		result.WriteString("  • Delivery Time: 30-60 minutes (average 45 min)\n")
+		result.WriteString("  • Minimum Order: No minimum order amount\n")
+		result.WriteString("  • Delivery Hours: 8:00 AM - 11:00 PM, 7 days a week\n")
+		result.WriteString("  • Coverage: Tbilisi and surrounding areas\n")
+		result.WriteString("  • Options: ASAP delivery or schedule for specific time\n\n")
+	}
+
+	// Способы оплаты
+	if infoType == "all" || infoType == "payment" {
+		result.WriteString("💳 PAYMENT METHODS:\n")
+		result.WriteString("  • Online Card Payment (Visa, Mastercard) - pay immediately\n")
+		result.WriteString("  • Cash on Delivery - pay to courier\n")
+		result.WriteString("  • Card on Delivery - pay by card to courier\n")
+		result.WriteString("  • Google Pay - quick online payment\n")
+		result.WriteString("  • Telegram Payment - integrated payment in Telegram\n")
+		result.WriteString("  • Saved Cards: Can save cards for faster checkout (for registered users)\n\n")
+	}
+
+	// Часы работы
+	if infoType == "all" || infoType == "hours" {
+		result.WriteString("🕐 WORKING HOURS:\n")
+		result.WriteString("  • Store: 8:00 AM - 11:00 PM (every day)\n")
+		result.WriteString("  • Customer Support: 8:00 AM - 11:00 PM\n")
+		result.WriteString("  • Order Processing: Orders accepted 24/7 online\n")
+		result.WriteString("  • Delivery: 8:00 AM - 11:00 PM\n\n")
+	}
+
+	// Политики и правила
+	if infoType == "all" || infoType == "policies" {
+		result.WriteString("📜 POLICIES:\n")
+		result.WriteString("  • Returns: Fresh products can be returned/replaced if quality issues\n")
+		result.WriteString("  • Refunds: Full refund if order not delivered or major issues\n")
+		result.WriteString("  • Product Availability: Real-time stock updates, out-of-stock items marked\n")
+		result.WriteString("  • Order Changes: Can modify order within 5 minutes after placing\n")
+		result.WriteString("  • Substitutions: We may suggest alternatives if product unavailable\n")
+		result.WriteString("  • Privacy: We don't share customer data with third parties\n\n")
+	}
+
+	result.WriteString("💡 TIP: For specific questions about how to use the website (where buttons are, how to checkout, etc.), ")
+	result.WriteString("use the inspect_website_page function to see the actual interface.\n")
+
+	return result.String(), nil
 }
 
 // FormatToolsForPrompt форматирует инструменты для добавления в промпт
