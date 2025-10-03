@@ -362,24 +362,40 @@ func (c *GeminiClient) GenerateResponseWithTools(
 		return "", candidate.FunctionCall, nil
 	}
 
-	// Проверяем есть ли function call в Parts[0].functionCall (новый формат)
+	// Проверяем есть ли function call в любом из Parts (новый формат)
+	var textResponse string
+	var functionCall *GeminiFunctionCall
+
 	if len(candidate.Content.Parts) > 0 {
-		if funcCallData, ok := candidate.Content.Parts[0]["functionCall"].(map[string]interface{}); ok {
-			log.Printf("[GEMINI] Function call detected (in parts): %v", funcCallData)
+		for i, part := range candidate.Content.Parts {
+			// Проверяем на function call
+			if funcCallData, ok := part["functionCall"].(map[string]interface{}); ok {
+				log.Printf("[GEMINI] Function call detected in parts[%d]: %v", i, funcCallData)
 
-			// Извлекаем name и args
-			name, _ := funcCallData["name"].(string)
-			args, _ := funcCallData["args"].(map[string]interface{})
+				// Извлекаем name и args
+				name, _ := funcCallData["name"].(string)
+				args, _ := funcCallData["args"].(map[string]interface{})
 
-			return "", &GeminiFunctionCall{
-				Name: name,
-				Args: args,
-			}, nil
+				functionCall = &GeminiFunctionCall{
+					Name: name,
+					Args: args,
+				}
+			}
+
+			// Извлекаем текст если есть
+			if text, ok := part["text"].(string); ok {
+				textResponse = text
+			}
 		}
 
-		// Извлекаем текст из Parts
-		if text, ok := candidate.Content.Parts[0]["text"].(string); ok {
-			return text, nil, nil
+		// Если нашли function call, возвращаем его (текст игнорируем)
+		if functionCall != nil {
+			return "", functionCall, nil
+		}
+
+		// Если нашли только текст, возвращаем его
+		if textResponse != "" {
+			return textResponse, nil, nil
 		}
 	}
 
