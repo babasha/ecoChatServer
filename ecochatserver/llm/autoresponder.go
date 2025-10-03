@@ -105,39 +105,8 @@ About us:
 • Work with verified suppliers
 • Freshness & quality guarantee
 
-Delivery:
-• Delivery zones: check when ordering (enter address in cart)
-• Delivery time: usually 1-3 hours, can choose interval
-• Cost: depends on order amount & distance
-• Free delivery: orders 1500+ RUB (main zone)
-• Express delivery: available for extra fee (30-60 min)
-• Tracking: track courier on map after confirmation
-
-Payment:
-• Cards: Visa, MasterCard, MIR (online on site)
-• Cash to courier: on delivery
-• Apple Pay / Google Pay: via mobile app
-• Non-cash: for legal entities (by contract)
-• Card to courier: available on delivery
-• Security: all online payments 3D-Secure protected
-
-Promotions & discounts:
-• Weekly promotions on popular items
-• Personal offers for regular customers
-• Promo codes for first order (new users)
-• Loyalty program (purchase bonuses)
-• Seasonal sales & special offers
-
-Bonus program:
-• Earning: 3-5% of purchase as bonuses
-• Usage: up to 30% of next order
-• No expiration: bonuses don't expire
-• Extra bonuses: for reviews, referrals
-
-Minimum order:
-• Regular: from 500 RUB
-• Free delivery: from 1500 RUB
-• Express delivery: from 1000 RUB
+Note: For specific questions about delivery, payment methods, promotions, minimum order, bonuses -
+use inspect_website_page function to check current information on the actual website.
 
 Working hours:
 • Order acceptance: 24/7 (online)
@@ -151,26 +120,6 @@ Contacts:
 • Telegram: @enddel_support
 • Social: VK, Instagram
 • Mobile app: iOS & Android
-
-FAQ:
-
-Q: Can I change order after placing?
-A: Yes, before store confirms order (usually 10-15 min). Write in chat or call.
-
-Q: What if product doesn't fit/like?
-A: If quality is good, can return only per consumer protection law (non-food items).
-
-Q: Are expiration dates checked?
-A: Yes, all products checked when packing order. Min remaining shelf life - 3 days.
-
-Q: Can I leave order at door/concierge?
-A: Yes, specify in order comment. Courier will call before leaving.
-
-Q: How to get promo code for first order?
-A: Promo code sent to email after registration. Also check our Telegram channel.
-
-Q: Do you deliver alcohol?
-A: Yes, with 18+ ID. Courier will ask for passport.
 
 Important:
 • For serious complaints/conflicts - suggest contacting manager
@@ -260,39 +209,8 @@ About us:
 • Work with verified suppliers
 • Freshness & quality guarantee
 
-Delivery:
-• Delivery zones: check when ordering (enter address in cart)
-• Delivery time: usually 1-3 hours, can choose interval
-• Cost: depends on order amount & distance
-• Free delivery: orders 1500+ RUB (main zone)
-• Express delivery: available for extra fee (30-60 min)
-• Tracking: track courier on map after confirmation
-
-Payment:
-• Cards: Visa, MasterCard, MIR (online on site)
-• Cash to courier: on delivery
-• Apple Pay / Google Pay: via mobile app
-• Non-cash: for legal entities (by contract)
-• Card to courier: available on delivery
-• Security: all online payments 3D-Secure protected
-
-Promotions & discounts:
-• Weekly promotions on popular items
-• Personal offers for regular customers
-• Promo codes for first order (new users)
-• Loyalty program (purchase bonuses)
-• Seasonal sales & special offers
-
-Bonus program:
-• Earning: 3-5% of purchase as bonuses
-• Usage: up to 30% of next order
-• No expiration: bonuses don't expire
-• Extra bonuses: for reviews, referrals
-
-Minimum order:
-• Regular: from 500 RUB
-• Free delivery: from 1500 RUB
-• Express delivery: from 1000 RUB
+Note: For specific questions about delivery, payment methods, promotions, minimum order, bonuses -
+use inspect_website_page function to check current information on the actual website.
 
 Working hours:
 • Order acceptance: 24/7 (online)
@@ -306,26 +224,6 @@ Contacts:
 • Telegram: @enddel_support
 • Social: VK, Instagram
 • Mobile app: iOS & Android
-
-FAQ:
-
-Q: Can I change order after placing?
-A: Yes, before store confirms order (usually 10-15 min). Write in chat or call.
-
-Q: What if product doesn't fit/like?
-A: If quality is good, can return only per consumer protection law (non-food items).
-
-Q: Are expiration dates checked?
-A: Yes, all products checked when packing order. Min remaining shelf life - 3 days.
-
-Q: Can I leave order at door/concierge?
-A: Yes, specify in order comment. Courier will call before leaving.
-
-Q: How to get promo code for first order?
-A: Promo code sent to email after registration. Also check our Telegram channel.
-
-Q: Do you deliver alcohol?
-A: Yes, with 18+ ID. Courier will ask for passport.
 
 Important:
 • For serious complaints/conflicts - suggest contacting manager
