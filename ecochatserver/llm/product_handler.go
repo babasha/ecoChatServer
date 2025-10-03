@@ -308,39 +308,30 @@ func FormatProductDetails(product Product) string {
 }
 
 // FormatProductsList форматирует список продуктов для отображения
+// Возвращает краткий обзор - LLM сама решит какие детали включить в ответ
 func FormatProductsList(products []Product) string {
 	if len(products) == 0 {
 		return "Товары не найдены."
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Найдено товаров: %d\n\n", len(products)))
+	sb.WriteString(fmt.Sprintf("Available products (%d total):\n\n", len(products)))
 
 	for i, p := range products {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, p.NameRu))
+		// Краткий формат: название, цена и статус наличия
+		status := "✓ in stock"
+		if p.StockQuantity == 0 && !p.InStock {
+			status = "✗ out of stock"
+		}
 
+		priceStr := ""
 		if p.Price != "" && p.Price != "0" && p.Price != "0.00" {
-			sb.WriteString(fmt.Sprintf("   Цена: %s₾\n", p.Price))
+			priceStr = fmt.Sprintf(" - %s₾", p.Price)
 		}
 
-		if p.Description != "" {
-			// Ограничиваем описание 100 символами
-			desc := p.Description
-			if len(desc) > 100 {
-				desc = desc[:97] + "..."
-			}
-			sb.WriteString(fmt.Sprintf("   %s\n", desc))
-		}
-
-		if p.StockQuantity > 0 || p.InStock {
-			sb.WriteString(fmt.Sprintf("   ✓ В наличии (%d шт.)\n", p.StockQuantity))
-		} else {
-			sb.WriteString("   ✗ Нет в наличии\n")
-		}
-
-		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("%d. %s%s (%s)\n", i+1, p.NameRu, priceStr, status))
 	}
 
-	sb.WriteString("Для оформления заказа вы можете добавить товары в корзину на сайте.")
+	sb.WriteString("\nNote: Present this list naturally to customer. Don't mention prices/stock unless they specifically ask.")
 	return sb.String()
 }
