@@ -496,12 +496,17 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 
+	// Логируем полный ответ для отладки
+	respJSON, _ := json.MarshalIndent(geminiResp, "", "  ")
+	log.Printf("[GEMINI] ContinueWithFunctionResult response: %s", string(respJSON))
+
 	if len(geminiResp.Candidates) == 0 {
 		return "", fmt.Errorf("Gemini API returned no candidates")
 	}
 
 	if len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("Gemini API returned empty content")
+		log.Printf("[GEMINI] WARNING: Empty Parts in response, finishReason=%s", geminiResp.Candidates[0].FinishReason)
+		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", geminiResp.Candidates[0].FinishReason)
 	}
 
 	// Извлекаем текст из Parts
