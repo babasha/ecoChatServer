@@ -106,8 +106,21 @@ func GetStoreFunctionTools() []GeminiTool {
 		{
 			FunctionDeclarations: []GeminiFunctionDeclaration{
 				{
+					Name:        "get_products",
+					Description: "Get list of ALL products from store catalog. Use when customer asks 'what products do you have', 'show me your products', 'what do you sell', etc. Returns actual products with prices and details.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"search_query": map[string]interface{}{
+								"type":        "string",
+								"description": "Optional search query to filter products. Leave empty to get ALL products.",
+							},
+						},
+					},
+				},
+				{
 					Name:        "get_product_categories",
-					Description: "Get list of all product categories available in the store. Use when customer asks about categories, types of products, what we sell, assortment, catalog.",
+					Description: "Get list of product categories only (not actual products). Use when customer specifically asks about categories or types/sections.",
 					Parameters: map[string]interface{}{
 						"type":       "object",
 						"properties": map[string]interface{}{},
@@ -115,13 +128,13 @@ func GetStoreFunctionTools() []GeminiTool {
 				},
 				{
 					Name:        "search_products",
-					Description: "Search for products by name or category. Use when customer asks about specific product, wants to find something, or asks 'what products do you have'.",
+					Description: "Search for specific product by name. Use when customer asks about a specific item like 'do you have salmon', 'find milk', etc.",
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"query": map[string]interface{}{
 								"type":        "string",
-								"description": "Search query (product name, category name, or keywords). Can be empty to get all products.",
+								"description": "Product name to search for",
 							},
 						},
 					},
