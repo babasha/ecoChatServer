@@ -121,14 +121,6 @@ Payment:
 • Card to courier: available on delivery
 • Security: all online payments 3D-Secure protected
 
-How to order:
-1. Register on site/app (email + password)
-2. Choose products, add to cart
-3. Enter delivery address & choose time
-4. Choose payment method & place order
-5. Wait for confirmation (SMS & email)
-6. Track courier in app/site
-
 Promotions & discounts:
 • Weekly promotions on popular items
 • Personal offers for regular customers
@@ -141,13 +133,6 @@ Bonus program:
 • Usage: up to 30% of next order
 • No expiration: bonuses don't expire
 • Extra bonuses: for reviews, referrals
-
-Returns & exchanges:
-• Low quality product: full refund or replacement
-• Wrong product: free replacement within 24h
-• Contact period: within 24h from delivery
-• Process: contact support, describe issue, attach photo
-• Refund: to card within 5-7 business days
 
 Minimum order:
 • Regular: from 500 RUB
@@ -291,14 +276,6 @@ Payment:
 • Card to courier: available on delivery
 • Security: all online payments 3D-Secure protected
 
-How to order:
-1. Register on site/app (email + password)
-2. Choose products, add to cart
-3. Enter delivery address & choose time
-4. Choose payment method & place order
-5. Wait for confirmation (SMS & email)
-6. Track courier in app/site
-
 Promotions & discounts:
 • Weekly promotions on popular items
 • Personal offers for regular customers
@@ -311,13 +288,6 @@ Bonus program:
 • Usage: up to 30% of next order
 • No expiration: bonuses don't expire
 • Extra bonuses: for reviews, referrals
-
-Returns & exchanges:
-• Low quality product: full refund or replacement
-• Wrong product: free replacement within 24h
-• Contact period: within 24h from delivery
-• Process: contact support, describe issue, attach photo
-• Refund: to card within 5-7 business days
 
 Minimum order:
 • Regular: from 500 RUB
