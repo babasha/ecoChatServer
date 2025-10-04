@@ -247,6 +247,7 @@ func AutoArchiveInactiveChats() {
 	// 1. Не обновлялись более 12 часов
 	// 2. Не архивированы
 	// 3. Не имеют приостановленного таймера
+	// Ограничиваем обработку 100 чатами за раз для безопасности
 	inactiveThreshold := time.Now().Add(-12 * time.Hour)
 
 	rows, err := db.Query(`
@@ -255,6 +256,8 @@ func AutoArchiveInactiveChats() {
 		WHERE updated_at < $1
 			AND is_archived = false
 			AND archive_timer_paused = false
+		ORDER BY updated_at ASC
+		LIMIT 100
 	`, inactiveThreshold)
 
 	if err != nil {
@@ -310,6 +313,12 @@ func AutoArchiveInactiveChats() {
 			messages = append(messages, msg)
 		}
 		msgRows.Close()
+
+		// Пропускаем чаты без сообщений
+		if len(messages) == 0 {
+			log.Printf("Skipping chat %s - no messages to archive", chatID)
+			continue
+		}
 
 		// Начинаем транзакцию
 		tx, err := db.Begin()
