@@ -138,22 +138,36 @@ func ResolveChat(c *gin.Context) {
 	})
 }
 
-// GetArchivedChats получает список дат с архивными чатами для клиента
+// GetArchivedChats получает список архивных чатов (для всех клиентов или конкретного)
 func GetArchivedChats(c *gin.Context) {
 	clientID := c.Query("clientId")
+	db := database.DB
+
+	var rows *sql.Rows
+	var err error
+
+	// Если clientId не указан, показываем все архивы
 	if clientID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "clientId is required"})
-		return
+		rows, err = db.Query(`
+			SELECT ac.id, ac.chat_id, ac.archived_at, ac.delete_at,
+				   jsonb_array_length(ac.messages) as message_count,
+				   u.name, u.email
+			FROM archived_chats ac
+			JOIN users u ON ac.user_id = u.id
+			ORDER BY ac.archived_at DESC
+		`)
+	} else {
+		rows, err = db.Query(`
+			SELECT ac.id, ac.chat_id, ac.archived_at, ac.delete_at,
+				   jsonb_array_length(ac.messages) as message_count,
+				   u.name, u.email
+			FROM archived_chats ac
+			JOIN users u ON ac.user_id = u.id
+			WHERE ac.client_id = $1
+			ORDER BY ac.archived_at DESC
+		`, clientID)
 	}
 
-	db := database.DB
-	rows, err := db.Query(`
-		SELECT id, chat_id, archived_at, delete_at,
-			   jsonb_array_length(messages) as message_count
-		FROM archived_chats
-		WHERE client_id = $1
-		ORDER BY archived_at DESC
-	`, clientID)
 	if err != nil {
 		log.Printf("Error fetching archived chats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
@@ -164,7 +178,7 @@ func GetArchivedChats(c *gin.Context) {
 	summaries := []models.ArchivedChatSummary{}
 	for rows.Next() {
 		var s models.ArchivedChatSummary
-		err := rows.Scan(&s.ID, &s.ChatID, &s.ArchivedAt, &s.DeleteAt, &s.MessageCount)
+		err := rows.Scan(&s.ID, &s.ChatID, &s.ArchivedAt, &s.DeleteAt, &s.MessageCount, &s.UserName, &s.UserEmail)
 		if err != nil {
 			log.Printf("Error scanning archived chat: %v", err)
 			continue

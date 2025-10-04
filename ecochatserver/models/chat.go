@@ -64,9 +64,11 @@ type ArchivedChat struct {
 
 // ArchivedChatSummary краткая информация об архивном чате для календаря
 type ArchivedChatSummary struct {
-	ID         uuid.UUID `json:"id"`
-	ChatID     uuid.UUID `json:"chatId"`
-	ArchivedAt time.Time `json:"archivedAt"`
-	DeleteAt   time.Time `json:"deleteAt"`
-	MessageCount int     `json:"messageCount"`
+	ID           uuid.UUID `json:"id"`
+	ChatID       uuid.UUID `json:"chatId"`
+	ArchivedAt   time.Time `json:"archivedAt"`
+	DeleteAt     time.Time `json:"deleteAt"`
+	MessageCount int       `json:"messageCount"`
+	UserName     string    `json:"userName"`
+	UserEmail    string    `json:"userEmail"`
 }
