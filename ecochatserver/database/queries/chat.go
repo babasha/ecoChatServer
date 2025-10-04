@@ -397,9 +397,10 @@ func GetOrCreateChat(
 	}
 	log.Printf("GetOrCreateChat: получен clientUUID=%s для API key=%s", clientUUID, clientAPIKey)
 
-	// Проверяем, существует ли неархивный чат
+	// Проверяем, существует ли чат (включая архивированные)
+	// Если чат архивирован, виджет должен показывать архивную историю
 	var chatID uuid.UUID
-	checkQuery := "SELECT id FROM chats WHERE user_id=$1 AND source=$2 AND bot_id=$3 AND client_id=$4 AND is_archived = false LIMIT 1"
+	checkQuery := "SELECT id FROM chats WHERE user_id=$1 AND source=$2 AND bot_id=$3 AND client_id=$4 LIMIT 1"
 	log.Printf("GetOrCreateChat: проверяем существование чата: user_id=%s, source=%s, bot_id=%s, client_id=%s",
 		user.ID, source, botID, clientUUID)
 
