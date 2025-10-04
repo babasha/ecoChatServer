@@ -21,14 +21,14 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
 	// Получаем только базовую информацию
 	err := db.QueryRowContext(ctx, `
         SELECT c.id, c.created_at, c.updated_at, c.status,
-               c.user_id, c.source, c.client_id,
+               c.user_id, c.source, c.client_id, c.auto_responder_enabled, c.assigned_to,
                u.id, u.name, u.email, u.source
         FROM chats c
         JOIN users u ON c.user_id = u.id
         WHERE c.id = $1
     `, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
-		&userID, &chat.Source, &chat.ClientID,
+		&userID, &chat.Source, &chat.ClientID, &chat.AutoResponderEnabled, &chat.AssignedTo,
 		&chat.User.ID, &chat.User.Name, &chat.User.Email, &chat.User.Source,
 	)
 
