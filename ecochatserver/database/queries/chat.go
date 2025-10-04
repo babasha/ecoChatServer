@@ -34,12 +34,12 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	var countQuery string
 	var countArgs []interface{}
 
-	// Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки)
+	// Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки), но только неархивные
 	if clientID == uuid.Nil {
-		countQuery = `SELECT COUNT(*) FROM chats`
+		countQuery = `SELECT COUNT(*) FROM chats WHERE is_archived = false`
 		countArgs = []interface{}{}
 	} else {
-		countQuery = `SELECT COUNT(*) FROM chats WHERE client_id=$1 AND (assigned_to=$2 OR assigned_to IS NULL)`
+		countQuery = `SELECT COUNT(*) FROM chats WHERE client_id=$1 AND (assigned_to=$2 OR assigned_to IS NULL) AND is_archived = false`
 		countArgs = []interface{}{clientID, adminID}
 	}
 
@@ -120,12 +120,12 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	var mainArgs []interface{}
 	offset := (page - 1) * size
 
-	// Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки)
+	// Если clientID = uuid.Nil, то показываем ВСЕ чаты (для админки), но только неархивные
 	if clientID == uuid.Nil {
-		mainQuery = fmt.Sprintf(q, "TRUE", 1, 2)
+		mainQuery = fmt.Sprintf(q, "c.is_archived = false", 1, 2)
 		mainArgs = []interface{}{size, offset}
 	} else {
-		mainQuery = fmt.Sprintf(q, "c.client_id=$1 AND (c.assigned_to=$2 OR c.assigned_to IS NULL)", 3, 4)
+		mainQuery = fmt.Sprintf(q, "c.client_id=$1 AND (c.assigned_to=$2 OR c.assigned_to IS NULL) AND c.is_archived = false", 3, 4)
 		mainArgs = []interface{}{clientID, adminID, size, offset}
 	}
 
@@ -397,9 +397,9 @@ func GetOrCreateChat(
 	}
 	log.Printf("GetOrCreateChat: получен clientUUID=%s для API key=%s", clientUUID, clientAPIKey)
 
-	// Проверяем, существует ли чат
+	// Проверяем, существует ли неархивный чат
 	var chatID uuid.UUID
-	checkQuery := "SELECT id FROM chats WHERE user_id=$1 AND source=$2 AND bot_id=$3 AND client_id=$4 LIMIT 1"
+	checkQuery := "SELECT id FROM chats WHERE user_id=$1 AND source=$2 AND bot_id=$3 AND client_id=$4 AND is_archived = false LIMIT 1"
 	log.Printf("GetOrCreateChat: проверяем существование чата: user_id=%s, source=%s, bot_id=%s, client_id=%s",
 		user.ID, source, botID, clientUUID)
 

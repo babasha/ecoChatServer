@@ -64,6 +64,27 @@ func main() {
 		}
 	}(ctx)
 
+	// Периодически архивируем неактивные чаты и удаляем старые архивы
+	go func(ctx context.Context) {
+		// Первый запуск через минуту после старта
+		time.Sleep(1 * time.Minute)
+
+		ticker := time.NewTicker(30 * time.Minute) // Каждые 30 минут
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				log.Println("Запуск автоархивации неактивных чатов...")
+				handlers.AutoArchiveInactiveChats()
+				handlers.DeleteExpiredArchives()
+			case <-ctx.Done():
+				log.Println("Остановка автоархивации...")
+				return
+			}
+		}
+	}(ctx)
+
 	// ─── Gin & middleware ───────────────────────────────────────────────────
 	gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
 	r := gin.New()
@@ -359,6 +380,12 @@ func setupAPIRoutes(r *gin.Engine) {
 			// Настройки админа (языковые предпочтения)
 			auth.GET("/admin/settings", handlers.GetAdminSettings)
 			auth.PUT("/admin/settings", handlers.UpdateAdminSettings)
+
+			// Архивирование чатов
+			auth.POST("/chats/:id/resolve", handlers.ResolveChat)
+			auth.GET("/archived-chats", handlers.GetArchivedChats)
+			auth.GET("/archived-chats/:id/messages", handlers.GetArchivedChatMessages)
+			auth.POST("/archived-chats/:id/toggle-timer", handlers.ToggleArchiveTimer)
 
 			// Статистика для администраторов
 			auth.GET("/admin/stats", func(c *gin.Context) {

@@ -19,6 +19,10 @@ type Chat struct {
 	ClientID              uuid.UUID              `json:"clientId"`                       // ID клиента, которому принадлежит бот
 	AssignedTo            *uuid.UUID             `json:"assignedTo,omitempty"`           // ID сотрудника, которому назначен чат
 	AutoResponderEnabled  bool                   `json:"autoResponderEnabled"`           // Включен ли автоответчик для этого чата
+	ResolvedAt            *time.Time             `json:"resolvedAt,omitempty"`           // Время решения вопроса
+	AutoArchiveAt         *time.Time             `json:"autoArchiveAt,omitempty"`        // Время автоархивации (для LLM-решенных чатов)
+	IsArchived            bool                   `json:"isArchived"`                     // Архивирован ли чат
+	ArchiveTimerPaused    bool                   `json:"archiveTimerPaused"`             // Приостановлен ли таймер архивации
 	Metadata              map[string]interface{} `json:"metadata,omitempty"`             // Метаданные чата, включая историю LLM
 }
 
@@ -42,4 +46,26 @@ type ChatPaginationResponse struct {
 	PageSize   int            `json:"pageSize"`
 	TotalItems int            `json:"totalItems"`
 	TotalPages int            `json:"totalPages"`
+}
+
+// ArchivedChat представляет архивный чат
+type ArchivedChat struct {
+	ID                uuid.UUID              `json:"id"`
+	ChatID            uuid.UUID              `json:"chatId"`
+	ClientID          uuid.UUID              `json:"clientId"`
+	UserID            uuid.UUID              `json:"userId"`
+	ArchivedAt        time.Time              `json:"archivedAt"`
+	DeleteAt          time.Time              `json:"deleteAt"`
+	DeleteTimerPaused bool                   `json:"deleteTimerPaused"`
+	Messages          []Message              `json:"messages"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// ArchivedChatSummary краткая информация об архивном чате для календаря
+type ArchivedChatSummary struct {
+	ID         uuid.UUID `json:"id"`
+	ChatID     uuid.UUID `json:"chatId"`
+	ArchivedAt time.Time `json:"archivedAt"`
+	DeleteAt   time.Time `json:"deleteAt"`
+	MessageCount int     `json:"messageCount"`
 }
