@@ -34,6 +34,7 @@ type ChatResponse struct {
 	CreatedAt            time.Time              `json:"createdAt"`
 	UpdatedAt            time.Time              `json:"updatedAt"`
 	Status               string                 `json:"status"`
+	ClientID             uuid.UUID              `json:"clientId"`
 	UnreadCount          int                    `json:"unreadCount"`
 	AutoResponderEnabled bool                   `json:"autoResponderEnabled"`
 	Metadata             map[string]interface{} `json:"metadata,omitempty"`
