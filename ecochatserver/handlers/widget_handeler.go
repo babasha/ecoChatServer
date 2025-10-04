@@ -50,6 +50,22 @@ func GetWidgetChatMessages(c *gin.Context) {
 		return
 	}
 
+	// Если чат архивирован, возвращаем пустой список сообщений
+	if chat.IsArchived {
+		log.Printf("GetWidgetChatMessages: чат %s архивирован, возвращаем пустой список", chatID)
+		response := gin.H{
+			"chatId":        chat.ID.String(),
+			"messages":      []interface{}{},
+			"totalMessages": 0,
+			"page":          page,
+			"pageSize":      size,
+			"status":        "archived",
+			"message":       "Этот чат был архивирован",
+		}
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
 	log.Printf("GetWidgetChatMessages: найден чат с %d сообщениями (всего: %d)", len(chat.Messages), totalMessages)
 
 	// Формируем ответ в формате совместимом с виджетом

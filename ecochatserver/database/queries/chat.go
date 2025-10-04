@@ -218,14 +218,14 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 
 	chatQuery := `
         SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to,auto_responder_enabled
+               source,bot_id,client_id,assigned_to,auto_responder_enabled,is_archived
           FROM chats WHERE id=$1`
 
 	log.Printf("GetChatByID: выполняем запрос чата: %s", chatQuery)
 
 	if err := db.QueryRowContext(ctx, chatQuery, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
-		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled,
+		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled, &chat.IsArchived,
 	); err != nil {
 		log.Printf("GetChatByID: ошибка получения чата: %v", err)
 		if err == sql.ErrNoRows {
