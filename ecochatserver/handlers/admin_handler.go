@@ -128,7 +128,7 @@ func SendMessageToChat(c *gin.Context) {
 	}
 
 	// Переводим сообщение админа на язык клиента
-	var messageContent = request.Content
+	var messageContent = request.Content // Сохраняем оригинал
 	var messageMetadata map[string]interface{}
 
 	if Translator != nil {
@@ -138,10 +138,21 @@ func SendMessageToChat(c *gin.Context) {
 			log.Printf("SendMessageToChat: ошибка перевода сообщения: %v", err)
 			// Продолжаем с оригинальным текстом
 		} else if result != nil {
-			// Используем переведенный текст для клиента
-			messageContent = result.Content
+			// ВАЖНО: Сохраняем ОРИГИНАЛ в content, перевод в metadata
+			messageContent = request.Content // Оставляем оригинальный текст!
 			messageMetadata = result.Metadata
+
+			// Сохраняем перевод для клиента в metadata.translations
 			if result.WasTranslated {
+				translations := make(map[string]string)
+				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
+					translations[targetLang] = result.Content
+				}
+				if messageMetadata == nil {
+					messageMetadata = make(map[string]interface{})
+				}
+				messageMetadata["translations"] = translations
+
 				log.Printf("SendMessageToChat: сообщение переведено с %s на %s",
 					result.Metadata["sourceLanguage"], result.Metadata["targetLanguage"])
 			} else {
@@ -152,7 +163,7 @@ func SendMessageToChat(c *gin.Context) {
 		log.Printf("SendMessageToChat: сервис перевода недоступен")
 	}
 
-	// Добавляем сообщение в базу данных (с переведенным текстом)
+	// Добавляем сообщение в базу данных (с оригинальным текстом)
 	message, err := database.AddMessage(
 		chatID,
 		messageContent,

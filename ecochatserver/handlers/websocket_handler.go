@@ -264,13 +264,39 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		}
 		senderID = adminID
 		sender = "admin"
+
+		// Переводим сообщение админа на язык клиента
+		if Translator != nil {
+			log.Printf("processSendMessage: попытка перевода сообщения админа")
+			result, err := Translator.TranslateAdminMessage(ginCtx.Request.Context(), p.Content, chatID, adminID)
+			if err != nil {
+				log.Printf("processSendMessage: ошибка перевода: %v", err)
+			} else if result != nil && result.WasTranslated {
+				// Сохраняем перевод в metadata.translations
+				if p.Metadata == nil {
+					p.Metadata = make(map[string]interface{})
+				}
+				// Копируем metadata из результата
+				for k, v := range result.Metadata {
+					p.Metadata[k] = v
+				}
+				// Добавляем перевод
+				translations := make(map[string]string)
+				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
+					translations[targetLang] = result.Content
+				}
+				p.Metadata["translations"] = translations
+				log.Printf("processSendMessage: сообщение админа переведено с %s на %s",
+					result.Metadata["sourceLanguage"], result.Metadata["targetLanguage"])
+			}
+		}
 	} else {
 		// Для виджета используем ID пользователя
 		senderID = client.ID
 		sender = "user"
 	}
 
-	// Добавляем сообщение в базу с auto-generated UUID
+	// Добавляем сообщение в базу с auto-generated UUID (оригинал в content, перевод в metadata)
 	log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s): %s",
 		chatID, sender, senderID, p.Content)
 
