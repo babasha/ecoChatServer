@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -392,17 +393,76 @@ func AutoArchiveInactiveChats() {
 func DeleteExpiredArchives() {
 	db := database.DB
 
-	result, err := db.Exec(`
+	// Начинаем транзакцию для атомарного удаления
+	tx, err := db.Begin()
+	if err != nil {
+		log.Printf("Error starting transaction for archive deletion: %v", err)
+		return
+	}
+	defer tx.Rollback()
+
+	// Получаем ID чатов для удаления
+	rows, err := tx.Query(`
+		SELECT chat_id FROM archived_chats
+		WHERE delete_at < $1 AND delete_timer_paused = false
+	`, time.Now())
+	if err != nil {
+		log.Printf("Error fetching expired archives: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	chatIDs := []string{}
+	for rows.Next() {
+		var chatID string
+		if err := rows.Scan(&chatID); err != nil {
+			log.Printf("Error scanning chat_id: %v", err)
+			continue
+		}
+		chatIDs = append(chatIDs, chatID)
+	}
+	rows.Close()
+
+	if len(chatIDs) == 0 {
+		return // Нет чатов для удаления
+	}
+
+	// Удаляем архивы
+	result, err := tx.Exec(`
 		DELETE FROM archived_chats
 		WHERE delete_at < $1 AND delete_timer_paused = false
 	`, time.Now())
-
 	if err != nil {
 		log.Printf("Error deleting expired archives: %v", err)
 		return
 	}
 
+	// Удаляем сообщения архивированных чатов
+	_, err = tx.Exec(`
+		DELETE FROM messages
+		WHERE chat_id = ANY($1::uuid[])
+	`, "{"+strings.Join(chatIDs, ",")+"}")
+	if err != nil {
+		log.Printf("Error deleting messages of archived chats: %v", err)
+		return
+	}
+
+	// Удаляем соответствующие чаты
+	_, err = tx.Exec(`
+		DELETE FROM chats
+		WHERE id = ANY($1::uuid[])
+	`, "{"+strings.Join(chatIDs, ",")+"}")
+	if err != nil {
+		log.Printf("Error deleting archived chats: %v", err)
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		log.Printf("Error committing archive deletion: %v", err)
+		return
+	}
+
 	if count, err := result.RowsAffected(); err == nil && count > 0 {
-		log.Printf("Deleted %d expired archives", count)
+		log.Printf("Deleted %d expired archives and their chats", count)
 	}
 }

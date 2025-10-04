@@ -332,6 +332,10 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	if chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil {
 		return nil, nil
 	}
+	// автоответчик отключен для этого чата
+	if !chat.AutoResponderEnabled {
+		return nil, nil
+	}
 
 	chatKey := chat.ID.String()
 

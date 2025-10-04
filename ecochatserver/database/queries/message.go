@@ -28,15 +28,19 @@ func AddMessage(
 	}
 	defer tx.Rollback()
 
-	// Проверяем, существует ли чат
-	var ok bool
+	// Проверяем, существует ли чат и не архивирован ли он
+	var exists bool
+	var isArchived bool
 	if err := tx.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM chats WHERE id=$1)", chatID,
-	).Scan(&ok); err != nil {
+		"SELECT EXISTS(SELECT 1 FROM chats WHERE id=$1), COALESCE((SELECT is_archived FROM chats WHERE id=$1), false)", chatID,
+	).Scan(&exists, &isArchived); err != nil {
 		return nil, fmt.Errorf("проверка чата: %w", err)
 	}
-	if !ok {
+	if !exists {
 		return nil, errors.New("chat not found")
+	}
+	if isArchived {
+		return nil, errors.New("chat is archived")
 	}
 
 	now := time.Now()

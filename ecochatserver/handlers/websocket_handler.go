@@ -663,6 +663,29 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 		return
 	}
 
+	// Если чат архивирован, возвращаем пустой список сообщений
+	if chat.IsArchived {
+		log.Printf("processGetWidgetMessages: чат %s архивирован, возвращаем пустой список", chatID)
+		response := map[string]interface{}{
+			"type": "widgetMessages",
+			"payload": map[string]interface{}{
+				"messages":   []interface{}{},
+				"pagination": map[string]interface{}{
+					"page":       p.Page,
+					"pageSize":   p.PageSize,
+					"totalItems": 0,
+					"totalPages": 0,
+				},
+				"status":  "archived",
+				"message": "Этот чат был архивирован",
+			},
+		}
+		if err := client.SendJSON(response); err != nil {
+			log.Printf("processGetWidgetMessages: ошибка отправки ответа: %v", err)
+		}
+		return
+	}
+
 	// Рассчитываем общее количество страниц
 	totalPages := (total + p.PageSize - 1) / p.PageSize
 	if totalPages < 1 {
