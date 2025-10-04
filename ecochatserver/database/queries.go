@@ -80,3 +80,16 @@ func UpdateChatTimestamp(chatID uuid.UUID) error {
 func GetClientLanguageFromChat(chatID uuid.UUID) (string, error) {
 	return queries.GetClientLanguageFromChat(DB, chatID)
 }
+
+// Функции для работы с переводами
+func SaveTranslation(messageID uuid.UUID, language string, translation string) error {
+	return queries.SaveTranslation(DB, messageID, language, translation)
+}
+
+func SaveTranslationsBatch(translations map[uuid.UUID]map[string]string) error {
+	return queries.SaveTranslationsBatch(DB, translations)
+}
+
+func GetTranslation(messageID uuid.UUID, language string) (string, error) {
+	return queries.GetTranslation(DB, messageID, language)
+}

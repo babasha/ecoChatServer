@@ -68,6 +68,20 @@ func GetWidgetChatMessages(c *gin.Context) {
 
 	log.Printf("GetWidgetChatMessages: найден чат с %d сообщениями (всего: %d)", len(chat.Messages), totalMessages)
 
+	// Переводим сообщения админа для клиента (lazy caching)
+	if Translator != nil {
+		// Получаем язык клиента из чата
+		clientLang, err := database.GetClientLanguageFromChat(chatID)
+		if err == nil && clientLang != "" {
+			log.Printf("GetWidgetChatMessages: перевод сообщений для клиента (язык: %s)", clientLang)
+			err = Translator.TranslateMessagesForWidget(c.Request.Context(), chat.Messages, clientLang)
+			if err != nil {
+				log.Printf("GetWidgetChatMessages: ошибка перевода сообщений: %v", err)
+				// Продолжаем с оригинальными сообщениями
+			}
+		}
+	}
+
 	// Формируем ответ в формате совместимом с виджетом
 	response := gin.H{
 		"chatId":        chat.ID.String(),

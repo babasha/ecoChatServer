@@ -469,6 +469,24 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 		return
 	}
 
+	// Переводим сообщения для админа (lazy caching)
+	if client.ClientType == "admin" && Translator != nil {
+		adminIDStr, exists := ginCtx.Get("adminID")
+		if exists {
+			adminID, err := uuid.Parse(adminIDStr.(string))
+			if err == nil {
+				settings, err := queries.GetAdminSettings(database.DB, adminID)
+				if err == nil && settings.PreferredLanguage != "" {
+					log.Printf("processGetChatByID: перевод сообщений для админа %s (язык: %s)", adminID, settings.PreferredLanguage)
+					err = Translator.TranslateMessagesForAdmin(ginCtx.Request.Context(), chat.Messages, settings.PreferredLanguage)
+					if err != nil {
+						log.Printf("processGetChatByID: ошибка перевода сообщений: %v", err)
+					}
+				}
+			}
+		}
+	}
+
 	// Отмечаем сообщения как прочитанные
 	if client.ClientType == "admin" {
 		if err := database.MarkMessagesAsRead(chatID); err != nil {
@@ -661,6 +679,18 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 		log.Printf("processGetWidgetMessages: ошибка получения сообщений: %v", err)
 		client.SendError("db_error", "Ошибка получения сообщений: "+err.Error())
 		return
+	}
+
+	// Переводим сообщения админа для клиента (lazy caching)
+	if Translator != nil {
+		clientLang, err := database.GetClientLanguageFromChat(chatID)
+		if err == nil && clientLang != "" {
+			log.Printf("processGetWidgetMessages: перевод сообщений для клиента (язык: %s)", clientLang)
+			err = Translator.TranslateMessagesForWidget(ginCtx.Request.Context(), chat.Messages, clientLang)
+			if err != nil {
+				log.Printf("processGetWidgetMessages: ошибка перевода сообщений: %v", err)
+			}
+		}
 	}
 
 	// Если чат архивирован, возвращаем пустой список сообщений

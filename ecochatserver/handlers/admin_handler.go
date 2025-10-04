@@ -68,6 +68,23 @@ func GetChatByID(c *gin.Context) {
 		return
 	}
 
+	// Переводим сообщения для админа (lazy caching)
+	if Translator != nil {
+		// Получаем язык админа из JWT токена
+		adminID, err := getAdminID(c)
+		if err == nil {
+			settings, err := queries.GetAdminSettings(database.DB, adminID)
+			if err == nil && settings.PreferredLanguage != "" {
+				log.Printf("GetChatByID: перевод сообщений для админа %s (язык: %s)", adminID, settings.PreferredLanguage)
+				err = Translator.TranslateMessagesForAdmin(c.Request.Context(), chat.Messages, settings.PreferredLanguage)
+				if err != nil {
+					log.Printf("GetChatByID: ошибка перевода сообщений: %v", err)
+					// Продолжаем с оригинальными сообщениями
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"chat": chat,
 		"pagination": gin.H{
