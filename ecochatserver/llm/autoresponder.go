@@ -325,15 +325,21 @@ func NewAutoResponder(client LLM, cfg AutoResponderConfig) *AutoResponder {
 // ---------------------------------------------------------------------------
 
 func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
+	log.Printf("[AUTORESPONDER] ProcessMessage START: chatID=%s, sender=%s, content=%s", chat.ID, msg.Sender, msg.Content)
+	log.Printf("[AUTORESPONDER] Config: enabled=%v, chat.AutoResponderEnabled=%v, chat.AssignedTo=%v", ar.config.Enabled, chat.AutoResponderEnabled, chat.AssignedTo)
+
 	if !ar.config.Enabled || msg.Sender != "user" {
+		log.Printf("[AUTORESPONDER] EARLY RETURN: config.Enabled=%v, sender=%s", ar.config.Enabled, msg.Sender)
 		return nil, nil
 	}
 	// чат уже закреплён за оператором
 	if chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil {
+		log.Printf("[AUTORESPONDER] EARLY RETURN: чат назначен оператору %v", *chat.AssignedTo)
 		return nil, nil
 	}
 	// автоответчик отключен для этого чата
 	if !chat.AutoResponderEnabled {
+		log.Printf("[AUTORESPONDER] EARLY RETURN: auto_responder_enabled=false")
 		return nil, nil
 	}
 
