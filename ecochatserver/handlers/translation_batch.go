@@ -199,15 +199,26 @@ func (ts *TranslationService) TranslateMessagesForWidget(ctx context.Context, me
 			}
 		}
 
-		// Проверяем кеш
+		// Проверяем кеш в metadata.translations
 		if msg.Metadata != nil {
+			// Сначала проверяем новый формат (metadata.translations)
 			if translations, ok := msg.Metadata["translations"].(map[string]interface{}); ok {
 				if cached, exists := translations[clientLang]; exists && cached != "" {
 					if cachedStr, ok := cached.(string); ok {
 						msg.Content = cachedStr
-						log.Printf("TranslateMessagesForWidget: использован кеш для msg %s", msg.ID)
+						log.Printf("TranslateMessagesForWidget: использован кеш translations для msg %s", msg.ID)
 						continue
 					}
+				}
+			}
+
+			// Проверяем старый формат (metadata.translatedText) для обратной совместимости
+			if targetLang, ok := msg.Metadata["targetLanguage"].(string); ok && targetLang == clientLang {
+				if translatedText, ok := msg.Metadata["translatedText"].(string); ok && translatedText != "" {
+					// Это старое сообщение с переводом в content, используем его
+					// Content уже содержит перевод, ничего не меняем
+					log.Printf("TranslateMessagesForWidget: использован старый формат translatedText для msg %s", msg.ID)
+					continue
 				}
 			}
 		}
