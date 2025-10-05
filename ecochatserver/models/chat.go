@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Chat представляет собой структуру чата
+//  Chat представляет собой структуру чата
 type Chat struct {
 	ID                    uuid.UUID              `json:"id"`
 	User                  User                   `json:"user"`
