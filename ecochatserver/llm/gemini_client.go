@@ -284,11 +284,18 @@ func (c *GeminiClient) GenerateResponse(
 	}
 
 	if len(geminiResp.Candidates) == 0 {
+		// Логируем весь ответ для отладки
+		respJSON, _ := json.Marshal(geminiResp)
+		log.Printf("[GEMINI] No candidates in response: %s", string(respJSON))
 		return "", fmt.Errorf("Gemini API returned no candidates")
 	}
 
-	if len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("Gemini API returned empty content")
+	candidate := geminiResp.Candidates[0]
+	if len(candidate.Content.Parts) == 0 {
+		// Логируем finishReason и promptFeedback для понимания причины
+		log.Printf("[GEMINI] Empty content - finishReason: %s, promptFeedback: %+v",
+			candidate.FinishReason, geminiResp.PromptFeedback)
+		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", candidate.FinishReason)
 	}
 
 	// Извлекаем текст из Parts
