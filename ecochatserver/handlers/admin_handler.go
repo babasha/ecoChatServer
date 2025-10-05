@@ -200,7 +200,8 @@ func SendMessageToChat(c *gin.Context) {
 
 	// Если есть перевод - используем его для виджета
 	if message.Metadata != nil {
-		log.Printf("SendMessageToChat: metadata != nil, проверяем translations")
+		log.Printf("SendMessageToChat: metadata != nil, содержимое: %+v", message.Metadata)
+		log.Printf("SendMessageToChat: тип translations: %T", message.Metadata["translations"])
 		if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
 			log.Printf("SendMessageToChat: найдены translations: %+v", translations)
 			// Определяем язык клиента из чата
