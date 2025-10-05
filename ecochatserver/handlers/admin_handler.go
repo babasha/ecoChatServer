@@ -144,7 +144,7 @@ func SendMessageToChat(c *gin.Context) {
 
 			// Сохраняем перевод для клиента в metadata.translations
 			if result.WasTranslated {
-				translations := make(map[string]string)
+				translations := make(map[string]interface{})
 				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
 					translations[targetLang] = result.Content
 				}
@@ -158,7 +158,7 @@ func SendMessageToChat(c *gin.Context) {
 			} else if result.Metadata["translationFailed"] == true {
 				// Перевод не удался - сохраняем оригинал как fallback
 				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
-					translations := make(map[string]string)
+					translations := make(map[string]interface{})
 					translations[targetLang] = request.Content // Оригинал как fallback
 					if messageMetadata == nil {
 						messageMetadata = make(map[string]interface{})
