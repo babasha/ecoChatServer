@@ -13,6 +13,26 @@ import (
 	"time"
 )
 
+// Маппинг кодов языков на читаемые названия (для промптов)
+var langNames = map[string]string{
+	"ru": "Russian",
+	"en": "English",
+	"pl": "Polish",
+	"de": "German",
+	"fr": "French",
+	"es": "Spanish",
+	"it": "Italian",
+	"uk": "Ukrainian",
+	"be": "Belarusian",
+	"cs": "Czech",
+	"sk": "Slovak",
+	"lt": "Lithuanian",
+	"lv": "Latvian",
+	"et": "Estonian",
+	"ka": "Georgian",
+	"uz": "Uzbek",
+}
+
 // GeminiClient представляет клиента для взаимодействия с Google Gemini API
 type GeminiClient struct {
 	apiKey string
@@ -618,26 +638,6 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 		return text, nil
 	}
 
-	// Маппинг кодов языков на читаемые названия
-	langNames := map[string]string{
-		"ru": "Russian",
-		"en": "English",
-		"pl": "Polish",
-		"de": "German",
-		"fr": "French",
-		"es": "Spanish",
-		"it": "Italian",
-		"uk": "Ukrainian",
-		"be": "Belarusian",
-		"cs": "Czech",
-		"sk": "Slovak",
-		"lt": "Lithuanian",
-		"lv": "Latvian",
-		"et": "Estonian",
-		"ka": "Georgian",
-		"uz": "Uzbek",
-	}
-
 	fromName := langNames[fromLang]
 	if fromName == "" {
 		fromName = fromLang
@@ -649,26 +649,15 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 
 	prompt := fmt.Sprintf(`Translate from %s to %s: "%s"`, fromName, toName, text)
 
-	// Retry логика: 3 попытки с экспоненциальной задержкой
-	var translation string
-	var err error
-	maxRetries := 3
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		// Используем минимальный контекст для экономии токенов
+	// Простой вызов с retry (3 попытки)
+	for attempt := 1; attempt <= 3; attempt++ {
 		reqBody := GeminiRequest{
-			Contents: []GeminiMessage{
-				{
-					Role: "user",
-					Parts: []map[string]interface{}{
-						{"text": prompt},
-					},
-				},
-			},
+			Contents: []GeminiMessage{{
+				Role:  "user",
+				Parts: []map[string]interface{}{{"text": prompt}},
+			}},
 			SystemInstruction: &GeminiSystemInstruction{
-				Parts: []map[string]interface{}{
-					{"text": "Translate text. Reply with translation only."},
-				},
+				Parts: []map[string]interface{}{{"text": "Translate. Reply with translation only."}},
 			},
 			GenerationConfig: map[string]interface{}{
 				"temperature":     0.3,
@@ -676,103 +665,40 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 			},
 		}
 
-		payload, marshalErr := json.Marshal(reqBody)
-		if marshalErr != nil {
-			err = fmt.Errorf("marshal request: %w", marshalErr)
-			continue
-		}
+		payload, _ := json.Marshal(reqBody)
+		endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", c.apiKey)
 
-		endpoint := fmt.Sprintf(
-			"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
-			c.apiKey,
-		)
-
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-		if reqErr != nil {
-			err = fmt.Errorf("create request: %w", reqErr)
-			continue
-		}
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, doErr := c.client.Do(req)
-		if doErr != nil {
-			err = fmt.Errorf("request failed: %w", doErr)
-			if attempt < maxRetries {
-				delay := time.Duration(attempt) * time.Second
-				log.Printf("TranslateText: попытка %d/%d не удалась, повтор через %v", attempt, maxRetries, delay)
-				time.Sleep(delay)
+		resp, err := c.client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if attempt < 3 {
+				time.Sleep(time.Duration(attempt) * time.Second)
+				continue
 			}
-			continue
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			err = fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
-			if attempt < maxRetries {
-				delay := time.Duration(attempt) * time.Second
-				log.Printf("TranslateText: попытка %d/%d не удалась, повтор через %v", attempt, maxRetries, delay)
-				time.Sleep(delay)
+			if resp != nil {
+				resp.Body.Close()
 			}
-			continue
+			return "", fmt.Errorf("API request failed after 3 retries")
 		}
 
 		var geminiResp GeminiResponse
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&geminiResp); decodeErr != nil {
-			err = fmt.Errorf("decode response: %w", decodeErr)
-			if attempt < maxRetries {
-				delay := time.Duration(attempt) * time.Second
-				log.Printf("TranslateText: попытка %d/%d не удалась, повтор через %v", attempt, maxRetries, delay)
-				time.Sleep(delay)
+		json.NewDecoder(resp.Body).Decode(&geminiResp)
+		resp.Body.Close()
+
+		if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+			if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok && text != "" {
+				return strings.Trim(strings.TrimSpace(text), "\"'"), nil
 			}
-			continue
 		}
 
-		if len(geminiResp.Candidates) == 0 {
-			err = fmt.Errorf("no candidates in response")
-			if attempt < maxRetries {
-				delay := time.Duration(attempt) * time.Second
-				log.Printf("TranslateText: попытка %d/%d не удалась, повтор через %v", attempt, maxRetries, delay)
-				time.Sleep(delay)
-			}
-			continue
-		}
-
-		candidate := geminiResp.Candidates[0]
-		if len(candidate.Content.Parts) == 0 {
-			err = fmt.Errorf("empty content (finishReason: %s)", candidate.FinishReason)
-			if attempt < maxRetries {
-				delay := time.Duration(attempt) * time.Second
-				log.Printf("TranslateText: попытка %d/%d не удалась (finishReason=%s), повтор через %v", attempt, maxRetries, candidate.FinishReason, delay)
-				time.Sleep(delay)
-			}
-			continue
-		}
-
-		if text, ok := candidate.Content.Parts[0]["text"].(string); ok && text != "" {
-			translation = text
-			err = nil
-			break
-		}
-
-		err = fmt.Errorf("invalid content format")
-		if attempt < maxRetries {
-			delay := time.Duration(attempt) * time.Second
-			log.Printf("TranslateText: попытка %d/%d не удалась, повтор через %v", attempt, maxRetries, delay)
-			time.Sleep(delay)
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * time.Second)
 		}
 	}
 
-	if err != nil {
-		log.Printf("TranslateText: все %d попытки не удались, err=%v", maxRetries, err)
-		return "", fmt.Errorf("ошибка запроса к Gemini после %d попыток: %w", maxRetries, err)
-	}
-
-	// Очищаем перевод от лишних кавычек
-	translation = strings.TrimSpace(translation)
-	translation = strings.Trim(translation, "\"'")
-
-	return translation, nil
+	return "", fmt.Errorf("translation failed after 3 attempts")
 }
 
 // TranslateBatch переводит несколько текстов за один запрос (более эффективно)
@@ -783,14 +709,6 @@ func (c *GeminiClient) TranslateBatch(ctx context.Context, texts []string, fromL
 
 	if fromLang == toLang {
 		return texts, nil
-	}
-
-	// Маппинг кодов языков
-	langNames := map[string]string{
-		"ru": "Russian", "en": "English", "pl": "Polish", "de": "German",
-		"fr": "French", "es": "Spanish", "it": "Italian", "uk": "Ukrainian",
-		"be": "Belarusian", "cs": "Czech", "sk": "Slovak", "lt": "Lithuanian",
-		"lv": "Latvian", "et": "Estonian", "ka": "Georgian", "uz": "Uzbek",
 	}
 
 	fromName := langNames[fromLang]
