@@ -292,6 +292,10 @@ func TelegramWebhook(c *gin.Context) {
 	// ВАЖНО: Отправляем только ОДНО комплексное WebSocket сообщение
 	if userMsg != nil {
 		notification := createChatNotification(chat, userMsg, botMsg)
+
+		// Логируем содержимое уведомления для отладки
+		log.Printf("TelegramWebhook: создано WebSocket уведомление: %s", string(notification))
+
 		// Отправляем уведомление как виджету, так и всем админам
 		totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), notification)
 		log.Printf("TelegramWebhook: комплексное WebSocket уведомление отправлено %d клиентам", totalSent)

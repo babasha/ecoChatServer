@@ -117,6 +117,7 @@ func (h *Hub) registerClient(c *Client) {
 	// Регистрируем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
 		h.adminsByID[c.ID.String()] = c
+		log.Printf("Админ %s зарегистрирован в adminsByID, всего админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
 		if _, ok := h.widgetsByID[c.ChatID.String()]; !ok {
 			h.widgetsByID[c.ChatID.String()] = make(map[*Client]bool)
@@ -169,6 +170,7 @@ func (h *Hub) unregisterClient(c *Client) {
 	// Удаляем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
 		delete(h.adminsByID, c.ID.String())
+		log.Printf("Админ %s удален из adminsByID, осталось админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
 		chatID := c.ChatID.String()
 		if widgets, ok := h.widgetsByID[chatID]; ok {
@@ -351,6 +353,7 @@ func (h *Hub) SendToAllAdmins(message []byte) int {
 	h.mu.RUnlock()
 
 	if len(admins) == 0 {
+		log.Printf("SendToAllAdmins: нет подключенных админов")
 		return 0
 	}
 
@@ -359,12 +362,14 @@ func (h *Hub) SendToAllAdmins(message []byte) int {
 		select {
 		case admin.send <- message:
 			sent++
+			log.Printf("SendToAllAdmins: сообщение отправлено админу %s", admin.ID)
 		default:
+			log.Printf("SendToAllAdmins: не удалось отправить админу %s (канал занят)", admin.ID)
 			go h.cleanupClient(admin)
 		}
 	}
 
-	log.Printf("Отправлено %d сообщений всем админам", sent)
+	log.Printf("Отправлено %d сообщений всем админам (всего админов: %d)", sent, len(admins))
 	return sent
 }
 
