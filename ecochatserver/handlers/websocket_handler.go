@@ -131,8 +131,13 @@ func ServeWs(c *gin.Context) {
 			}
 		}
 
-		// Получаем userID из заголовка для виджета, если есть
-		userIDStr := c.GetHeader("X-Widget-User-ID")
+		// Получаем userID из токена для виджета (токен содержит строковый userID)
+		userIDStr := token
+		if userIDStr == "" {
+			// Fallback на заголовок, если токен не передан
+			userIDStr = c.GetHeader("X-Widget-User-ID")
+		}
+
 		if userIDStr != "" {
 			// Преобразуем userID в UUID таким же образом, как в telegram_handler
 			if parsedUUID, err := uuid.Parse(userIDStr); err == nil {
@@ -164,9 +169,15 @@ func ServeWs(c *gin.Context) {
 
 	// Для виджета сохраняем исходный строковый userID
 	if clientType == "widget" {
-		userIDStr := c.GetHeader("X-Widget-User-ID")
+		// Используем токен как строковый userID
+		userIDStr := token
+		if userIDStr == "" {
+			// Fallback на заголовок
+			userIDStr = c.GetHeader("X-Widget-User-ID")
+		}
 		if userIDStr != "" {
 			client.UserIDString = userIDStr
+			log.Printf("ServeWs: сохранен строковый userID для виджета: %s", userIDStr)
 		}
 	}
 
