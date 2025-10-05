@@ -357,8 +357,14 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					// Обновляем время чата
 					updateChatTimestamp(chatID)
 
+					// Обновляем lightChat перед отправкой уведомления
+					lightChat.Messages = append(lightChat.Messages, *message)
+					if botMsg != nil {
+						lightChat.Messages = append(lightChat.Messages, *botMsg)
+					}
+
 					// Отправляем ОДНО комплексное сообщение
-					notification := createChatNotification(chatID, message, botMsg)
+					notification := createChatNotification(lightChat, message, botMsg)
 					WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 				}
 			}
@@ -383,8 +389,22 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 			}
 		}
 
+		// Загружаем легковесную версию чата для уведомления
+		lightChat, err := queries.GetChatLightweight(database.DB, chatID)
+		if err != nil {
+			log.Printf("processSendMessage: ошибка загрузки чата: %v", err)
+			// Создаем минимальный объект чата
+			lightChat = &models.Chat{
+				ID:       chatID,
+				Messages: []models.Message{widgetMessage},
+			}
+		} else {
+			// Добавляем текущее сообщение к списку
+			lightChat.Messages = append(lightChat.Messages, widgetMessage)
+		}
+
 		// Отправляем сообщение (с переводом для виджета)
-		notification := createChatNotification(chatID, &widgetMessage, nil)
+		notification := createChatNotification(lightChat, &widgetMessage, nil)
 		WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 	}
 

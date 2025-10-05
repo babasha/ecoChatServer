@@ -54,8 +54,22 @@ func InitAutoResponder() {
 
 	// Устанавливаем callback для отправки сообщений извинения
 	AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {
+		// Загружаем легковесную версию чата для уведомления
+		lightChat, err := queries.GetChatLightweight(database.DB, chatID)
+		if err != nil {
+			log.Printf("ApologyCallback: ошибка загрузки чата: %v", err)
+			// Создаем минимальный объект чата
+			lightChat = &models.Chat{
+				ID:       chatID,
+				Messages: []models.Message{*message},
+			}
+		} else {
+			// Добавляем текущее сообщение к списку
+			lightChat.Messages = append(lightChat.Messages, *message)
+		}
+
 		// Отправляем WebSocket уведомление о сообщении извинения
-		notification := createChatNotification(chatID, message, nil)
+		notification := createChatNotification(lightChat, message, nil)
 		if WebSocketHub != nil {
 			totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 			log.Printf("TelegramWebhook: уведомление о сообщении извинения отправлено %d клиентам", totalSent)
@@ -277,7 +291,7 @@ func TelegramWebhook(c *gin.Context) {
 
 	// ВАЖНО: Отправляем только ОДНО комплексное WebSocket сообщение
 	if userMsg != nil {
-		notification := createChatNotification(chat.ID, userMsg, botMsg)
+		notification := createChatNotification(chat, userMsg, botMsg)
 		// Отправляем уведомление как виджету, так и всем админам
 		totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), notification)
 		log.Printf("TelegramWebhook: комплексное WebSocket уведомление отправлено %d клиентам", totalSent)
@@ -297,14 +311,23 @@ func TelegramWebhook(c *gin.Context) {
 }
 
 // createChatNotification создает комплексное уведомление для WebSocket
-func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) []byte {
+func createChatNotification(chat *models.Chat, userMsg, botMsg *models.Message) []byte {
 	// Формируем структуру, совместимую с admin interface
 	// Админка ожидает chatId и message на верхнем уровне
+
+	// Подсчитываем непрочитанные сообщения
+	unreadCount := 0
+	for _, msg := range chat.Messages {
+		if msg.Sender == "user" && !msg.Read {
+			unreadCount++
+		}
+	}
+
 	payload := map[string]interface{}{
-		"chatId": chatID.String(),
+		"chatId": chat.ID.String(),
 		"message": map[string]interface{}{
 			"id":        userMsg.ID.String(),
-			"chatId":    chatID.String(),
+			"chatId":    chat.ID.String(),
 			"content":   userMsg.Content,
 			"sender":    userMsg.Sender,
 			"timestamp": userMsg.Timestamp.Format(time.RFC3339),
@@ -312,16 +335,26 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
 			"type":      userMsg.Type,
 			"metadata":  userMsg.Metadata,
 		},
+		"chat": map[string]interface{}{
+			"id":                   chat.ID.String(),
+			"user":                 chat.User,
+			"status":               chat.Status,
+			"clientId":             chat.ClientID.String(),
+			"createdAt":            chat.CreatedAt.Format(time.RFC3339),
+			"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
+			"unreadCount":          unreadCount,
+			"autoResponderEnabled": chat.AutoResponderEnabled,
+		},
 	}
 
 	// Если есть автоответ бота, отправляем его отдельно
 	if botMsg != nil {
-		// Для ответа бота создаем отдельное уведомление
+		// Для ответа бота создаем отдельное уведомление с полной информацией о чате
 		botPayload := map[string]interface{}{
-			"chatId": chatID.String(),
+			"chatId": chat.ID.String(),
 			"message": map[string]interface{}{
 				"id":        botMsg.ID.String(),
-				"chatId":    chatID.String(),
+				"chatId":    chat.ID.String(),
 				"content":   botMsg.Content,
 				"sender":    botMsg.Sender,
 				"timestamp": botMsg.Timestamp.Format(time.RFC3339),
@@ -330,13 +363,20 @@ func createChatNotification(chatID uuid.UUID, userMsg, botMsg *models.Message) [
 				"metadata":  botMsg.Metadata,
 			},
 			"chat": map[string]interface{}{
-				"id": chatID.String(),
+				"id":                   chat.ID.String(),
+				"user":                 chat.User,
+				"status":               chat.Status,
+				"clientId":             chat.ClientID.String(),
+				"createdAt":            chat.CreatedAt.Format(time.RFC3339),
+				"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
+				"unreadCount":          unreadCount,
+				"autoResponderEnabled": chat.AutoResponderEnabled,
 			},
 		}
 
 		// Отправляем уведомление о боте отдельно
 		botNotification, _ := websocket.NewMessage("new_message", botPayload)
-		WebSocketHub.SendToChatAndAdmins(chatID.String(), botNotification)
+		WebSocketHub.SendToChatAndAdmins(chat.ID.String(), botNotification)
 		log.Printf("TelegramWebhook: отправлено WebSocket уведомление о сообщении бота")
 	}
 
