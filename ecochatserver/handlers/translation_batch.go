@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
 )
 
@@ -19,68 +19,32 @@ type TranslateBatchRequest struct {
 }
 
 // TranslateBatch переводит несколько текстов за один API вызов
-// Использует Gemini API для перевода пакета сообщений
+// Использует оптимизированный метод GeminiClient.TranslateBatch
 func (ts *TranslationService) TranslateBatch(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error) {
 	if len(texts) == 0 {
 		return []string{}, nil
 	}
 
-	// Если язык совпадает - возвращаем оригиналы
 	if fromLang == toLang {
 		return texts, nil
 	}
 
 	log.Printf("TranslateBatch: перевод %d текстов с %s на %s", len(texts), fromLang, toLang)
 
-	// Формируем промпт для batch перевода
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Translate the following %d messages from %s to %s.\n", len(texts), fromLang, toLang))
-	sb.WriteString("Return ONLY the translations, one per line, in the EXACT same order.\n")
-	sb.WriteString("Do NOT add numbering, quotes, or any other formatting.\n\n")
-
-	for i, text := range texts {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, text))
-	}
-
-	prompt := sb.String()
-
-	// Вызываем LLM
-	response, err := ts.llmClient.GenerateResponse(ctx, prompt, nil)
-	if err != nil {
-		return nil, fmt.Errorf("TranslateBatch: LLM error: %w", err)
-	}
-
-	// Парсим результат - каждый перевод на новой строке
-	lines := strings.Split(strings.TrimSpace(response), "\n")
-	translations := make([]string, 0, len(texts))
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	// Используем прямой метод GeminiClient для batch перевода
+	// Если llmClient это GeminiClient - используем его TranslateBatch
+	if geminiClient, ok := ts.llmClient.(*llm.GeminiClient); ok {
+		translations, err := geminiClient.TranslateBatch(ctx, texts, fromLang, toLang)
+		if err != nil {
+			return nil, fmt.Errorf("TranslateBatch: %w", err)
 		}
-
-		// Убираем возможную нумерацию (1., 2., и т.д.)
-		if len(line) > 3 && line[1] == '.' && line[0] >= '0' && line[0] <= '9' {
-			line = strings.TrimSpace(line[2:])
-		}
-
-		translations = append(translations, line)
+		log.Printf("TranslateBatch: успешно переведено %d текстов", len(translations))
+		return translations, nil
 	}
 
-	// Проверяем что количество переводов совпадает
-	if len(translations) != len(texts) {
-		log.Printf("TranslateBatch: WARNING - ожидалось %d переводов, получено %d", len(texts), len(translations))
-		log.Printf("TranslateBatch: Response was: %s", response)
-
-		// Если переводов меньше - дополняем оригиналами
-		for len(translations) < len(texts) {
-			translations = append(translations, texts[len(translations)])
-		}
-	}
-
-	log.Printf("TranslateBatch: успешно переведено %d текстов", len(translations))
-	return translations, nil
+	// Fallback для других клиентов (не должно использоваться)
+	log.Printf("TranslateBatch: WARNING - используется fallback метод, не GeminiClient")
+	return nil, fmt.Errorf("TranslateBatch: только GeminiClient поддерживает batch перевод")
 }
 
 // TranslateMessagesForAdmin переводит сообщения для отображения админу
@@ -181,7 +145,6 @@ func (ts *TranslationService) TranslateMessagesForAdmin(ctx context.Context, mes
 // TranslateMessagesForWidget переводит сообщения для отображения в виджете
 // Переводит только сообщения от админа на язык клиента
 func (ts *TranslationService) TranslateMessagesForWidget(ctx context.Context, messages []models.Message, clientLang string) error {
-	// Аналогично TranslateMessagesForAdmin, но для сообщений от админа
 	toTranslate := []models.Message{}
 
 	for i := range messages {
@@ -201,7 +164,6 @@ func (ts *TranslationService) TranslateMessagesForWidget(ctx context.Context, me
 
 		// Проверяем кеш в metadata.translations
 		if msg.Metadata != nil {
-			// Сначала проверяем новый формат (metadata.translations)
 			if translations, ok := msg.Metadata["translations"].(map[string]interface{}); ok {
 				if cached, exists := translations[clientLang]; exists && cached != "" {
 					if cachedStr, ok := cached.(string); ok {
@@ -209,16 +171,6 @@ func (ts *TranslationService) TranslateMessagesForWidget(ctx context.Context, me
 						log.Printf("TranslateMessagesForWidget: использован кеш translations для msg %s", msg.ID)
 						continue
 					}
-				}
-			}
-
-			// Проверяем старый формат (metadata.translatedText) для обратной совместимости
-			if targetLang, ok := msg.Metadata["targetLanguage"].(string); ok && targetLang == clientLang {
-				if translatedText, ok := msg.Metadata["translatedText"].(string); ok && translatedText != "" {
-					// Это старое сообщение с переводом в content, используем его
-					// Content уже содержит перевод, ничего не меняем
-					log.Printf("TranslateMessagesForWidget: использован старый формат translatedText для msg %s", msg.ID)
-					continue
 				}
 			}
 		}

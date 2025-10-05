@@ -774,3 +774,126 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 
 	return translation, nil
 }
+
+// TranslateBatch переводит несколько текстов за один запрос (более эффективно)
+func (c *GeminiClient) TranslateBatch(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error) {
+	if len(texts) == 0 {
+		return []string{}, nil
+	}
+
+	if fromLang == toLang {
+		return texts, nil
+	}
+
+	// Маппинг кодов языков
+	langNames := map[string]string{
+		"ru": "Russian", "en": "English", "pl": "Polish", "de": "German",
+		"fr": "French", "es": "Spanish", "it": "Italian", "uk": "Ukrainian",
+		"be": "Belarusian", "cs": "Czech", "sk": "Slovak", "lt": "Lithuanian",
+		"lv": "Latvian", "et": "Estonian", "ka": "Georgian", "uz": "Uzbek",
+	}
+
+	fromName := langNames[fromLang]
+	if fromName == "" {
+		fromName = fromLang
+	}
+	toName := langNames[toLang]
+	if toName == "" {
+		toName = toLang
+	}
+
+	// Компактный промпт для batch перевода
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Translate %d messages from %s to %s. Reply with translations only, one per line:\n\n", len(texts), fromName, toName))
+	for i, text := range texts {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, text))
+	}
+
+	reqBody := GeminiRequest{
+		Contents: []GeminiMessage{
+			{
+				Role: "user",
+				Parts: []map[string]interface{}{
+					{"text": sb.String()},
+				},
+			},
+		},
+		SystemInstruction: &GeminiSystemInstruction{
+			Parts: []map[string]interface{}{
+				{"text": "Translate text. Reply with translations only, no numbering or formatting."},
+			},
+		},
+		GenerationConfig: map[string]interface{}{
+			"temperature":     0.3,
+			"maxOutputTokens": 4096, // Больше для batch
+		},
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	endpoint := fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
+		c.apiKey,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var geminiResp GeminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response from Gemini")
+	}
+
+	responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format")
+	}
+
+	// Парсим результат
+	lines := strings.Split(strings.TrimSpace(responseText), "\n")
+	translations := make([]string, 0, len(texts))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Убираем нумерацию если есть
+		if len(line) > 3 && line[1] == '.' && line[0] >= '0' && line[0] <= '9' {
+			line = strings.TrimSpace(line[2:])
+		}
+		translations = append(translations, line)
+	}
+
+	// Проверка количества
+	if len(translations) != len(texts) {
+		log.Printf("TranslateBatch: WARNING - expected %d, got %d translations", len(texts), len(translations))
+		// Дополняем оригиналами если не хватает
+		for len(translations) < len(texts) {
+			translations = append(translations, texts[len(translations)])
+		}
+	}
+
+	return translations, nil
+}
