@@ -108,6 +108,9 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 			"detectedLanguage": detectedLang,
 			"targetLanguage":   targetLang,
 			"isTranslated":     true,
+			"translations": map[string]interface{}{
+				targetLang: translated,
+			},
 		},
 		DetectedLanguage: detectedLang,
 		WasTranslated:    true,
@@ -197,6 +200,9 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 			"detectedLanguage": sourceLang,
 			"targetLanguage":   clientLang,
 			"isTranslated":     true,
+			"translations": map[string]interface{}{
+				clientLang: translated,
+			},
 		},
 		DetectedLanguage: sourceLang,
 		WasTranslated:    true,

@@ -140,21 +140,11 @@ func SendMessageToChat(c *gin.Context) {
 		} else if result != nil {
 			// ВАЖНО: Сохраняем ОРИГИНАЛ в content, перевод в metadata
 			messageContent = request.Content // Оставляем оригинальный текст!
-			messageMetadata = result.Metadata
+			messageMetadata = result.Metadata // metadata уже содержит translations
 
-			// Сохраняем перевод для клиента в metadata.translations
 			if result.WasTranslated {
-				translations := make(map[string]interface{})
-				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
-					translations[targetLang] = result.Content
-				}
-				if messageMetadata == nil {
-					messageMetadata = make(map[string]interface{})
-				}
-				messageMetadata["translations"] = translations
-
 				log.Printf("SendMessageToChat: сообщение переведено с %s на %s",
-					result.Metadata["sourceLanguage"], result.Metadata["targetLanguage"])
+					result.Metadata["detectedLanguage"], result.Metadata["targetLanguage"])
 			} else if result.Metadata["translationFailed"] == true {
 				// Перевод не удался - сохраняем оригинал как fallback
 				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
