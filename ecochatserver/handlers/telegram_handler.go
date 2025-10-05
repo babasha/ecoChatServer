@@ -149,19 +149,9 @@ func TelegramWebhook(c *gin.Context) {
 			// ВАЖНО: Сохраняем ОРИГИНАЛ в content, перевод в metadata
 			messageContent = originalContent // Оставляем оригинальный текст!
 
-			// Добавляем метаданные перевода
+			// result.Metadata уже содержит translations - просто добавляем все метаданные
 			for k, v := range result.Metadata {
 				messageMetadata[k] = v
-			}
-
-			// Сохраняем перевод для админа в metadata.translations
-			if result.WasTranslated {
-				translations := make(map[string]string)
-				// Сохраняем перевод на язык админа
-				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
-					translations[targetLang] = result.Content
-				}
-				messageMetadata["translations"] = translations
 			}
 
 			log.Printf("TelegramWebhook: перевод завершен, wasTranslated=%v, detectedLang=%s",
@@ -190,11 +180,11 @@ func TelegramWebhook(c *gin.Context) {
 
 	userMsg, err := database.AddMessage(
 		chat.ID,
-		messageContent,    // Используем переведенный контент
+		messageContent,    // Сохраняем оригинальный текст пользователя
 		"user",
 		userUUID,
 		msgType,
-		messageMetadata,   // Используем обогащенные метаданные
+		messageMetadata,   // Метаданные содержат translations для админа
 	)
 	if err != nil {
 		log.Printf("TelegramWebhook: AddMessage error: %v", err)
