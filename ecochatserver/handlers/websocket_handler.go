@@ -364,8 +364,27 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 			}
 		}()
 	} else {
-		// Отправляем только сообщение пользователя
-		notification := createChatNotification(chatID, message, nil)
+		// Для админских сообщений нужно отправить перевод виджету
+		widgetMessage := *message
+
+		// Если сообщение от админа и есть перевод - используем его для виджета
+		if sender == "admin" && message.Metadata != nil {
+			if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
+				// Определяем язык клиента из чата
+				clientLang, err := database.GetClientLanguageFromChat(chatID)
+				if err == nil && clientLang != "" {
+					if translation, exists := translations[clientLang]; exists {
+						if translatedText, ok := translation.(string); ok && translatedText != "" {
+							widgetMessage.Content = translatedText
+							log.Printf("processSendMessage: для WebSocket используется перевод на %s", clientLang)
+						}
+					}
+				}
+			}
+		}
+
+		// Отправляем сообщение (с переводом для виджета)
+		notification := createChatNotification(chatID, &widgetMessage, nil)
 		WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 	}
 

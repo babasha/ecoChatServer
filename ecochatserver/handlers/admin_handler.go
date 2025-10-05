@@ -183,8 +183,28 @@ func SendMessageToChat(c *gin.Context) {
 	// Обновляем время чата
 	updateChatTimestamp(chatID)
 
+	// Для WebSocket нужно отправить переведенное сообщение клиенту
+	// Создаем копию сообщения для виджета с переводом
+	widgetMessage := *message
+
+	// Если есть перевод - используем его для виджета
+	if message.Metadata != nil {
+		if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
+			// Определяем язык клиента из чата
+			clientLang, err := database.GetClientLanguageFromChat(chatID)
+			if err == nil && clientLang != "" {
+				if translation, exists := translations[clientLang]; exists {
+					if translatedText, ok := translation.(string); ok && translatedText != "" {
+						widgetMessage.Content = translatedText
+						log.Printf("SendMessageToChat: для WebSocket используется перевод на %s", clientLang)
+					}
+				}
+			}
+		}
+	}
+
 	// Отправляем WebSocket уведомление в формате совместимом с виджетом и админкой
-	messagePayload := createMessagePayload(message, chatID)
+	messagePayload := createMessagePayload(&widgetMessage, chatID)
 
 	payload := map[string]interface{}{
 		"chatId":  chatID.String(), // для админки
