@@ -370,13 +370,20 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 
 					// Обновляем lightChat перед отправкой уведомления
 					lightChat.Messages = append(lightChat.Messages, *message)
+
+					// Создаем общую информацию о чате
+					chatInfo := createChatInfo(lightChat)
+
+					// Отправляем уведомление о сообщении пользователя
+					userNotification := createMessageNotification(chatID, message, chatInfo)
+					WebSocketHub.SendToChatAndAdmins(chatID.String(), userNotification)
+
+					// Если есть автоответ бота, отправляем его отдельно
 					if botMsg != nil {
 						lightChat.Messages = append(lightChat.Messages, *botMsg)
+						botNotification := createMessageNotification(chatID, botMsg, chatInfo)
+						WebSocketHub.SendToChatAndAdmins(chatID.String(), botNotification)
 					}
-
-					// Отправляем ОДНО комплексное сообщение
-					notification := createChatNotification(lightChat, message, botMsg)
-					WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 				}
 			}
 		}()
@@ -415,7 +422,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		}
 
 		// Отправляем сообщение (с переводом для виджета)
-		notification := createChatNotification(lightChat, &widgetMessage, nil)
+		chatInfo := createChatInfo(lightChat)
+		notification := createMessageNotification(chatID, &widgetMessage, chatInfo)
 		WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 	}
 

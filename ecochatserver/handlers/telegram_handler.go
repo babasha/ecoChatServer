@@ -69,8 +69,9 @@ func InitAutoResponder() {
 		}
 
 		// Отправляем WebSocket уведомление о сообщении извинения
-		notification := createChatNotification(lightChat, message, nil)
 		if WebSocketHub != nil {
+			chatInfo := createChatInfo(lightChat)
+			notification := createMessageNotification(chatID, message, chatInfo)
 			totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 			log.Printf("TelegramWebhook: уведомление о сообщении извинения отправлено %d клиентам", totalSent)
 		}
@@ -289,16 +290,22 @@ func TelegramWebhook(c *gin.Context) {
 		log.Printf("TelegramWebhook: автоответчик не активен")
 	}
 
-	// ВАЖНО: Отправляем только ОДНО комплексное WebSocket сообщение
+	// ВАЖНО: Отправляем WebSocket уведомления
 	if userMsg != nil {
-		notification := createChatNotification(chat, userMsg, botMsg)
+		// Создаем общую информацию о чате (используется в обоих уведомлениях)
+		chatInfo := createChatInfo(chat)
 
-		// Логируем содержимое уведомления для отладки
-		log.Printf("TelegramWebhook: создано WebSocket уведомление: %s", string(notification))
+		// Отправляем уведомление о сообщении пользователя
+		userNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
+		totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), userNotification)
+		log.Printf("TelegramWebhook: уведомление о сообщении пользователя отправлено %d клиентам", totalSent)
 
-		// Отправляем уведомление как виджету, так и всем админам
-		totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), notification)
-		log.Printf("TelegramWebhook: комплексное WebSocket уведомление отправлено %d клиентам", totalSent)
+		// Если есть автоответ бота, отправляем его отдельно
+		if botMsg != nil {
+			botNotification := createMessageNotification(chat.ID, botMsg, chatInfo)
+			totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), botNotification)
+			log.Printf("TelegramWebhook: уведомление о сообщении бота отправлено %d клиентам", totalSent)
+		}
 	}
 
 	// Ответ клиенту
@@ -314,11 +321,8 @@ func TelegramWebhook(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// createChatNotification создает комплексное уведомление для WebSocket
-func createChatNotification(chat *models.Chat, userMsg, botMsg *models.Message) []byte {
-	// Формируем структуру, совместимую с admin interface
-	// Админка ожидает chatId и message на верхнем уровне
-
+// createChatInfo создает информацию о чате для WebSocket уведомлений (используется повторно)
+func createChatInfo(chat *models.Chat) map[string]interface{} {
 	// Подсчитываем непрочитанные сообщения
 	unreadCount := 0
 	for _, msg := range chat.Messages {
@@ -327,61 +331,33 @@ func createChatNotification(chat *models.Chat, userMsg, botMsg *models.Message) 
 		}
 	}
 
-	payload := map[string]interface{}{
-		"chatId": chat.ID.String(),
-		"message": map[string]interface{}{
-			"id":        userMsg.ID.String(),
-			"chatId":    chat.ID.String(),
-			"content":   userMsg.Content,
-			"sender":    userMsg.Sender,
-			"timestamp": userMsg.Timestamp.Format(time.RFC3339),
-			"read":      false,
-			"type":      userMsg.Type,
-			"metadata":  userMsg.Metadata,
-		},
-		"chat": map[string]interface{}{
-			"id":                   chat.ID.String(),
-			"user":                 chat.User,
-			"status":               chat.Status,
-			"clientId":             chat.ClientID.String(),
-			"createdAt":            chat.CreatedAt.Format(time.RFC3339),
-			"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
-			"unreadCount":          unreadCount,
-			"autoResponderEnabled": chat.AutoResponderEnabled,
-		},
+	return map[string]interface{}{
+		"id":                   chat.ID.String(),
+		"user":                 chat.User,
+		"status":               chat.Status,
+		"clientId":             chat.ClientID.String(),
+		"createdAt":            chat.CreatedAt.Format(time.RFC3339),
+		"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
+		"unreadCount":          unreadCount,
+		"autoResponderEnabled": chat.AutoResponderEnabled,
 	}
+}
 
-	// Если есть автоответ бота, отправляем его отдельно
-	if botMsg != nil {
-		// Для ответа бота создаем отдельное уведомление с полной информацией о чате
-		botPayload := map[string]interface{}{
-			"chatId": chat.ID.String(),
-			"message": map[string]interface{}{
-				"id":        botMsg.ID.String(),
-				"chatId":    chat.ID.String(),
-				"content":   botMsg.Content,
-				"sender":    botMsg.Sender,
-				"timestamp": botMsg.Timestamp.Format(time.RFC3339),
-				"read":      false,
-				"type":      botMsg.Type,
-				"metadata":  botMsg.Metadata,
-			},
-			"chat": map[string]interface{}{
-				"id":                   chat.ID.String(),
-				"user":                 chat.User,
-				"status":               chat.Status,
-				"clientId":             chat.ClientID.String(),
-				"createdAt":            chat.CreatedAt.Format(time.RFC3339),
-				"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
-				"unreadCount":          unreadCount,
-				"autoResponderEnabled": chat.AutoResponderEnabled,
-			},
-		}
-
-		// Отправляем уведомление о боте отдельно
-		botNotification, _ := websocket.NewMessage("new_message", botPayload)
-		WebSocketHub.SendToChatAndAdmins(chat.ID.String(), botNotification)
-		log.Printf("TelegramWebhook: отправлено WebSocket уведомление о сообщении бота")
+// createMessageNotification создает WebSocket уведомление для одного сообщения
+func createMessageNotification(chatID uuid.UUID, message *models.Message, chatInfo map[string]interface{}) []byte {
+	payload := map[string]interface{}{
+		"chatId": chatID.String(),
+		"message": map[string]interface{}{
+			"id":        message.ID.String(),
+			"chatId":    chatID.String(),
+			"content":   message.Content,
+			"sender":    message.Sender,
+			"timestamp": message.Timestamp.Format(time.RFC3339),
+			"read":      false,
+			"type":      message.Type,
+			"metadata":  message.Metadata,
+		},
+		"chat": chatInfo, // Переиспользуем созданную информацию о чате
 	}
 
 	msg, _ := websocket.NewMessage("new_message", payload)
