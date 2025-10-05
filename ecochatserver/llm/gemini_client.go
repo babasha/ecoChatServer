@@ -84,7 +84,14 @@ type GeminiCandidate struct {
 
 // GeminiResponse описывает ответ Gemini API
 type GeminiResponse struct {
-	Candidates []GeminiCandidate `json:"candidates"`
+	Candidates     []GeminiCandidate `json:"candidates"`
+	PromptFeedback *struct {
+		BlockReason string `json:"blockReason,omitempty"`
+		SafetyRatings []struct {
+			Category    string `json:"category"`
+			Probability string `json:"probability"`
+		} `json:"safetyRatings,omitempty"`
+	} `json:"promptFeedback,omitempty"`
 }
 
 // NewGeminiClient создаёт новый GeminiClient
