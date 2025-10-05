@@ -155,6 +155,17 @@ func SendMessageToChat(c *gin.Context) {
 
 				log.Printf("SendMessageToChat: сообщение переведено с %s на %s",
 					result.Metadata["sourceLanguage"], result.Metadata["targetLanguage"])
+			} else if result.Metadata["translationFailed"] == true {
+				// Перевод не удался - сохраняем оригинал как fallback
+				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
+					translations := make(map[string]string)
+					translations[targetLang] = request.Content // Оригинал как fallback
+					if messageMetadata == nil {
+						messageMetadata = make(map[string]interface{})
+					}
+					messageMetadata["translations"] = translations
+					log.Printf("SendMessageToChat: перевод не удался, сохранён оригинал как fallback для языка %s", targetLang)
+				}
 			} else {
 				log.Printf("SendMessageToChat: перевод не требуется")
 			}

@@ -620,6 +620,8 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 		"lt": "литовский",
 		"lv": "латышский",
 		"et": "эстонский",
+		"ka": "грузинский",
+		"uz": "узбекский",
 	}
 
 	fromName := langNames[fromLang]
@@ -637,14 +639,37 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 
 Перевод:`, fromName, toName, text)
 
-	translation, err := c.GenerateResponse(ctx, prompt, []Message{
-		{
-			Role:    "system",
-			Content: "Ты профессиональный переводчик. Переводи точно и естественно. Отвечай ТОЛЬКО переводом без дополнительных комментариев.",
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("ошибка запроса к Gemini: %w", err)
+	// Retry логика: 3 попытки с экспоненциальной задержкой
+	var translation string
+	var err error
+	maxRetries := 3
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		translation, err = c.GenerateResponse(ctx, prompt, []Message{
+			{
+				Role:    "system",
+				Content: "Ты профессиональный переводчик. Переводи точно и естественно. Отвечай ТОЛЬКО переводом без дополнительных комментариев.",
+			},
+		})
+
+		if err == nil && translation != "" {
+			// Успешно получили перевод
+			break
+		}
+
+		if attempt < maxRetries {
+			// Экспоненциальная задержка: 1s, 2s
+			delay := time.Duration(attempt) * time.Second
+			log.Printf("TranslateText: попытка %d/%d не удалась, повтор через %v", attempt, maxRetries, delay)
+			time.Sleep(delay)
+		} else {
+			// Все попытки исчерпаны
+			log.Printf("TranslateText: все %d попытки не удались, err=%v", maxRetries, err)
+		}
+	}
+
+	if err != nil || translation == "" {
+		return "", fmt.Errorf("ошибка запроса к Gemini после %d попыток: %w", maxRetries, err)
 	}
 
 	// Очищаем перевод от лишних кавычек

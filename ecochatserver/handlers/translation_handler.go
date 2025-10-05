@@ -179,6 +179,7 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 			Content: content,
 			Metadata: map[string]interface{}{
 				"detectedLanguage":  sourceLang,
+				"targetLanguage":    clientLang, // Добавляем целевой язык для fallback
 				"translationFailed": true,
 			},
 			DetectedLanguage: sourceLang,
