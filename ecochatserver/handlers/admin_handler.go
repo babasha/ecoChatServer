@@ -119,6 +119,18 @@ func SendMessageToChat(c *gin.Context) {
 		return
 	}
 
+	// Проверяем размер сообщения
+	const maxMessageLength = 2000
+	if len(request.Content) > maxMessageLength {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Сообщение слишком длинное",
+			"details": "Максимальная длина сообщения - 2000 символов",
+			"maxLength": maxMessageLength,
+			"currentLength": len(request.Content),
+		})
+		return
+	}
+
 	log.Printf("SendMessageToChat: отправка сообщения в чат %s от админа", chatID)
 
 	// Получаем реальный ID админа из JWT токена

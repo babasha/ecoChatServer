@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -242,6 +243,19 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	// Проверяем обязательные поля
 	if p.ChatID == "" || p.Content == "" {
 		client.SendError("missing_fields", "Необходимы поля chatID и content")
+		return
+	}
+
+	// Проверяем размер сообщения в зависимости от типа клиента
+	var maxLength int
+	if client.ClientType == "admin" {
+		maxLength = 2000 // Админ может писать более развернуто
+	} else {
+		maxLength = 1000 // Клиент (виджет) ограничен меньшим лимитом
+	}
+
+	if len(p.Content) > maxLength {
+		client.SendError("message_too_long", fmt.Sprintf("Сообщение слишком длинное. Максимум %d символов, отправлено %d", maxLength, len(p.Content)))
 		return
 	}
 
