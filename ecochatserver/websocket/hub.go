@@ -13,7 +13,7 @@ const (
 	ClientTypeWidget = "widget"
 )
 
-// Hub отвечает за регистрацию клиентов и вещание сообщений.
+// Hub отвечает за регистрацию  клиентов и вещание сообщений.
 type Hub struct {
 	clients     map[*Client]bool
 	adminsByID  map[string]*Client
