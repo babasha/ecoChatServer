@@ -428,7 +428,10 @@ func getOrCreateChatCore(
 			return nil, fmt.Errorf("ошибка создания чата: %w", err)
 		}
 	} else {
+		// Существующий чат - даты будут загружены позже при необходимости
 		isNewChat = false
+		// Для существующих чатов createdAt и updatedAt остаются нулевыми
+		// Они используются только для новых чатов в GetOrCreateChatMetadata
 		log.Printf("getOrCreateChatCore: найден существующий чат ID=%s", chatID)
 	}
 
