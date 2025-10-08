@@ -27,8 +27,8 @@ func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatRespons
 	return queries.GetChats(DB, clientID, adminID, page, size)
 }
 
-func GetChatByID(chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
-	return queries.GetChatByID(DB, chatID, page, size)
+func GetChatByID(chatID uuid.UUID, limit int, beforeTimestamp string) (*models.Chat, int, error) {
+	return queries.GetChatByID(DB, chatID, limit, beforeTimestamp)
 }
 
 func AddMessage(

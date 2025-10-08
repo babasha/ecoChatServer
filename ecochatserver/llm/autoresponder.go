@@ -673,7 +673,7 @@ func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.C
 // checkAdminResponse проверяет, отвечал ли админ после указанного времени
 func (ar *AutoResponder) checkAdminResponse(chat *models.Chat, after time.Time) bool {
 	// Загружаем последние сообщения из базы данных
-	chatWithMessages, _, err := database.GetChatByID(chat.ID, 1, 20) // Последние 20 сообщений
+	chatWithMessages, _, err := database.GetChatByID(chat.ID, 20, "") // Последние 20 сообщений
 	if err != nil {
 		log.Printf("checkAdminResponse: ошибка загрузки сообщений: %v", err)
 		return false

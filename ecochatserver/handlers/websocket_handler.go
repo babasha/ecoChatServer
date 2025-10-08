@@ -532,9 +532,9 @@ func processGetChats(client *websocketpkg.Client, payload json.RawMessage, ginCt
 
 func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID   string `json:"chatID"`
-		Page     int    `json:"page"`
-		PageSize int    `json:"pageSize"`
+		ChatID string `json:"chatID"`
+		Limit  int    `json:"limit"`
+		Before string `json:"before"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для getChatByID")
@@ -542,11 +542,8 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 	}
 
 	// Устанавливаем дефолтные значения
-	if p.Page < 1 {
-		p.Page = 1
-	}
-	if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
-		p.PageSize = database.DefaultPageSize
+	if p.Limit < 1 || p.Limit > 100 {
+		p.Limit = 25
 	}
 
 	// Парсим ID чата
@@ -557,10 +554,10 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 	}
 
 	// Получаем чат и его сообщения
-	log.Printf("processGetChatByID: запрос чата ID=%s, page=%d, size=%d",
-		chatID, p.Page, p.PageSize)
+	log.Printf("processGetChatByID: запрос чата ID=%s, limit=%d, before=%s",
+		chatID, p.Limit, p.Before)
 
-	chat, total, err := database.GetChatByID(chatID, p.Page, p.PageSize)
+	chat, total, err := database.GetChatByID(chatID, p.Limit, p.Before)
 	if err != nil {
 		log.Printf("processGetChatByID: ошибка получения чата: %v", err)
 		client.SendError("db_error", "Ошибка получения чата: "+err.Error())
@@ -592,21 +589,13 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 		}
 	}
 
-	// Рассчитываем общее количество страниц
-	totalPages := (total + p.PageSize - 1) / p.PageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
-
 	// Формируем ответ
 	response := map[string]interface{}{
 		"type": "chatDetails",
 		"payload": map[string]interface{}{
-			"chat":       chat,
-			"page":       p.Page,
-			"pageSize":   p.PageSize,
-			"totalItems": total,
-			"totalPages": totalPages,
+			"chat":    chat,
+			"total":   total,
+			"hasMore": len(chat.Messages) >= p.Limit,
 		},
 	}
 
@@ -741,9 +730,9 @@ func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, g
 // processGetWidgetMessages - новый метод для получения сообщений виджета через WebSocket
 func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID   string `json:"chatID"`
-		Page     int    `json:"page"`
-		PageSize int    `json:"pageSize"`
+		ChatID string `json:"chatID"`
+		Limit  int    `json:"limit"`
+		Before string `json:"before"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для getWidgetMessages")
@@ -751,11 +740,8 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 	}
 
 	// Устанавливаем дефолтные значения
-	if p.Page < 1 {
-		p.Page = 1
-	}
-	if p.PageSize < 1 || p.PageSize > database.MaxPageSize {
-		p.PageSize = database.DefaultPageSize
+	if p.Limit < 1 || p.Limit > 100 {
+		p.Limit = 50
 	}
 
 	// Парсим ID чата
@@ -772,7 +758,7 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 	}
 
 	// Получаем сообщения
-	chat, total, err := database.GetChatByID(chatID, p.Page, p.PageSize)
+	chat, total, err := database.GetChatByID(chatID, p.Limit, p.Before)
 	if err != nil {
 		log.Printf("processGetWidgetMessages: ошибка получения сообщений: %v", err)
 		client.SendError("db_error", "Ошибка получения сообщений: "+err.Error())
@@ -797,27 +783,15 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 		response := map[string]interface{}{
 			"type": "widgetMessages",
 			"payload": map[string]interface{}{
-				"messages":   []interface{}{},
-				"pagination": map[string]interface{}{
-					"page":       p.Page,
-					"pageSize":   p.PageSize,
-					"totalItems": 0,
-					"totalPages": 0,
-				},
-				"status":  "archived",
-				"message": "Этот чат был архивирован",
+				"messages": []interface{}{},
+				"status":   "archived",
+				"message":  "Этот чат был архивирован",
 			},
 		}
 		if err := client.SendJSON(response); err != nil {
 			log.Printf("processGetWidgetMessages: ошибка отправки ответа: %v", err)
 		}
 		return
-	}
-
-	// Рассчитываем общее количество страниц
-	totalPages := (total + p.PageSize - 1) / p.PageSize
-	if totalPages < 1 {
-		totalPages = 1
 	}
 
 	// Преобразуем сообщения в формат для виджета
@@ -836,13 +810,11 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 	response := map[string]interface{}{
 		"type": "widgetMessages",
 		"payload": map[string]interface{}{
-			"messages":   simplifiedMessages,
-			"page":       p.Page,
-			"pageSize":   p.PageSize,
-			"totalItems": total,
-			"totalPages": totalPages,
-			"chatId":     chat.ID.String(),
-			"userId":     chat.User.ID.String(),
+			"messages": simplifiedMessages,
+			"total":    total,
+			"hasMore":  len(chat.Messages) >= p.Limit,
+			"chatId":   chat.ID.String(),
+			"userId":   chat.User.ID.String(),
 		},
 	}
 

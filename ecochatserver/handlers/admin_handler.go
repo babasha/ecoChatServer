@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -110,10 +111,16 @@ func GetChatByID(c *gin.Context) {
 		return
 	}
 
-	// Получаем параметры пагинации для сообщений
-	page, size := parsePagination(c)
+	// Получаем параметры пагинации для сообщений (infinite scroll)
+	limitStr := c.DefaultQuery("limit", "25")
+	before := c.Query("before")
 
-	chat, total, err := database.GetChatByID(chatID, page, size)
+	limit, _ := strconv.Atoi(limitStr)
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+
+	chat, _, err := database.GetChatByID(chatID, limit, before)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Ошибка получения чата",
@@ -124,7 +131,6 @@ func GetChatByID(c *gin.Context) {
 
 	// Переводим сообщения для админа (lazy caching)
 	if Translator != nil {
-		// Получаем язык админа из JWT токена (с кешированием)
 		adminID, err := getAdminID(c)
 		if err == nil {
 			settings, err := settingsCache.getAdminSettings(adminID)
@@ -133,21 +139,12 @@ func GetChatByID(c *gin.Context) {
 				err = Translator.TranslateMessagesForAdmin(c.Request.Context(), chat.Messages, settings.PreferredLanguage)
 				if err != nil {
 					log.Printf("GetChatByID: ошибка перевода сообщений: %v", err)
-					// Продолжаем с оригинальными сообщениями
 				}
 			}
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"chat": chat,
-		"pagination": gin.H{
-			"page":  page,
-			"size":  size,
-			"total": total,
-			"pages": (total + size - 1) / size,
-		},
-	})
+	c.JSON(http.StatusOK, gin.H{"chat": chat})
 }
 
 // SendMessageToChat отправляет сообщение от админа в чат

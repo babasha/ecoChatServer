@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,13 +31,19 @@ func GetWidgetChatMessages(c *gin.Context) {
 		return
 	}
 
-	// Получаем параметры пагинации
-	page, size := parsePagination(c)
+	// Получаем параметры пагинации (infinite scroll)
+	limitStr := c.DefaultQuery("limit", "50")
+	before := c.Query("before")
 
-	log.Printf("GetWidgetChatMessages: загрузка истории чата %s для пользователя %s", chatID, userIDStr)
+	limit, _ := strconv.Atoi(limitStr)
+	if limit < 1 || limit > 100 {
+		limit = 50
+	}
+
+	log.Printf("GetWidgetChatMessages: загрузка истории чата %s для пользователя %s (limit=%d, before=%s)", chatID, userIDStr, limit, before)
 
 	// Получаем чат из базы данных
-	chat, totalMessages, err := database.GetChatByID(chatID, page, size)
+	chat, totalMessages, err := database.GetChatByID(chatID, limit, before)
 	if err != nil {
 		log.Printf("GetWidgetChatMessages: ошибка получения чата: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден"})
@@ -54,13 +61,10 @@ func GetWidgetChatMessages(c *gin.Context) {
 	if chat.IsArchived {
 		log.Printf("GetWidgetChatMessages: чат %s архивирован, возвращаем пустой список", chatID)
 		response := gin.H{
-			"chatId":        chat.ID.String(),
-			"messages":      []interface{}{},
-			"totalMessages": 0,
-			"page":          page,
-			"pageSize":      size,
-			"status":        "archived",
-			"message":       "Этот чат был архивирован",
+			"chatId":   chat.ID.String(),
+			"messages": []interface{}{},
+			"status":   "archived",
+			"message":  "Этот чат был архивирован",
 		}
 		c.JSON(http.StatusOK, response)
 		return
@@ -84,12 +88,11 @@ func GetWidgetChatMessages(c *gin.Context) {
 
 	// Формируем ответ в формате совместимом с виджетом
 	response := gin.H{
-		"chatId":        chat.ID.String(),
-		"messages":      chat.Messages,
-		"totalMessages": totalMessages,
-		"page":          page,
-		"pageSize":      size,
-		"status":        "success",
+		"chatId":   chat.ID.String(),
+		"messages": chat.Messages,
+		"total":    totalMessages,
+		"hasMore":  len(chat.Messages) >= limit,
+		"status":   "success",
 	}
 
 	c.JSON(http.StatusOK, response)

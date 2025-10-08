@@ -194,17 +194,14 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	return list, total, nil
 }
 
-func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, int, error) {
-	log.Printf("GetChatByID: начало, chatID=%s, page=%d, size=%d", chatID, page, size)
+// GetChatByID получает чат с сообщениями (поддерживает infinite scroll через параметр beforeTimestamp)
+func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string) (*models.Chat, int, error) {
+	log.Printf("GetChatByID: начало, chatID=%s, limit=%d, before=%s", chatID, limit, beforeTimestamp)
 
-	if page < 1 {
-		page = 1
-		log.Printf("GetChatByID: page скорректирован на 1")
-	}
-	if size < 1 || size > MaxPageSize {
-		oldSize := size
-		size = DefaultPageSize
-		log.Printf("GetChatByID: size скорректирован с %d на %d", oldSize, size)
+	if limit < 1 || limit > MaxPageSize {
+		oldLimit := limit
+		limit = 25
+		log.Printf("GetChatByID: limit скорректирован с %d на %d", oldLimit, limit)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
@@ -221,13 +218,10 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
                source,bot_id,client_id,assigned_to,auto_responder_enabled,is_archived
           FROM chats WHERE id=$1`
 
-	log.Printf("GetChatByID: выполняем запрос чата: %s", chatQuery)
-
 	if err := db.QueryRowContext(ctx, chatQuery, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
 		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled, &chat.IsArchived,
 	); err != nil {
-		log.Printf("GetChatByID: ошибка получения чата: %v", err)
 		if err == sql.ErrNoRows {
 			return nil, 0, fmt.Errorf("чат не найден")
 		}
@@ -237,63 +231,70 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 	var err error
 	chat.AssignedTo, err = nullUUIDToPointer(assignedNull)
 	if err != nil {
-		log.Printf("GetChatByID: ошибка преобразования assigned_to: %v", err)
 		return nil, 0, fmt.Errorf("ошибка преобразования assigned_to: %w", err)
 	}
 
-	log.Printf("GetChatByID: найден чат ID=%s, userID=%s, clientID=%s, status=%s, source=%s, botID=%s",
-		chat.ID, userID, chat.ClientID, chat.Status, chat.Source, chat.BotID)
+	log.Printf("GetChatByID: найден чат ID=%s, userID=%s", chat.ID, userID)
 
 	// Получаем данные пользователя
 	var (
 		user       models.User
 		avatarNull sql.NullString
 	)
-	userQuery := `
-        SELECT id,name,email,avatar,source,source_id
-          FROM users WHERE id=$1`
-
-	log.Printf("GetChatByID: получаем пользователя ID=%s", userID)
+	userQuery := `SELECT id,name,email,avatar,source,source_id FROM users WHERE id=$1`
 
 	if err := db.QueryRowContext(ctx, userQuery, userID).Scan(
 		&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
 	); err != nil {
-		log.Printf("GetChatByID: ошибка получения пользователя: %v", err)
 		return nil, 0, fmt.Errorf("ошибка получения пользователя: %w", err)
 	}
 
 	user.Avatar = nullStringToPointer(avatarNull)
 	chat.User = user
 
-	log.Printf("GetChatByID: пользователь: ID=%s, name='%s', email='%s', source=%s, sourceID=%s",
-		user.ID, user.Name, user.Email, user.Source, user.SourceID)
-
 	// Подсчитываем общее количество сообщений
 	var total int
 	countQuery := "SELECT COUNT(*) FROM messages WHERE chat_id=$1"
 	if err := db.QueryRowContext(ctx, countQuery, chatID).Scan(&total); err != nil {
-		log.Printf("GetChatByID: ошибка подсчета сообщений: %v", err)
 		return nil, 0, fmt.Errorf("ошибка подсчета сообщений: %w", err)
 	}
 
 	log.Printf("GetChatByID: всего сообщений в чате: %d", total)
 
-	// Получаем последние сообщения в правильном порядке (старые сверху, новые снизу)
-	offset := (page - 1) * size
-	messagesQuery := `
-        SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
-          FROM (
+	// Получаем сообщения до указанной временной метки
+	var messagesQuery string
+	var rows *sql.Rows
+
+	if beforeTimestamp != "" {
+		// Загружаем сообщения старше указанной временной метки
+		messagesQuery = `
             SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
-              FROM messages
-             WHERE chat_id=$1
-             ORDER BY timestamp DESC
-             LIMIT $2 OFFSET $3
-          ) AS recent_messages
-         ORDER BY timestamp ASC`
+              FROM (
+                SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
+                  FROM messages
+                 WHERE chat_id=$1 AND timestamp < $2
+                 ORDER BY timestamp DESC
+                 LIMIT $3
+              ) AS older_messages
+             ORDER BY timestamp ASC`
+		log.Printf("GetChatByID: получаем сообщения до %s с LIMIT=%d", beforeTimestamp, limit)
+		rows, err = db.QueryContext(ctx, messagesQuery, chatID, beforeTimestamp, limit)
+	} else {
+		// Загружаем последние сообщения (как обычно)
+		messagesQuery = `
+            SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
+              FROM (
+                SELECT id,content,sender,sender_id,timestamp,read,read_at,type,metadata
+                  FROM messages
+                 WHERE chat_id=$1
+                 ORDER BY timestamp DESC
+                 LIMIT $2
+              ) AS recent_messages
+             ORDER BY timestamp ASC`
+		log.Printf("GetChatByID: получаем последние %d сообщений", limit)
+		rows, err = db.QueryContext(ctx, messagesQuery, chatID, limit)
+	}
 
-	log.Printf("GetChatByID: получаем сообщения с LIMIT=%d OFFSET=%d", size, offset)
-
-	rows, err := db.QueryContext(ctx, messagesQuery, chatID, size, offset)
 	if err != nil {
 		log.Printf("GetChatByID: ошибка получения сообщений: %v", err)
 		return nil, 0, fmt.Errorf("ошибка получения сообщений: %w", err)
@@ -317,19 +318,15 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 			_ = json.Unmarshal(raw, &m.Metadata)
 		}
 
-		log.Printf("GetChatByID: сообщение %d: ID=%s, sender=%s, senderID=%s, content='%s', timestamp=%v, read=%v, type=%s",
-			msgNum, m.ID, m.Sender, m.SenderID, m.Content, m.Timestamp, m.Read, m.Type)
-
 		chat.Messages = append(chat.Messages, m)
 		msgNum++
 	}
 
 	if err := rows.Err(); err != nil {
-		log.Printf("GetChatByID: ошибка после обработки сообщений: %v", err)
 		return nil, 0, fmt.Errorf("ошибка обработки сообщений: %w", err)
 	}
 
-	// Получаем последнее сообщение
+	// Получаем последнее сообщение в чате
 	var last models.Message
 	var raw []byte
 	lastMsgQuery := `
@@ -337,8 +334,6 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
           FROM messages
          WHERE chat_id=$1
          ORDER BY timestamp DESC LIMIT 1`
-
-	log.Printf("GetChatByID: получаем последнее сообщение")
 
 	err = db.QueryRowContext(ctx, lastMsgQuery, chatID).Scan(
 		&last.ID, &last.Content, &last.Sender, &last.SenderID,
@@ -350,13 +345,8 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, page, size int) (*models.Chat, in
 			_ = json.Unmarshal(raw, &last.Metadata)
 		}
 		chat.LastMessage = &last
-		log.Printf("GetChatByID: последнее сообщение: ID=%s, sender=%s, content='%s', timestamp=%v, ChatID=%s",
-			last.ID, last.Sender, last.Content, last.Timestamp, last.ChatID)
 	} else if err != sql.ErrNoRows {
-		log.Printf("GetChatByID: ошибка получения последнего сообщения: %v", err)
 		return nil, 0, fmt.Errorf("ошибка получения последнего сообщения: %w", err)
-	} else {
-		log.Printf("GetChatByID: нет сообщений в чате")
 	}
 
 	log.Printf("GetChatByID: успешно, возвращаем чат с %d сообщениями", len(chat.Messages))
@@ -440,8 +430,8 @@ func GetOrCreateChat(
 
 	log.Printf("GetOrCreateChat: транзакция успешно закоммичена")
 
-	// Получаем полные данные созданного/найденного чата
-	chat, _, err := GetChatByID(db, chatID, 1, DefaultPageSize)
+	// Получаем полные данные созданного/найденного чата (последние 25 сообщений)
+	chat, _, err := GetChatByID(db, chatID, 25, "")
 	if err != nil {
 		log.Printf("GetOrCreateChat: ошибка получения созданного чата: %v", err)
 		return nil, fmt.Errorf("ошибка получения чата: %w", err)
