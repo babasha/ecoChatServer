@@ -353,19 +353,32 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 	return &chat, total, nil
 }
 
-func GetOrCreateChat(
+// chatCoreInfo содержит базовую информацию о чате после создания/поиска
+type chatCoreInfo struct {
+	ChatID               uuid.UUID
+	User                 *models.User
+	ClientID             uuid.UUID
+	Source               string
+	BotID                string
+	IsNewChat            bool      // true если чат только что создан
+	CreatedAt            time.Time // только для новых чатов
+	UpdatedAt            time.Time // только для новых чатов
+}
+
+// getOrCreateChatCore - внутренняя функция для создания/поиска чата
+// Возвращает только базовую информацию без загрузки сообщений и метаданных
+func getOrCreateChatCore(
 	db *sql.DB,
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
-) (*models.Chat, error) {
-	log.Printf("GetOrCreateChat: начало, userID=%s, userName='%s', userEmail='%s', source=%s, sourceID=%s, botID=%s, clientAPIKey=%s",
-		userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+) (*chatCoreInfo, error) {
+	log.Printf("getOrCreateChatCore: начало, userID=%s, source=%s, botID=%s",
+		userID, source, botID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("GetOrCreateChat: ошибка начала транзакции: %v", err)
 		return nil, fmt.Errorf("ошибка начала транзакции: %w", err)
 	}
 	defer tx.Rollback()
@@ -373,72 +386,172 @@ func GetOrCreateChat(
 	// Получаем или создаем пользователя
 	user, err := getOrCreateUser(ctx, tx, userID, userName, userEmail, source, sourceID)
 	if err != nil {
-		log.Printf("GetOrCreateChat: ошибка getOrCreateUser: %v", err)
 		return nil, fmt.Errorf("ошибка получения/создания пользователя: %w", err)
 	}
-	log.Printf("GetOrCreateChat: получен/создан пользователь ID=%s, name='%s', email='%s'",
-		user.ID, user.Name, user.Email)
 
 	// Получаем UUID клиента по API ключу
 	clientUUID, err := getClientUUIDByAPIKey(ctx, tx, clientAPIKey)
 	if err != nil {
-		log.Printf("GetOrCreateChat: ошибка getClientUUIDByAPIKey: %v", err)
 		return nil, fmt.Errorf("ошибка получения клиента: %w", err)
 	}
-	log.Printf("GetOrCreateChat: получен clientUUID=%s для API key=%s", clientUUID, clientAPIKey)
 
 	// Проверяем, существует ли АКТИВНЫЙ (не архивированный) чат
-	// Если чат архивирован, создаем новый чат для клиента
 	var chatID uuid.UUID
 	checkQuery := "SELECT id FROM chats WHERE user_id=$1 AND source=$2 AND bot_id=$3 AND client_id=$4 AND is_archived=false LIMIT 1"
-	log.Printf("GetOrCreateChat: проверяем существование активного чата: user_id=%s, source=%s, bot_id=%s, client_id=%s",
-		user.ID, source, botID, clientUUID)
 
 	err = tx.QueryRowContext(ctx, checkQuery, user.ID, source, botID, clientUUID).Scan(&chatID)
 
 	if err != nil && err != sql.ErrNoRows {
-		log.Printf("GetOrCreateChat: ошибка поиска чата: %v", err)
 		return nil, fmt.Errorf("ошибка поиска чата: %w", err)
 	}
+
+	var isNewChat bool
+	var createdAt, updatedAt time.Time
 
 	if err == sql.ErrNoRows {
 		// Создаем новый чат
 		chatID = uuid.New()
 		now := time.Now()
-		log.Printf("GetOrCreateChat: создаем новый чат ID=%s для user=%s, client=%s",
-			chatID, user.ID, clientUUID)
+		createdAt = now
+		updatedAt = now
+		isNewChat = true
+
+		log.Printf("getOrCreateChatCore: создаем новый чат ID=%s", chatID)
 
 		insertQuery := `
-            INSERT INTO chats(id,user_id,created_at,updated_at,status,source,bot_id,client_id) 
+            INSERT INTO chats(id,user_id,created_at,updated_at,status,source,bot_id,client_id)
             VALUES($1,$2,$3,$4,'active',$5,$6,$7)`
 
 		if _, err := tx.ExecContext(ctx, insertQuery,
-			chatID, user.ID, now, now, source, botID, clientUUID,
+			chatID, user.ID, createdAt, updatedAt, source, botID, clientUUID,
 		); err != nil {
-			log.Printf("GetOrCreateChat: ошибка создания чата: %v", err)
 			return nil, fmt.Errorf("ошибка создания чата: %w", err)
 		}
-		log.Printf("GetOrCreateChat: чат успешно создан")
 	} else {
-		log.Printf("GetOrCreateChat: найден существующий чат ID=%s", chatID)
+		isNewChat = false
+		log.Printf("getOrCreateChatCore: найден существующий чат ID=%s", chatID)
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("GetOrCreateChat: ошибка коммита транзакции: %v", err)
 		return nil, fmt.Errorf("ошибка коммита транзакции: %w", err)
 	}
 
-	log.Printf("GetOrCreateChat: транзакция успешно закоммичена")
+	log.Printf("getOrCreateChatCore: успешно, chatID=%s, clientID=%s, userID=%s, isNewChat=%v",
+		chatID, clientUUID, user.ID, isNewChat)
 
-	// Получаем полные данные созданного/найденного чата (последние 25 сообщений)
-	chat, _, err := GetChatByID(db, chatID, 25, "")
+	return &chatCoreInfo{
+		ChatID:    chatID,
+		User:      user,
+		ClientID:  clientUUID,
+		Source:    source,
+		BotID:     botID,
+		IsNewChat: isNewChat,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}, nil
+}
+
+// GetOrCreateChat создает или получает чат С ЗАГРУЗКОЙ последних 25 сообщений
+func GetOrCreateChat(
+	db *sql.DB,
+	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+) (*models.Chat, error) {
+	log.Printf("GetOrCreateChat: начало, userID=%s, userName='%s', userEmail='%s', source=%s, sourceID=%s, botID=%s, clientAPIKey=%s",
+		userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+
+	// Получаем базовую информацию о чате
+	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
 	if err != nil {
-		log.Printf("GetOrCreateChat: ошибка получения созданного чата: %v", err)
+		log.Printf("GetOrCreateChat: ошибка getOrCreateChatCore: %v", err)
+		return nil, err
+	}
+
+	// Загружаем полные данные чата с сообщениями
+	chat, _, err := GetChatByID(db, info.ChatID, 25, "")
+	if err != nil {
+		log.Printf("GetOrCreateChat: ошибка получения чата с сообщениями: %v", err)
 		return nil, fmt.Errorf("ошибка получения чата: %w", err)
 	}
 
-	log.Printf("GetOrCreateChat: успешно, возвращаем чат ID=%s, clientID=%s, userID=%s",
-		chat.ID, chat.ClientID, chat.User.ID)
+	log.Printf("GetOrCreateChat: успешно, возвращаем чат ID=%s с %d сообщениями",
+		chat.ID, len(chat.Messages))
+	return chat, nil
+}
+
+// GetOrCreateChatMetadata возвращает или создает чат БЕЗ загрузки истории сообщений
+// Используется в webhook для оптимизации производительности
+func GetOrCreateChatMetadata(
+	db *sql.DB,
+	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+) (*models.Chat, error) {
+	log.Printf("GetOrCreateChatMetadata: начало, userID=%s, source=%s, botID=%s",
+		userID, source, botID)
+
+	// Получаем базовую информацию о чате
+	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	if err != nil {
+		log.Printf("GetOrCreateChatMetadata: ошибка getOrCreateChatCore: %v", err)
+		return nil, err
+	}
+
+	var createdAt, updatedAt time.Time
+	var status string
+	var assignedTo *uuid.UUID
+	var autoResponderEnabled, isArchived bool
+
+	if info.IsNewChat {
+		// Новый чат - используем известные значения без SELECT к БД
+		createdAt = info.CreatedAt
+		updatedAt = info.UpdatedAt
+		status = "active"
+		assignedTo = nil
+		autoResponderEnabled = false
+		isArchived = false
+		log.Printf("GetOrCreateChatMetadata: новый чат, используем значения по умолчанию")
+	} else {
+		// Существующий чат - загружаем метаданные из БД
+		ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+		defer cancel()
+
+		var assignedNull sql.NullString
+
+		metadataQuery := `
+			SELECT created_at, updated_at, status, assigned_to, auto_responder_enabled, is_archived
+			FROM chats
+			WHERE id=$1`
+
+		err = db.QueryRowContext(ctx, metadataQuery, info.ChatID).Scan(
+			&createdAt, &updatedAt, &status, &assignedNull, &autoResponderEnabled, &isArchived,
+		)
+		if err != nil {
+			log.Printf("GetOrCreateChatMetadata: ошибка загрузки метаданных: %v", err)
+			return nil, fmt.Errorf("ошибка загрузки метаданных чата: %w", err)
+		}
+
+		assignedTo, err = nullUUIDToPointer(assignedNull)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка преобразования assigned_to: %w", err)
+		}
+		log.Printf("GetOrCreateChatMetadata: существующий чат, загружены метаданные из БД")
+	}
+
+	chat := &models.Chat{
+		ID:                   info.ChatID,
+		User:                 *info.User,
+		Messages:             []models.Message{}, // Пустой массив
+		CreatedAt:            createdAt,
+		UpdatedAt:            updatedAt,
+		Status:               status,
+		Source:               info.Source,
+		BotID:                info.BotID,
+		ClientID:             info.ClientID,
+		AssignedTo:           assignedTo,
+		AutoResponderEnabled: autoResponderEnabled,
+		IsArchived:           isArchived,
+	}
+
+	log.Printf("GetOrCreateChatMetadata: успешно, возвращаем чат ID=%s БЕЗ сообщений, isNewChat=%v",
+		chat.ID, info.IsNewChat)
 	return chat, nil
 }
 

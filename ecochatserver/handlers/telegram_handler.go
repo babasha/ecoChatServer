@@ -121,16 +121,16 @@ func TelegramWebhook(c *gin.Context) {
 		log.Printf("TelegramWebhook: используем ClientID: %s", in.ClientID)
 	}
 
-	// Создаём или получаем чат
+	// Создаём или получаем чат (БЕЗ загрузки истории сообщений для оптимизации)
 	log.Printf("TelegramWebhook: создаем/получаем чат для user=%s, source=%s, botID=%s, clientID=%s",
 		in.UserID, in.Source, in.BotID, in.ClientID)
 
-	chat, err := database.GetOrCreateChat(
+	chat, err := database.GetOrCreateChatMetadata(
 		in.UserID, in.UserName, in.UserEmail,
 		in.Source, in.UserID, in.BotID, in.ClientID,
 	)
 	if err != nil {
-		log.Printf("TelegramWebhook: GetOrCreateChat error: %v", err)
+		log.Printf("TelegramWebhook: GetOrCreateChatMetadata error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -323,13 +323,10 @@ func TelegramWebhook(c *gin.Context) {
 
 // createChatInfo создает информацию о чате для WebSocket уведомлений (используется повторно)
 func createChatInfo(chat *models.Chat) map[string]interface{} {
-	// Подсчитываем непрочитанные сообщения
-	unreadCount := 0
-	for _, msg := range chat.Messages {
-		if msg.Sender == "user" && !msg.Read {
-			unreadCount++
-		}
-	}
+	// ВАЖНО: unreadCount НЕ используется фронтендом из WebSocket!
+	// Фронтенд сам инкрементирует счётчик локально при получении нового сообщения.
+	// Источник правды для unreadCount - это GetChats с SQL COUNT из БД.
+	// Здесь отправляем 0 для совместимости, но фронтенд это значение игнорирует.
 
 	return map[string]interface{}{
 		"id":                   chat.ID.String(),
@@ -338,7 +335,7 @@ func createChatInfo(chat *models.Chat) map[string]interface{} {
 		"clientId":             chat.ClientID.String(),
 		"createdAt":            chat.CreatedAt.Format(time.RFC3339),
 		"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
-		"unreadCount":          unreadCount,
+		"unreadCount":          0, // Фронтенд не использует это значение
 		"autoResponderEnabled": chat.AutoResponderEnabled,
 	}
 }

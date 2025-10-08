@@ -64,6 +64,12 @@ func GetOrCreateChat(
 	return queries.GetOrCreateChat(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
 }
 
+func GetOrCreateChatMetadata(
+	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+) (*models.Chat, error) {
+	return queries.GetOrCreateChatMetadata(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+}
+
 func EnsureClientWithAPIKey(apiKey, clientName string) (uuid.UUID, error) {
 	return queries.EnsureClientWithAPIKey(DB, apiKey, clientName)
 }
