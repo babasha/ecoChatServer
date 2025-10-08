@@ -418,28 +418,63 @@ func MarkChatMessagesAsRead(c *gin.Context) {
 		return
 	}
 
-	log.Printf("MarkChatMessagesAsRead: пометка сообщений в чате %s как прочитанных", chatID)
+	// Парсим тело запроса с массивом ID сообщений
+	var request struct {
+		MessageIDs []string `json:"messageIds"`
+	}
 
-	// Помечаем сообщения как прочитанные
-	if err := database.MarkMessagesAsRead(chatID); err != nil {
+	if err := c.ShouldBindJSON(&request); err != nil {
+		log.Printf("MarkChatMessagesAsRead: ошибка парсинга JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных"})
+		return
+	}
+
+	if len(request.MessageIDs) == 0 {
+		log.Printf("MarkChatMessagesAsRead: пустой массив messageIds")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Массив messageIds не может быть пустым"})
+		return
+	}
+
+	// Конвертируем строки в UUID
+	messageUUIDs := make([]uuid.UUID, 0, len(request.MessageIDs))
+	for _, idStr := range request.MessageIDs {
+		msgUUID, err := uuid.Parse(idStr)
+		if err != nil {
+			log.Printf("MarkChatMessagesAsRead: некорректный UUID: %s", idStr)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат messageId"})
+			return
+		}
+		messageUUIDs = append(messageUUIDs, msgUUID)
+	}
+
+	log.Printf("MarkChatMessagesAsRead: пометка %d сообщений в чате %s", len(messageUUIDs), chatID)
+
+	// Помечаем конкретные сообщения как прочитанные
+	markedCount, err := database.MarkSpecificMessagesAsRead(messageUUIDs)
+	if err != nil {
 		log.Printf("MarkChatMessagesAsRead: ошибка пометки сообщений: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка пометки сообщений"})
 		return
 	}
 
-	log.Printf("MarkChatMessagesAsRead: сообщения в чате %s успешно помечены как прочитанные", chatID)
+	log.Printf("MarkChatMessagesAsRead: успешно помечено %d сообщений из %d", markedCount, len(messageUUIDs))
 
-	// Отправляем WebSocket уведомление о прочтении сообщений
-	readNotification := map[string]interface{}{
-		"chatId": chatID.String(),
+	// Отправляем WebSocket уведомление о прочтении сообщений ТОЛЬКО если что-то изменилось
+	if markedCount > 0 {
+		readNotification := map[string]interface{}{
+			"chatId":     chatID.String(),
+			"messageIds": request.MessageIDs,
+			"count":      markedCount,
+		}
+
+		wsMessage, _ := websocket.NewMessage("messages_read", readNotification)
+		totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), wsMessage)
+		log.Printf("MarkChatMessagesAsRead: WebSocket уведомление отправлено %d клиентам", totalSent)
 	}
-
-	wsMessage, _ := websocket.NewMessage("messages_read", readNotification)
-	totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), wsMessage)
-	log.Printf("MarkChatMessagesAsRead: WebSocket уведомление отправлено %d клиентам", totalSent)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Сообщения помечены как прочитанные",
+		"marked":  markedCount,
 	})
 }

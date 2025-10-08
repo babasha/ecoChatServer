@@ -582,12 +582,8 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 		}
 	}
 
-	// Отмечаем сообщения как прочитанные
-	if client.ClientType == "admin" {
-		if err := database.MarkMessagesAsRead(chatID); err != nil {
-			log.Printf("processGetChatByID: ошибка маркировки сообщений: %v", err)
-		}
-	}
+	// НЕ отмечаем сообщения автоматически - админ сам отметит видимые через markAsRead
+	// Это позволяет помечать только реально просмотренные сообщения
 
 	// Формируем ответ
 	response := map[string]interface{}{
@@ -609,7 +605,8 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 
 func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID string `json:"chatID"`
+		ChatID     string   `json:"chatID"`
+		MessageIDs []string `json:"messageIds"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для markAsRead")
@@ -622,24 +619,45 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 		return
 	}
 
-	log.Printf("processMarkAsRead: отметка сообщений как прочитанных в чате %s", chatID)
+	if len(p.MessageIDs) == 0 {
+		client.SendError("invalid_payload", "Массив messageIds не может быть пустым")
+		return
+	}
 
-	if err := database.MarkMessagesAsRead(chatID); err != nil {
+	// Конвертируем строки в UUID
+	messageUUIDs := make([]uuid.UUID, 0, len(p.MessageIDs))
+	for _, idStr := range p.MessageIDs {
+		msgUUID, err := uuid.Parse(idStr)
+		if err != nil {
+			client.SendError("invalid_uuid", "Некорректный формат messageId: "+idStr)
+			return
+		}
+		messageUUIDs = append(messageUUIDs, msgUUID)
+	}
+
+	log.Printf("processMarkAsRead: отметка %d сообщений как прочитанных в чате %s", len(messageUUIDs), chatID)
+
+	markedCount, err := database.MarkSpecificMessagesAsRead(messageUUIDs)
+	if err != nil {
 		log.Printf("processMarkAsRead: ошибка: %v", err)
 		client.SendError("db_error", "Ошибка при обновлении статуса сообщений: "+err.Error())
 		return
 	}
 
-	// Отправляем обновление всем клиентам чата о прочтении сообщений
-	statusMsg, _ := websocketpkg.NewMessage("messagesRead", map[string]interface{}{
-		"chatID": chatID.String(),
-		"readBy": client.ID.String(),
-	})
+	log.Printf("processMarkAsRead: успешно помечено %d сообщений из %d", markedCount, len(messageUUIDs))
 
-	// Отправляем статус другим клиентам этого чата
-	WebSocketHub.SendToChat(chatID.String(), statusMsg)
+	// Отправляем обновление всем клиентам чата о прочтении сообщений ТОЛЬКО если что-то изменилось
+	if markedCount > 0 {
+		statusMsg, _ := websocketpkg.NewMessage("messages_read", map[string]interface{}{
+			"chatId":     chatID.String(),
+			"messageIds": p.MessageIDs,
+			"count":      markedCount,
+			"readBy":     client.ID.String(),
+		})
 
-	log.Printf("processMarkAsRead: успешно обновлен статус сообщений в чате %s", chatID)
+		// Отправляем статус другим клиентам этого чата
+		WebSocketHub.SendToChat(chatID.String(), statusMsg)
+	}
 
 	// Отправляем подтверждение отправителю запроса
 	response := map[string]interface{}{
@@ -647,6 +665,7 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 		"payload": map[string]interface{}{
 			"chatID": chatID.String(),
 			"status": "success",
+			"marked": markedCount,
 		},
 	}
 
@@ -658,7 +677,8 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 // processMarkReadFromWidget обрабатывает пометку сообщений админа как прочитанных (от виджета/клиента)
 func processMarkReadFromWidget(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID string `json:"chatId"`
+		ChatID     string   `json:"chatId"`
+		MessageIDs []string `json:"messageIds"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для mark_read")
@@ -671,22 +691,62 @@ func processMarkReadFromWidget(client *websocketpkg.Client, payload json.RawMess
 		return
 	}
 
-	log.Printf("processMarkReadFromWidget: клиент пометил сообщения админа как прочитанные в чате %s", chatID)
+	// Если messageIds не передан или пустой - используем старый метод (помечаем все)
+	if len(p.MessageIDs) == 0 {
+		log.Printf("processMarkReadFromWidget: клиент пометил ВСЕ сообщения админа как прочитанные в чате %s (fallback)", chatID)
 
-	// Помечаем сообщения админа как прочитанные
-	if err := queries.MarkAdminMessagesAsRead(database.DB, chatID); err != nil {
+		if err := queries.MarkAdminMessagesAsRead(database.DB, chatID); err != nil {
+			log.Printf("processMarkReadFromWidget: ошибка: %v", err)
+			client.SendError("db_error", "Ошибка при обновлении статуса сообщений: "+err.Error())
+			return
+		}
+
+		// Отправляем уведомление админам (без messageIds для обратной совместимости)
+		statusMsg, _ := websocketpkg.NewMessage("messages_read", map[string]interface{}{
+			"chatId": chatID.String(),
+		})
+		WebSocketHub.SendToChatAndAdmins(chatID.String(), statusMsg)
+
+		log.Printf("processMarkReadFromWidget: успешно обновлен статус всех сообщений в чате %s", chatID)
+		return
+	}
+
+	// Новый метод: помечаем только конкретные сообщения
+	log.Printf("processMarkReadFromWidget: клиент пометил %d конкретных сообщений админа как прочитанные в чате %s", len(p.MessageIDs), chatID)
+
+	// Конвертируем строки в UUID
+	messageUUIDs := make([]uuid.UUID, 0, len(p.MessageIDs))
+	for _, idStr := range p.MessageIDs {
+		msgUUID, err := uuid.Parse(idStr)
+		if err != nil {
+			log.Printf("processMarkReadFromWidget: некорректный UUID: %s", idStr)
+			client.SendError("invalid_uuid", "Некорректный формат messageId: "+idStr)
+			return
+		}
+		messageUUIDs = append(messageUUIDs, msgUUID)
+	}
+
+	// Помечаем конкретные сообщения как прочитанные
+	markedCount, err := database.MarkSpecificMessagesAsRead(messageUUIDs)
+	if err != nil {
 		log.Printf("processMarkReadFromWidget: ошибка: %v", err)
 		client.SendError("db_error", "Ошибка при обновлении статуса сообщений: "+err.Error())
 		return
 	}
 
-	// Отправляем уведомление админам о том, что клиент прочитал сообщения
-	statusMsg, _ := websocketpkg.NewMessage("messages_read", map[string]interface{}{
-		"chatId": chatID.String(),
-	})
+	log.Printf("processMarkReadFromWidget: успешно помечено %d сообщений из %d", markedCount, len(messageUUIDs))
 
-	// Отправляем статус админам, подключенным к этому чату
-	WebSocketHub.SendToChatAndAdmins(chatID.String(), statusMsg)
+	// Отправляем уведомление админам о том, что клиент прочитал сообщения ТОЛЬКО если что-то изменилось
+	if markedCount > 0 {
+		statusMsg, _ := websocketpkg.NewMessage("messages_read", map[string]interface{}{
+			"chatId":     chatID.String(),
+			"messageIds": p.MessageIDs,
+			"count":      markedCount,
+		})
+
+		// Отправляем статус админам, подключенным к этому чату
+		WebSocketHub.SendToChatAndAdmins(chatID.String(), statusMsg)
+	}
 
 	log.Printf("processMarkReadFromWidget: успешно обновлен статус сообщений в чате %s", chatID)
 }

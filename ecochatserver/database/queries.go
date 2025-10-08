@@ -54,8 +54,8 @@ func AddMessageWithID(
 	return queries.AddMessageWithID(DB, messageID, chatID, content, sender, senderID, timestamp, msgType, meta)
 }
 
-func MarkMessagesAsRead(chatID uuid.UUID) error {
-	return queries.MarkMessagesAsRead(DB, chatID)
+func MarkSpecificMessagesAsRead(messageIDs []uuid.UUID) (int, error) {
+	return queries.MarkSpecificMessagesAsRead(DB, messageIDs)
 }
 
 func GetOrCreateChat(

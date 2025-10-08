@@ -9,6 +9,7 @@ import (
 
 	"github.com/egor/ecochatserver/models"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 func AddMessage(
@@ -156,17 +157,6 @@ func AddMessageWithID(
 	}, nil
 }
 
-func MarkMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
-	ctx, cancel := WithDBContext()
-	defer cancel()
-
-	_, err := db.ExecContext(ctx,
-		"UPDATE messages SET read=true, read_at=CURRENT_TIMESTAMP WHERE chat_id=$1 AND sender='user' AND read=false",
-		chatID,
-	)
-	return err
-}
-
 // MarkAdminMessagesAsRead помечает сообщения админа как прочитанные (когда клиент просматривает чат)
 func MarkAdminMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
 	ctx, cancel := WithDBContext()
@@ -177,4 +167,35 @@ func MarkAdminMessagesAsRead(db *sql.DB, chatID uuid.UUID) error {
 		chatID,
 	)
 	return err
+}
+
+// MarkSpecificMessagesAsRead помечает конкретные сообщения как прочитанные по их ID
+// Возвращает количество помеченных сообщений
+func MarkSpecificMessagesAsRead(db *sql.DB, messageIDs []uuid.UUID) (int, error) {
+	if len(messageIDs) == 0 {
+		return 0, nil
+	}
+
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	// Конвертируем []uuid.UUID в строку для использования в ANY()
+	// PostgreSQL поддерживает массивы UUID напрямую через pq.Array
+	query := `
+		UPDATE messages
+		SET read=true, read_at=CURRENT_TIMESTAMP
+		WHERE id = ANY($1) AND read=false
+	`
+
+	result, err := db.ExecContext(ctx, query, pq.Array(messageIDs))
+	if err != nil {
+		return 0, fmt.Errorf("MarkSpecificMessagesAsRead: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("MarkSpecificMessagesAsRead: получение rowsAffected: %w", err)
+	}
+
+	return int(rowsAffected), nil
 }
