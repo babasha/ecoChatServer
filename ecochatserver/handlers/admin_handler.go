@@ -3,13 +3,68 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
+	"github.com/egor/ecochatserver/models"
 	"github.com/egor/ecochatserver/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// Кеш для настроек админов (чтобы не лезть в БД при каждом запросе)
+type adminSettingsCache struct {
+	settings  map[uuid.UUID]*models.AdminSettings
+	expiresAt map[uuid.UUID]time.Time
+	mu        sync.RWMutex
+	ttl       time.Duration
+}
+
+var settingsCache = &adminSettingsCache{
+	settings:  make(map[uuid.UUID]*models.AdminSettings),
+	expiresAt: make(map[uuid.UUID]time.Time),
+	ttl:       5 * time.Minute, // Кешируем на 5 минут
+}
+
+// getAdminSettings получает настройки админа с кешированием
+func (cache *adminSettingsCache) getAdminSettings(adminID uuid.UUID) (*models.AdminSettings, error) {
+	// Проверяем кеш
+	cache.mu.RLock()
+	if settings, exists := cache.settings[adminID]; exists {
+		if time.Now().Before(cache.expiresAt[adminID]) {
+			cache.mu.RUnlock()
+			log.Printf("getAdminSettings: используем кеш для админа %s", adminID)
+			return settings, nil
+		}
+	}
+	cache.mu.RUnlock()
+
+	// Кеш устарел или отсутствует - загружаем из БД
+	settings, err := queries.GetAdminSettings(database.DB, adminID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Сохраняем в кеш
+	cache.mu.Lock()
+	cache.settings[adminID] = settings
+	cache.expiresAt[adminID] = time.Now().Add(cache.ttl)
+	cache.mu.Unlock()
+
+	log.Printf("getAdminSettings: загружено из БД и закешировано для админа %s", adminID)
+	return settings, nil
+}
+
+// invalidateAdminSettings инвалидирует кеш настроек админа
+func (cache *adminSettingsCache) invalidateAdminSettings(adminID uuid.UUID) {
+	cache.mu.Lock()
+	delete(cache.settings, adminID)
+	delete(cache.expiresAt, adminID)
+	cache.mu.Unlock()
+	log.Printf("invalidateAdminSettings: кеш инвалидирован для админа %s", adminID)
+}
 
 // GetChats возвращает список чатов для админки
 func GetChats(c *gin.Context) {
@@ -70,10 +125,10 @@ func GetChatByID(c *gin.Context) {
 
 	// Переводим сообщения для админа (lazy caching)
 	if Translator != nil {
-		// Получаем язык админа из JWT токена
+		// Получаем язык админа из JWT токена (с кешированием)
 		adminID, err := getAdminID(c)
 		if err == nil {
-			settings, err := queries.GetAdminSettings(database.DB, adminID)
+			settings, err := settingsCache.getAdminSettings(adminID)
 			if err == nil && settings.PreferredLanguage != "" {
 				log.Printf("GetChatByID: перевод сообщений для админа %s (язык: %s)", adminID, settings.PreferredLanguage)
 				err = Translator.TranslateMessagesForAdmin(c.Request.Context(), chat.Messages, settings.PreferredLanguage)
@@ -347,6 +402,9 @@ func UpdateAdminSettings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления настроек"})
 		return
 	}
+
+	// Инвалидируем кеш настроек админа
+	settingsCache.invalidateAdminSettings(adminID)
 
 	log.Printf("UpdateAdminSettings: настройки успешно обновлены для админа %s", adminID)
 
