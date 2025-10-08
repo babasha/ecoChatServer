@@ -8,7 +8,6 @@ import (
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
-	"github.com/egor/ecochatserver/models"
 	"github.com/egor/ecochatserver/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,20 +15,20 @@ import (
 
 // Кеш для настроек админов (чтобы не лезть в БД при каждом запросе)
 type adminSettingsCache struct {
-	settings  map[uuid.UUID]*models.AdminSettings
+	settings  map[uuid.UUID]*queries.AdminSettings
 	expiresAt map[uuid.UUID]time.Time
 	mu        sync.RWMutex
 	ttl       time.Duration
 }
 
 var settingsCache = &adminSettingsCache{
-	settings:  make(map[uuid.UUID]*models.AdminSettings),
+	settings:  make(map[uuid.UUID]*queries.AdminSettings),
 	expiresAt: make(map[uuid.UUID]time.Time),
 	ttl:       5 * time.Minute, // Кешируем на 5 минут
 }
 
 // getAdminSettings получает настройки админа с кешированием
-func (cache *adminSettingsCache) getAdminSettings(adminID uuid.UUID) (*models.AdminSettings, error) {
+func (cache *adminSettingsCache) getAdminSettings(adminID uuid.UUID) (*queries.AdminSettings, error) {
 	// Проверяем кеш
 	cache.mu.RLock()
 	if settings, exists := cache.settings[adminID]; exists {
