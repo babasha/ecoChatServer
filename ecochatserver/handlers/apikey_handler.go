@@ -18,7 +18,6 @@ import (
 type APIKeyRequest struct {
 	UserID    string `json:"userId" binding:"required"`
 	Email     string `json:"email" binding:"required"`
-	Password  string `json:"password" binding:"required"`
 	ExpiresIn int    `json:"expiresIn"` // в днях, 0 = без срока
 }
 
@@ -60,9 +59,10 @@ func GenerateAPIKey(c *gin.Context) {
 		return
 	}
 
-	// Проверяем учетные данные пользователя через внешнюю БД
-	// Здесь нужно будет добавить проверку через БД админки
-	log.Printf("GenerateAPIKey: генерация ключа для пользователя %s", req.Email)
+	// ВАЖНО: Мы НЕ проверяем учетные данные здесь!
+	// Проверка credentials должна происходить в админке (БД ballast)
+	// Этот эндпоинт вызывается ТОЛЬКО после успешной аутентификации в админке
+	log.Printf("GenerateAPIKey: генерация ключа для пользователя %s (email: %s)", req.UserID, req.Email)
 
 	// Генерируем API ключ
 	apiKey, err := generateAPIKey()
