@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 )
 
 // jwtKey - ключ для подписи JWT токена
@@ -34,18 +37,40 @@ func init() {
 	jwtKey = []byte(jwtSecret)
 }
 
-// AuthMiddleware проверяет JWT токен и авторизует запрос
+// AuthMiddleware проверяет JWT токен или API ключ и авторизует запрос
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Получаем токен из заголовка
 		authHeader := c.GetHeader("Authorization")
+		apiKeyHeader := c.GetHeader("X-API-Key")
+
+		// Проверяем API ключ сначала (если есть)
+		if apiKeyHeader != "" {
+			log.Printf("AuthMiddleware: проверка API ключа")
+			claims, err := ValidateAPIKey(apiKeyHeader)
+			if err != nil {
+				log.Printf("AuthMiddleware: неверный API ключ: %v", err)
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "неверный или устаревший API ключ"})
+				c.Abort()
+				return
+			}
+
+			// Устанавливаем данные пользователя в контексте
+			c.Set("adminID", claims.AdminID)
+			c.Set("clientID", claims.ClientID)
+			c.Set("role", claims.Role)
+			c.Next()
+			return
+		}
+
+		// Если нет API ключа, проверяем JWT токен
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется авторизация"})
 			c.Abort()
 			return
 		}
 
-		// Обрабатываем токен
+		// Обрабатываем JWT токен
 		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
 		claims, err := ValidateToken(tokenString)
 		if err != nil {
@@ -153,4 +178,66 @@ func Authenticate(email, password string) (string, error) {
 	}
 
 	return token, nil
+}
+
+// hashAPIKey хеширует API ключ для безопасного хранения
+func hashAPIKey(apiKey string) string {
+	hash := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(hash[:])
+}
+
+// ValidateAPIKey проверяет валидность API ключа и возвращает claims
+func ValidateAPIKey(apiKey string) (*JWTClaims, error) {
+	// Хешируем переданный ключ
+	keyHash := hashAPIKey(apiKey)
+
+	// Проверяем в БД
+	var userID uuid.UUID
+	var expiresAt *time.Time
+	var revoked bool
+
+	err := database.DB.QueryRow(`
+		SELECT user_id, expires_at, revoked
+		FROM api_keys
+		WHERE key_hash = $1
+	`, keyHash).Scan(&userID, &expiresAt, &revoked)
+
+	if err != nil {
+		log.Printf("ValidateAPIKey: ключ не найден или ошибка: %v", err)
+		return nil, errors.New("недействительный API ключ")
+	}
+
+	// Проверяем, не отозван ли ключ
+	if revoked {
+		log.Printf("ValidateAPIKey: ключ отозван")
+		return nil, errors.New("API ключ отозван")
+	}
+
+	// Проверяем срок действия
+	if expiresAt != nil && time.Now().After(*expiresAt) {
+		log.Printf("ValidateAPIKey: ключ истек")
+		return nil, errors.New("API ключ истек")
+	}
+
+	// Обновляем время последнего использования (асинхронно)
+	go func() {
+		_, err := database.DB.Exec(`
+			UPDATE api_keys
+			SET last_used_at = CURRENT_TIMESTAMP
+			WHERE key_hash = $1
+		`, keyHash)
+		if err != nil {
+			log.Printf("ValidateAPIKey: ошибка обновления last_used_at: %v", err)
+		}
+	}()
+
+	// Возвращаем claims как для обычного JWT
+	clientID := uuid.Nil // Для админов
+	claims := &JWTClaims{
+		AdminID:  userID.String(),
+		ClientID: clientID.String(),
+		Role:     "admin",
+	}
+
+	return claims, nil
 }
