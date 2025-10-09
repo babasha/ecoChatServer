@@ -331,6 +331,20 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.GET("/server-settings", handlers.GetServerSettings)
 		api.PUT("/server-settings", handlers.UpdateServerSettings)
 
+		// Публичная статистика WebSocket (для Dashboard без аутентификации)
+		api.GET("/stats/websocket", func(c *gin.Context) {
+			stats := handlers.WebSocketHub.GetStats()
+			activeClients := handlers.WebSocketHub.GetActiveClients()
+
+			c.JSON(http.StatusOK, gin.H{
+				"websocket": gin.H{
+					"stats":         stats,
+					"activeClients": activeClients,
+				},
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+		})
+
 		// Авторизация через HTTP (строгий rate limit для защиты от brute force)
 		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.Login)
 
