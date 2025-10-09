@@ -344,6 +344,9 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		return
 	}
 
+	// Увеличиваем счетчик реальных сообщений чата
+	WebSocketHub.IncrementChatMessage()
+
 	// Быстро обновляем время чата
 	updateChatTimestamp(chatID)
 
@@ -383,6 +386,9 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					log.Printf("processSendMessage: ошибка сохранения автоответа: %v", err)
 				} else {
 					botMsg = saved
+
+					// Увеличиваем счетчик реальных сообщений чата (включая бота)
+					WebSocketHub.IncrementChatMessage()
 
 					// Обновляем время чата
 					updateChatTimestamp(chatID)

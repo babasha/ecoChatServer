@@ -227,10 +227,8 @@ func (h *Hub) broadcastMessage(msg []byte) {
 		h.cleanupClient(client)
 	}
 
-	// Обновляем статистику
-	h.stats.mu.Lock()
-	h.stats.TotalMessages++
-	h.stats.mu.Unlock()
+	// Примечание: TotalMessages теперь увеличивается только для реальных сообщений чата
+	// через IncrementChatMessage(), а не для служебных broadcast'ов
 }
 
 // cleanupClient асинхронно очищает клиента
@@ -478,4 +476,11 @@ func (h *Hub) GetClientByID(sessionID string) *Client {
 		}
 	}
 	return nil
+}
+
+// IncrementChatMessage увеличивает счетчик реальных сообщений чата (не служебных)
+func (h *Hub) IncrementChatMessage() {
+	h.stats.mu.Lock()
+	h.stats.TotalMessages++
+	h.stats.mu.Unlock()
 }
