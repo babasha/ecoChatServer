@@ -348,10 +348,8 @@ func setupAPIRoutes(r *gin.Engine) {
 		// Авторизация через HTTP (строгий rate limit для защиты от brute force)
 		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.Login)
 
-		// API ключи (для админки)
-		api.POST("/auth/generate-key", middleware.StrictRateLimitMiddleware(), handlers.GenerateAPIKey)
-		api.POST("/auth/validate-key", handlers.ValidateAPIKey)
-		api.DELETE("/auth/revoke-key", middleware.AuthMiddleware(), handlers.RevokeAPIKey)
+		// OAuth 2.0 token endpoint для админки
+		api.POST("/auth/token", middleware.StrictRateLimitMiddleware(), handlers.TokenHandler)
 
 		// Webhook для Telegram и других внешних сервисов
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
