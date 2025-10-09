@@ -454,3 +454,28 @@ func (h *Hub) GetActiveClients() map[string]int {
 		"widget": len(h.widgetsByID),
 	}
 }
+
+// GetAllClients возвращает копию всех активных клиентов для безопасного итерирования
+func (h *Hub) GetAllClients() []*Client {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	clients := make([]*Client, 0, len(h.clients))
+	for c := range h.clients {
+		clients = append(clients, c)
+	}
+	return clients
+}
+
+// GetClientByID находит клиента по ID сессии
+func (h *Hub) GetClientByID(sessionID string) *Client {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for c := range h.clients {
+		if c.ID == sessionID {
+			return c
+		}
+	}
+	return nil
+}

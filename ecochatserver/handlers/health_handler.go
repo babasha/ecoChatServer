@@ -11,7 +11,6 @@ import (
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/gin-gonic/gin"
-	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"

@@ -35,10 +35,9 @@ func GetActiveSessions(c *gin.Context) {
 	sessions := make([]SessionInfo, 0)
 
 	// Используем метод GetAllClients из Hub для получения информации о клиентах
-	WebSocketHub.mu.RLock()
-	defer WebSocketHub.mu.RUnlock()
+	clients := WebSocketHub.GetAllClients()
 
-	for _, client := range WebSocketHub.clients {
+	for _, client := range clients {
 		// Определяем тип клиента
 		clientType := "unknown"
 		if client.ClientType == "admin" {
@@ -93,11 +92,9 @@ func DisconnectSession(c *gin.Context) {
 	}
 
 	// Ищем клиента и отключаем его
-	WebSocketHub.mu.RLock()
-	client, exists := WebSocketHub.clients[sessionID]
-	WebSocketHub.mu.RUnlock()
+	client := WebSocketHub.GetClientByID(sessionID)
 
-	if !exists {
+	if client == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
 	}

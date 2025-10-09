@@ -321,8 +321,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 			}
 		}
 	} else {
-		// Для виджета используем ID пользователя
-		senderID = client.ID
+		// Для виджета используем ID пользователя (UserID, а не ID сессии)
+		senderID = client.UserID
 		sender = "user"
 	}
 
