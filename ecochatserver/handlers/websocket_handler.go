@@ -168,6 +168,11 @@ func ServeWs(c *gin.Context) {
 	client := websocketpkg.NewClient(WebSocketHub, conn, clientType, adminID, chatID)
 	client.Context = c
 
+	// Устанавливаем IP и UserAgent для мониторинга
+	client.IP = c.ClientIP()
+	client.UserAgent = c.Request.UserAgent()
+	log.Printf("ServeWs: клиент подключен с IP=%s, UA=%s", client.IP, client.UserAgent)
+
 	// Для виджета сохраняем исходный строковый userID
 	if clientType == "widget" {
 		// Используем токен как строковый userID

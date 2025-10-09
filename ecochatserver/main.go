@@ -109,6 +109,14 @@ func main() {
 	handlers.InitAutoResponder()
 	log.Println("Автоответчик инициализирован")
 
+	// ─── Инициализация буферов логов ─────────────────────────────────────────
+	handlers.InitLogBuffers()
+	log.Println("Буферы логов инициализированы")
+
+	// ─── Инициализация настроек сервера ───────────────────────────────────────
+	handlers.InitServerSettings()
+	log.Println("Настройки сервера инициализированы")
+
 	// ─── REST API & WebSocket ───────────────────────────────────────────────
 	setupAPIRoutes(r)
 	log.Println("API маршруты настроены")
@@ -305,27 +313,23 @@ func setupAPIRoutes(r *gin.Engine) {
 	// API-группа для HTTP-запросов
 	api := r.Group("/api")
 	{
-		// Health-check для проверки работоспособности
-		api.GET("/health", func(c *gin.Context) {
-			stats := handlers.WebSocketHub.GetStats()
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "ok",
-				"time":    time.Now().Format(time.RFC3339),
-				"version": "1.2.0-optimized",
-				"features": []string{
-					"websocket",
-					"live_chat",
-					"auto_responder",
-					"partitioning",
-					"light_loading",
-					"simple_deduplication",
-				},
-				"websocket": gin.H{
-					"activeConnections": stats.ActiveConnections,
-					"totalMessages":     stats.TotalMessages,
-				},
-			})
-		})
+		// Health-check с расширенными метриками системы
+		api.GET("/health", handlers.GetHealthData)
+
+		// Логи для админки
+		api.GET("/logs/server", handlers.GetServerLogs)
+		api.GET("/logs/websocket", handlers.GetWebSocketLogs)
+
+		// Активные сессии и управление ими
+		api.GET("/sessions/active", handlers.GetActiveSessions)
+		api.POST("/sessions/:id/disconnect", handlers.DisconnectSession)
+
+		// Аналитика базы данных
+		api.GET("/analytics", handlers.GetAnalytics)
+
+		// Настройки сервера
+		api.GET("/server-settings", handlers.GetServerSettings)
+		api.PUT("/server-settings", handlers.UpdateServerSettings)
 
 		// Авторизация через HTTP (строгий rate limit для защиты от brute force)
 		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.Login)

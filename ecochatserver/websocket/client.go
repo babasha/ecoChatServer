@@ -26,24 +26,41 @@ var (
 // Client представляет одно WebSocket-соединение.
 type Client struct {
 	hub          *Hub
-	conn         *websocket.Conn
-	send         chan []byte  // исходящие сообщения
-	ClientType   string       // ЭКСПОРТИРОВАНО: "admin" или "widget"
-	ID           uuid.UUID    // ЭКСПОРТИРОВАНО: adminID или widget-userID (UUID)
-	UserIDString string       // ЭКСПОРТИРОВАНО: исходный строковый userID для виджета
-	ChatID       uuid.UUID    // ЭКСПОРТИРОВАНО: для виджета — chatID
-	Context      *gin.Context // Gin context для доступа к данным запроса/аутентификации
+	Conn         *websocket.Conn // ЭКСПОРТИРОВАНО для DisconnectSession
+	Send         chan interface{} // ЭКСПОРТИРОВАНО: исходящие сообщения (изменено на interface{} для гибкости)
+	send         chan []byte      // deprecated, для обратной совместимости
+	ClientType   string           // ЭКСПОРТИРОВАНО: "admin" или "widget"
+	ID           string           // ЭКСПОРТИРОВАНО: уникальный ID сессии (строка для удобства)
+	UserID       uuid.UUID        // adminID или widget-userID (UUID)
+	UserIDString string           // ЭКСПОРТИРОВАНО: исходный строковый userID для виджета
+	ChatID       uuid.UUID        // ЭКСПОРТИРОВАНО: для виджета — chatID
+	Context      *gin.Context     // Gin context для доступа к данным запроса/аутентификации
+
+	// Метаданные сессии для мониторинга
+	IP            string    // IP адрес клиента
+	UserAgent     string    // User Agent браузера
+	ConnectedAt   time.Time // Время подключения
+	LastActivity  time.Time // Время последней активности
+	MessageCount  int       // Количество отправленных сообщений
 }
 
 // NewClient создает нового WebSocket клиента
 func NewClient(hub *Hub, conn *websocket.Conn, clientType string, id uuid.UUID, chatID uuid.UUID) *Client {
+	now := time.Now()
 	return &Client{
-		hub:        hub,
-		conn:       conn,
-		send:       make(chan []byte, 256),
-		ClientType: clientType,
-		ID:         id,
-		ChatID:     chatID,
+		hub:           hub,
+		Conn:          conn,
+		send:          make(chan []byte, 256),
+		Send:          make(chan interface{}, 256),
+		ClientType:    clientType,
+		ID:            uuid.New().String(), // Генерируем уникальный ID сессии
+		UserID:        id,
+		ChatID:        chatID,
+		ConnectedAt:   now,
+		LastActivity:  now,
+		MessageCount:  0,
+		IP:            "",
+		UserAgent:     "",
 	}
 }
 
@@ -68,25 +85,30 @@ func (c *Client) SendError(code, message string) {
 func (c *Client) ReadPump(messageHandler func(client *Client, message []byte)) {
 	defer func() {
 		c.hub.Unregister <- c
-		c.conn.Close()
+		c.Conn.Close()
 		log.Printf("WebSocket closed: %s (%s)", c.ClientType, c.ID)
 	}()
 
-	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error {
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		c.LastActivity = time.Now() // Обновляем время последней активности
 		return nil
 	})
 
 	for {
-		_, raw, err := c.conn.ReadMessage()
+		_, raw, err := c.Conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WebSocket unexpected close (%s): %v", c.ID, err)
 			}
 			break
 		}
+
+		// Обновляем метаданные
+		c.LastActivity = time.Now()
+		c.MessageCount++
 
 		// Очищаем переносы строк
 		raw = bytes.TrimSpace(bytes.Replace(raw, newline, space, -1))
@@ -105,31 +127,57 @@ func (c *Client) WritePump() {
 	defer func() {
 		ticker.Stop()
 		c.hub.Unregister <- c
-		c.conn.Close()
+		c.Conn.Close()
 		log.Printf("WritePump closed: %s (%s)", c.ClientType, c.ID)
 	}()
 
 	for {
 		select {
-		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+		case message, ok := <-c.Send:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// канал закрыт Hub'ом
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
+			// Конвертируем message в JSON если это map или struct
+			var msgBytes []byte
+			switch v := message.(type) {
+			case []byte:
+				msgBytes = v
+			case string:
+				msgBytes = []byte(v)
+			default:
+				var err error
+				msgBytes, err = json.Marshal(message)
+				if err != nil {
+					log.Printf("WritePump: ошибка маршалинга сообщения: %v", err)
+					continue
+				}
+			}
+
+			w, err := c.Conn.NextWriter(websocket.TextMessage)
 			if err != nil {
 				return
 			}
-			w.Write(message)
+			w.Write(msgBytes)
 
 			// сбрасываем накопленные сообщения
-			n := len(c.send)
+			n := len(c.Send)
 			for i := 0; i < n; i++ {
 				w.Write(newline)
-				w.Write(<-c.send)
+				msg := <-c.Send
+				switch v := msg.(type) {
+				case []byte:
+					w.Write(v)
+				case string:
+					w.Write([]byte(v))
+				default:
+					if b, err := json.Marshal(msg); err == nil {
+						w.Write(b)
+					}
+				}
 			}
 
 			if err := w.Close(); err != nil {
@@ -137,8 +185,8 @@ func (c *Client) WritePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
