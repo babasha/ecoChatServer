@@ -657,7 +657,7 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 			"chatId":     chatID.String(),
 			"messageIds": p.MessageIDs,
 			"count":      markedCount,
-			"readBy":     client.ID.String(),
+			"readBy":     client.ID,
 		})
 
 		// Отправляем статус другим клиентам этого чата

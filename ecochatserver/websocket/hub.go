@@ -116,7 +116,7 @@ func (h *Hub) registerClient(c *Client) {
 
 	// Регистрируем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
-		h.adminsByID[c.ID.String()] = c
+		h.adminsByID[c.ID] = c
 		log.Printf("Админ %s зарегистрирован в adminsByID, всего админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
 		if _, ok := h.widgetsByID[c.ChatID.String()]; !ok {
@@ -131,7 +131,7 @@ func (h *Hub) registerClient(c *Client) {
 				log.Printf("Виджет сохранен по userID %s (string) для последующего обновления chat_id", c.UserIDString)
 			} else {
 				// Fallback на UUID если по какой-то причине строкового ID нет
-				h.widgetsByUserID[c.ID.String()] = c
+				h.widgetsByUserID[c.ID] = c
 				log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
 			}
 		}
@@ -169,7 +169,7 @@ func (h *Hub) unregisterClient(c *Client) {
 
 	// Удаляем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
-		delete(h.adminsByID, c.ID.String())
+		delete(h.adminsByID, c.ID)
 		log.Printf("Админ %s удален из adminsByID, осталось админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
 		chatID := c.ChatID.String()
@@ -183,7 +183,7 @@ func (h *Hub) unregisterClient(c *Client) {
 		if c.UserIDString != "" {
 			delete(h.widgetsByUserID, c.UserIDString)
 		}
-		delete(h.widgetsByUserID, c.ID.String())
+		delete(h.widgetsByUserID, c.ID)
 	}
 
 	// Удаляем из карты клиентов чата
@@ -303,7 +303,7 @@ func (h *Hub) SendConnectionStatus(c *Client, online bool) {
 		Timestamp  string `json:"timestamp"`
 	}{
 		ClientType: c.ClientType,
-		ID:         c.ID.String(),
+		ID:         c.ID,
 		ChatID:     c.ChatID.String(),
 		Online:     online,
 		Timestamp:  time.Now().Format(time.RFC3339),
