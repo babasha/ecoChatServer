@@ -157,6 +157,9 @@ func (c *Client) WritePump() {
 				}
 			}
 
+			// Логируем что отправляем
+			log.Printf("WS send to %s %s: %s", c.ClientType, c.ID, string(msgBytes))
+
 			w, err := c.Conn.NextWriter(websocket.TextMessage)
 			if err != nil {
 				return
