@@ -124,16 +124,14 @@ func (h *Hub) registerClient(c *Client) {
 		}
 		h.widgetsByID[c.ChatID.String()][c] = true
 
-		// Если виджет подключился без chat_id, сохраняем по строковому userID для последующего обновления
-		if c.ChatID == uuid.Nil || c.ChatID.String() == "00000000-0000-0000-0000-000000000000" {
-			if c.UserIDString != "" {
-				h.widgetsByUserID[c.UserIDString] = c
-				log.Printf("Виджет сохранен по userID %s (string) для последующего обновления chat_id", c.UserIDString)
-			} else {
-				// Fallback на UUID если по какой-то причине строкового ID нет
-				h.widgetsByUserID[c.ID] = c
-				log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
-			}
+		// Всегда сохраняем виджет по userID для возможности обновления chat_id
+		if c.UserIDString != "" {
+			h.widgetsByUserID[c.UserIDString] = c
+			log.Printf("Виджет сохранен по userID %s (string) для последующего обновления chat_id", c.UserIDString)
+		} else {
+			// Fallback на UUID если по какой-то причине строкового ID нет
+			h.widgetsByUserID[c.ID] = c
+			log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
 		}
 	}
 
