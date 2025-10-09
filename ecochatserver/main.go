@@ -277,9 +277,20 @@ func setupCORS(r *gin.Engine) {
 		}
 
 		log.Printf("CORS настроен для доменов: %v", allow)
+		log.Printf("CORS также разрешает все Vercel preview deployments (*.vercel.app)")
 
 		conf = cors.Config{
-			AllowOrigins:     allow,
+			AllowOriginFunc: func(origin string) bool {
+				// Разрешаем все домены из списка
+				if contains(allow, origin) {
+					return true
+				}
+				// Разрешаем все Vercel preview deployments
+				if strings.HasSuffix(origin, ".vercel.app") {
+					return true
+				}
+				return false
+			},
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
 			ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
