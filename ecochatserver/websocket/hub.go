@@ -355,10 +355,11 @@ func (h *Hub) SendToAllAdmins(message []byte) int {
 
 	sent := 0
 	for _, admin := range admins {
+		log.Printf("SendToAllAdmins: попытка отправить админу %s, message: %s", admin.ID, string(message))
 		select {
 		case admin.send <- message:
 			sent++
-			log.Printf("SendToAllAdmins: сообщение отправлено админу %s", admin.ID)
+			log.Printf("SendToAllAdmins: сообщение успешно добавлено в канал админа %s", admin.ID)
 		default:
 			log.Printf("SendToAllAdmins: не удалось отправить админу %s (канал занят)", admin.ID)
 			go h.cleanupClient(admin)
