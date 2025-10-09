@@ -36,10 +36,10 @@ type Hub struct {
 
 // HubStats содержит статистику работы хаба (для чтения, без мьютекса)
 type HubStats struct {
-	TotalConnections    int64
-	ActiveConnections   int64
-	TotalMessages       int64
-	DisconnectedClients int64
+	TotalConnections    int64 `json:"totalConnections"`
+	ActiveConnections   int64 `json:"activeConnections"`
+	TotalMessages       int64 `json:"totalMessages"`
+	DisconnectedClients int64 `json:"disconnectedClients"`
 }
 
 // hubStatsInternal содержит статистику с мьютексом (для записи)
