@@ -436,6 +436,21 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 	// Удаляем из widgetsByUserID, так как chat_id теперь известен
 	delete(h.widgetsByUserID, userID)
 
+	// Отправляем виджету уведомление о новом chat_id
+	payload := struct {
+		ChatID string `json:"chatId"`
+	}{
+		ChatID: newChatIDStr,
+	}
+	if msg, err := NewMessage("chat_created", payload); err == nil {
+		select {
+		case client.send <- msg:
+			log.Printf("UpdateWidgetChatID: отправлено уведомление виджету о новом chat_id %s", newChatID)
+		default:
+			log.Printf("UpdateWidgetChatID: WARNING - не удалось отправить уведомление виджету (канал занят)")
+		}
+	}
+
 	log.Printf("UpdateWidgetChatID: виджет успешно перерегистрирован с новым chat_id %s", newChatID)
 	return true
 }
