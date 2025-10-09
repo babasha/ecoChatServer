@@ -81,7 +81,7 @@ func (c *Client) SendError(code, message string) {
 	c.send <- errorMsg
 }
 
-// ReadPump читает сообщения  из WebSocket, парсит их и вызывает handler.
+// ReadPump читает сообщения из WebSocket, парсит их и вызывает handler.
 func (c *Client) ReadPump(messageHandler func(client *Client, message []byte)) {
 	defer func() {
 		c.hub.Unregister <- c
