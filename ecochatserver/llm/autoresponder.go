@@ -247,8 +247,8 @@ type LLM interface {
 	GenerateResponse(ctx context.Context, input string, history []Message) (string, error)
 	GenerateResponseWithTools(ctx context.Context, userMessage string, chatHistory []Message, tools []GeminiTool) (textResponse string, functionCall *GeminiFunctionCall, err error)
 	ContinueWithFunctionResult(ctx context.Context, chatHistory []Message, functionCall *GeminiFunctionCall, functionResult string) (string, error)
-	DetectLanguage(ctx context.Context, text string) (string, error)
 	TranslateText(ctx context.Context, text, fromLang, toLang string) (string, error)
+	DetectAndTranslate(ctx context.Context, text, targetLang string) (*DetectAndTranslateResult, error)
 }
 
 type AutoResponderConfig struct {

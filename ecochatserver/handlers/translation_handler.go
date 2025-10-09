@@ -35,22 +35,6 @@ type TranslationResult struct {
 
 // TranslateUserMessage переводит сообщение от пользователя на язык админа
 func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content string, chatID uuid.UUID) (*TranslationResult, error) {
-	// Определяем язык сообщения пользователя
-	log.Printf("TranslateUserMessage: определение языка сообщения")
-	detectedLang, err := ts.llmClient.DetectLanguage(ctx, content)
-	if err != nil {
-		log.Printf("TranslateUserMessage: ошибка определения языка: %v", err)
-		// Если не удалось определить язык, возвращаем оригинал
-		return &TranslationResult{
-			Content:          content,
-			Metadata:         map[string]interface{}{},
-			DetectedLanguage: "unknown",
-			WasTranslated:    false,
-		}, nil
-	}
-
-	log.Printf("TranslateUserMessage: определен язык: %s", detectedLang)
-
 	// Получаем настройки админа (предпочитаемый язык)
 	// TODO: В будущем нужно определить конкретного админа, работающего с чатом
 	// Пока используем дефолтного админа
@@ -67,32 +51,31 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 	targetLang := adminSettings.PreferredLanguage
 	log.Printf("TranslateUserMessage: целевой язык админа: %s", targetLang)
 
-	// Если языки совпадают, возвращаем оригинал
-	if detectedLang == targetLang {
-		log.Printf("TranslateUserMessage: языки совпадают, перевод не требуется")
+	// 🚀 ОПТИМИЗАЦИЯ: Используем DetectAndTranslate - один запрос вместо двух!
+	log.Printf("TranslateUserMessage: определение языка И перевод за один запрос")
+	result, err := ts.llmClient.DetectAndTranslate(ctx, content, targetLang)
+	if err != nil {
+		log.Printf("TranslateUserMessage: ошибка DetectAndTranslate: %v", err)
+		// Если не удалось, возвращаем оригинал
 		return &TranslationResult{
-			Content: content,
-			Metadata: map[string]interface{}{
-				"detectedLanguage": detectedLang,
-			},
-			DetectedLanguage: detectedLang,
+			Content:          content,
+			Metadata:         map[string]interface{}{},
+			DetectedLanguage: "unknown",
 			WasTranslated:    false,
 		}, nil
 	}
 
-	// Переводим текст
-	log.Printf("TranslateUserMessage: перевод с %s на %s", detectedLang, targetLang)
-	translated, err := ts.llmClient.TranslateText(ctx, content, detectedLang, targetLang)
-	if err != nil {
-		log.Printf("TranslateUserMessage: ошибка перевода: %v", err)
-		// Если перевод не удался, возвращаем оригинал
+	log.Printf("TranslateUserMessage: определен язык: %s", result.DetectedLang)
+
+	// Если языки совпадают (Gemini вернёт оригинал в translation)
+	if result.DetectedLang == targetLang {
+		log.Printf("TranslateUserMessage: языки совпадают, перевод не требуется")
 		return &TranslationResult{
 			Content: content,
 			Metadata: map[string]interface{}{
-				"detectedLanguage":  detectedLang,
-				"translationFailed": true,
+				"detectedLanguage": result.DetectedLang,
 			},
-			DetectedLanguage: detectedLang,
+			DetectedLanguage: result.DetectedLang,
 			WasTranslated:    false,
 		}, nil
 	}
@@ -101,18 +84,18 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 
 	// Возвращаем результат с метаданными
 	return &TranslationResult{
-		Content: translated,
+		Content: result.Translation,
 		Metadata: map[string]interface{}{
 			"originalText":     content,
-			"translatedText":   translated,
-			"detectedLanguage": detectedLang,
+			"translatedText":   result.Translation,
+			"detectedLanguage": result.DetectedLang,
 			"targetLanguage":   targetLang,
 			"isTranslated":     true,
 			"translations": map[string]interface{}{
-				targetLang: translated,
+				targetLang: result.Translation,
 			},
 		},
-		DetectedLanguage: detectedLang,
+		DetectedLanguage: result.DetectedLang,
 		WasTranslated:    true,
 	}, nil
 }

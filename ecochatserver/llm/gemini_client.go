@@ -599,35 +599,6 @@ func quote(s string) string {
 	return string(data)
 }
 
-// DetectLanguage определяет язык текста с помощью Gemini
-func (c *GeminiClient) DetectLanguage(ctx context.Context, text string) (string, error) {
-	if text == "" {
-		return "", fmt.Errorf("текст для определения языка пуст")
-	}
-
-	prompt := fmt.Sprintf(`Определи язык следующего текста. Ответь ТОЛЬКО двухбуквенным кодом языка (например: ru, en, pl, de, fr, es, it, uk, be).
-
-Текст: "%s"
-
-Ответ (только код языка):`, text)
-
-	response, err := c.GenerateResponse(ctx, prompt, []Message{
-		{
-			Role:    "system",
-			Content: "Ты эксперт по определению языков. Отвечай ТОЛЬКО двухбуквенным ISO кодом языка без дополнительных объяснений.",
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("ошибка запроса к Gemini: %w", err)
-	}
-
-	// Очищаем ответ от лишних символов
-	langCode := strings.TrimSpace(strings.ToLower(response))
-	langCode = strings.Trim(langCode, ".,!?\"'")
-
-	return langCode, nil
-}
-
 // TranslateText переводит текст с одного языка на другой
 func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang string) (string, error) {
 	if text == "" {
@@ -699,6 +670,100 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 	}
 
 	return "", fmt.Errorf("translation failed after 3 attempts")
+}
+
+// DetectAndTranslateResult результат определения языка и перевода
+type DetectAndTranslateResult struct {
+	DetectedLang string
+	Translation  string
+}
+
+// DetectAndTranslate определяет язык и переводит текст за ОДИН запрос (быстрее)
+func (c *GeminiClient) DetectAndTranslate(ctx context.Context, text, targetLang string) (*DetectAndTranslateResult, error) {
+	if text == "" {
+		return nil, fmt.Errorf("текст для перевода пуст")
+	}
+
+	targetName := langNames[targetLang]
+	if targetName == "" {
+		targetName = targetLang
+	}
+
+	prompt := fmt.Sprintf(`Determine the language of the text and translate it to %s.
+
+Text: "%s"
+
+Reply in JSON format:
+{
+  "detectedLang": "two-letter language code (ru, en, pl, etc.)",
+  "translation": "translated text"
+}
+
+If text is already in %s, return it as translation with detected language.`, targetName, text, targetName)
+
+	reqBody := GeminiRequest{
+		Contents: []GeminiMessage{{
+			Role:  "user",
+			Parts: []map[string]interface{}{{"text": prompt}},
+		}},
+		SystemInstruction: &GeminiSystemInstruction{
+			Parts: []map[string]interface{}{{"text": "You are a language detection and translation expert. Always reply in valid JSON format only."}},
+		},
+		GenerationConfig: map[string]interface{}{
+			"temperature":     0.3,
+			"maxOutputTokens": 2048,
+		},
+	}
+
+	payload, _ := json.Marshal(reqBody)
+	endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", c.apiKey)
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var geminiResp GeminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response from Gemini")
+	}
+
+	responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format")
+	}
+
+	// Парсим JSON ответ
+	responseText = strings.TrimSpace(responseText)
+	// Убираем markdown код блоки если есть
+	responseText = strings.TrimPrefix(responseText, "```json")
+	responseText = strings.TrimPrefix(responseText, "```")
+	responseText = strings.TrimSuffix(responseText, "```")
+	responseText = strings.TrimSpace(responseText)
+
+	var result DetectAndTranslateResult
+	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+		log.Printf("DetectAndTranslate: failed to parse JSON: %s", responseText)
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Нормализуем код языка
+	result.DetectedLang = strings.ToLower(strings.TrimSpace(result.DetectedLang))
+
+	return &result, nil
 }
 
 // TranslateBatch переводит несколько текстов за один запрос (более эффективно)
