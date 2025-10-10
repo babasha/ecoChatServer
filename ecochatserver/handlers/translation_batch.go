@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/egor/ecochatserver/database"
-	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
 )
 
