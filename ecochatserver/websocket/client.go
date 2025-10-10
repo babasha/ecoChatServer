@@ -28,7 +28,6 @@ type Client struct {
 	hub          *Hub
 	Conn         *websocket.Conn // ЭКСПОРТИРОВАНО для DisconnectSession
 	Send         chan interface{} // ЭКСПОРТИРОВАНО: исходящие сообщения (изменено на interface{} для гибкости)
-	send         chan []byte      // deprecated, для обратной совместимости
 	ClientType   string           // ЭКСПОРТИРОВАНО: "admin" или "widget"
 	ID           string           // ЭКСПОРТИРОВАНО: уникальный ID сессии (строка для удобства)
 	UserID       uuid.UUID        // adminID или widget-userID (UUID)
@@ -50,7 +49,6 @@ func NewClient(hub *Hub, conn *websocket.Conn, clientType string, id uuid.UUID, 
 	return &Client{
 		hub:           hub,
 		Conn:          conn,
-		send:          make(chan []byte, 256),
 		Send:          make(chan interface{}, 256),
 		ClientType:    clientType,
 		ID:            uuid.New().String(), // Генерируем уникальный ID сессии
@@ -71,14 +69,14 @@ func (c *Client) SendJSON(data interface{}) error {
 		return err
 	}
 
-	c.send <- json
+	c.Send <- json
 	return nil
 }
 
 // SendError отправляет сообщение об ошибке
 func (c *Client) SendError(code, message string) {
 	errorMsg, _ := NewErrorMessage(code, message)
-	c.send <- errorMsg
+	c.Send <- errorMsg
 }
 
 // ReadPump читает сообщения из WebSocket, парсит их и вызывает handler.

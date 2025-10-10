@@ -211,7 +211,7 @@ func (h *Hub) broadcastMessage(msg []byte) {
 
 	for client := range h.clients {
 		select {
-		case client.send <- msg:
+		case client.Send <- msg:
 			// Сообщение успешно отправлено
 		default:
 			// Клиент не готов принять сообщение
@@ -250,7 +250,7 @@ func (h *Hub) SendToAdmin(adminID string, message []byte) bool {
 
 	if c, ok := h.adminsByID[adminID]; ok {
 		select {
-		case c.send <- message:
+		case c.Send <- message:
 			return true
 		default:
 			go h.cleanupClient(c)
@@ -278,7 +278,7 @@ func (h *Hub) SendToChat(chatID string, message []byte) int {
 	sent := 0
 	for _, c := range clients {
 		select {
-		case c.send <- message:
+		case c.Send <- message:
 			sent++
 		default:
 			go h.cleanupClient(c)
@@ -357,7 +357,7 @@ func (h *Hub) SendToAllAdmins(message []byte) int {
 	for _, admin := range admins {
 		log.Printf("SendToAllAdmins: попытка отправить админу %s, message: %s", admin.ID, string(message))
 		select {
-		case admin.send <- message:
+		case admin.Send <- message:
 			sent++
 			log.Printf("SendToAllAdmins: сообщение успешно добавлено в канал админа %s", admin.ID)
 		default:
@@ -444,7 +444,7 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 	}
 	if msg, err := NewMessage("chat_created", payload); err == nil {
 		select {
-		case client.send <- msg:
+		case client.Send <- msg:
 			log.Printf("UpdateWidgetChatID: отправлено уведомление виджету о новом chat_id %s", newChatID)
 		default:
 			log.Printf("UpdateWidgetChatID: WARNING - не удалось отправить уведомление виджету (канал занят)")
