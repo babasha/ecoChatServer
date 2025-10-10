@@ -25,3 +25,10 @@ Thumbs.db
 # Database
 *.db
 *.sqlite
+
+# Node.js (temporary tools)
+node_modules/
+package.json
+package-lock.json
+apply-sql.js
+apply_settings.sql
