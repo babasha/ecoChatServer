@@ -344,7 +344,13 @@ func setupAPIRoutes(r *gin.Engine) {
 
 		// LLM Settings API
 		api.GET("/settings", handlers.GetSettings)
+		api.GET("/settings/llm", func(c *gin.Context) {
+			c.Request.URL.RawQuery = "category=llm"
+			handlers.GetSettings(c)
+		})
+		api.PUT("/settings/llm", handlers.UpdateSettingsBatch)
 		api.PUT("/settings/batch", handlers.UpdateSettingsBatch)
+		api.POST("/settings/llm/test", handlers.TestLLMProviderConnection)
 		api.POST("/llm/reload", handlers.ReloadLLMProvider)
 		api.POST("/llm/test", handlers.TestLLMProviderConnection)
 
