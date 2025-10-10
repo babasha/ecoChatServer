@@ -206,6 +206,10 @@ func (h *Hub) unregisterClient(c *Client) {
 	h.stats.mu.Unlock()
 
 	log.Printf("Клиент отключен: type=%s, id=%s", c.ClientType, c.ID)
+
+	// Уведомляем админов об отключении клиента
+	// Важно: вызываем ПОСЛЕ unlock, чтобы избежать deadlock
+	go h.SendConnectionStatus(c, false)
 }
 
 // broadcastMessage отправляет сообщение всем клиентам (исправлена race condition)
