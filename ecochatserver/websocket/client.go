@@ -73,7 +73,7 @@ func (c *Client) SendJSON(data interface{}) error {
 	return nil
 }
 
-// SendError отправляет сообщение об ошибке
+// SendErro r отправляет сообщение об ошибке
 func (c *Client) SendError(code, message string) {
 	errorMsg, _ := NewErrorMessage(code, message)
 	c.Send <- errorMsg
