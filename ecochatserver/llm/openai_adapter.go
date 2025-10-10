@@ -136,7 +136,7 @@ func (a *OpenAIAdapter) GenerateResponse(
 	}
 
 	if opts != nil {
-		req.Temperature = opts.Temperature
+		req.Temperature = float32(opts.Temperature)
 		req.MaxTokens = opts.MaxTokens
 	}
 
@@ -167,7 +167,7 @@ func (a *OpenAIAdapter) GenerateWithTools(
 	}
 
 	if opts != nil {
-		req.Temperature = opts.Temperature
+		req.Temperature = float32(opts.Temperature)
 		req.MaxTokens = opts.MaxTokens
 	}
 
@@ -184,7 +184,7 @@ func (a *OpenAIAdapter) ContinueWithFunctionResult(
 	ctx context.Context,
 	chatHistory []Message,
 	functionCall *FunctionCall,
-	result interface{},
+	result string,
 	opts *GenerateOptions,
 ) (*Response, error) {
 	// Конвертируем историю в OpenAI формат
@@ -203,11 +203,10 @@ func (a *OpenAIAdapter) ContinueWithFunctionResult(
 		Content: "", // может быть пустым при tool call
 	})
 
-	// Добавляем результат выполнения функции
-	resultJSON, _ := json.Marshal(result)
+	// Добавляем результат выполнения функции (result уже строка)
 	messages = append(messages, openAIMessage{
 		Role:       "tool",
-		Content:    string(resultJSON),
+		Content:    result,
 		ToolCallID: functionCall.Name + "_call", // ID tool call
 	})
 
@@ -217,7 +216,7 @@ func (a *OpenAIAdapter) ContinueWithFunctionResult(
 	}
 
 	if opts != nil {
-		req.Temperature = opts.Temperature
+		req.Temperature = float32(opts.Temperature)
 		req.MaxTokens = opts.MaxTokens
 	}
 
@@ -287,14 +286,14 @@ Text: %s`, targetLang, text)
 		// Если не получилось распарсить - возвращаем как есть
 		log.Printf("[OPENAI_ADAPTER] Failed to parse DetectAndTranslate JSON: %v", err)
 		return &TranslationResult{
-			DetectedLanguage: "unknown",
-			TranslatedText:   resp.Text,
+			DetectedLang: "unknown",
+			Translation:  resp.Text,
 		}, nil
 	}
 
 	return &TranslationResult{
-		DetectedLanguage: result.DetectedLanguage,
-		TranslatedText:   result.TranslatedText,
+		DetectedLang: result.DetectedLanguage,
+		Translation:  result.TranslatedText,
 	}, nil
 }
 
