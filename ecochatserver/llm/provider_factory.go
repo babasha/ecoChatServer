@@ -242,82 +242,13 @@ func InitializeGlobalProvider(db *sql.DB) error {
 
 // ReloadProviderFromDB перезагружает провайдера из БД (HOT-SWAP)
 func ReloadProviderFromDB(db *sql.DB) error {
-	// Импортируем здесь чтобы избежать циклических зависимостей
-	// queries package будет импортирован динамически
+	log.Printf("[PROVIDER_FACTORY] 🔄 Reloading provider from database...")
 
-	// Получаем настройки из БД
-	query := `
-		SELECT
-			active_provider,
-			gemini_api_key, gemini_model,
-			openai_api_key, openai_model, openai_base_url,
-			lmstudio_base_url, lmstudio_model, lmstudio_api_key,
-			claude_api_key, claude_model,
-			api_timeout_seconds
-		FROM llm_settings
-		WHERE id = '00000000-0000-0000-0000-000000000001'::UUID
-		LIMIT 1
-	`
+	// Используем database.GetSetting для чтения настроек из app_settings
+	// Это работает так же как LoadConfigFromEnv(), но явно указывает что читаем из БД
+	database.InvalidateSettingsCache() // Сбрасываем кэш перед чтением
 
-	var (
-		activeProvider    string
-		geminiAPIKey      sql.NullString
-		geminiModel       string
-		openaiAPIKey      sql.NullString
-		openaiModel       string
-		openaiBaseURL     string
-		lmstudioBaseURL   string
-		lmstudioModel     string
-		lmstudioAPIKey    sql.NullString
-		claudeAPIKey      sql.NullString
-		claudeModel       string
-		apiTimeoutSeconds int
-	)
-
-	err := db.QueryRow(query).Scan(
-		&activeProvider,
-		&geminiAPIKey, &geminiModel,
-		&openaiAPIKey, &openaiModel, &openaiBaseURL,
-		&lmstudioBaseURL, &lmstudioModel, &lmstudioAPIKey,
-		&claudeAPIKey, &claudeModel,
-		&apiTimeoutSeconds,
-	)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("no settings found in database")
-		}
-		return fmt.Errorf("failed to query settings: %w", err)
-	}
-
-	// Создаем конфигурацию на основе активного провайдера
-	config := &ProviderConfig{
-		Type:    ProviderType(activeProvider),
-		Timeout: apiTimeoutSeconds,
-	}
-
-	switch config.Type {
-	case ProviderGemini:
-		config.APIKey = geminiAPIKey.String
-		config.Model = geminiModel
-
-	case ProviderOpenAI:
-		config.APIKey = openaiAPIKey.String
-		config.Model = openaiModel
-		config.BaseURL = openaiBaseURL
-
-	case ProviderLMStudio:
-		config.BaseURL = lmstudioBaseURL
-		config.Model = lmstudioModel
-		config.APIKey = lmstudioAPIKey.String
-
-	case ProviderClaude:
-		config.APIKey = claudeAPIKey.String
-		config.Model = claudeModel
-
-	default:
-		return fmt.Errorf("unknown provider type: %s", activeProvider)
-	}
+	config := LoadConfigFromEnv() // Это уже читает из БД через database.GetSetting()
 
 	// Создаем нового провайдера
 	provider, err := NewProvider(config)
@@ -328,7 +259,8 @@ func ReloadProviderFromDB(db *sql.DB) error {
 	// Устанавливаем как глобального
 	SetGlobalProvider(provider)
 
-	log.Printf("[PROVIDER_FACTORY] 🔥 HOT-SWAP completed: %s", provider.GetName())
+	log.Printf("[PROVIDER_FACTORY] 🔥 HOT-SWAP completed: %s (provider=%s, model=%s)",
+		provider.GetName(), config.Type, config.Model)
 	return nil
 }
 
