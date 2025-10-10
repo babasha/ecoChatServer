@@ -26,22 +26,13 @@ var Translator *TranslationService
 
 // InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
-	raw := os.Getenv("ENABLE_AUTO_RESPONDER")
-	if raw == "" {
-		raw = "true"
-	}
-	enabled, err := strconv.ParseBool(raw)
-	if err != nil {
-		log.Printf(
-			"InitAutoResponder: неверное значение ENABLE_AUTO_RESPONDER=%q: %v — включаем по умолчанию",
-			raw, err,
-		)
-		enabled = true
-	}
+	// Проверяем включен ли автоответчик (из БД с fallback на ENV)
+	enabled := database.GetSettingBool("ENABLE_AUTO_RESPONDER", true)
 	if !enabled {
-		log.Println("Автоответчик отключен в настройках")
+		log.Println("Автоответчик отключен в настройках БД/ENV")
 		return
 	}
+	log.Println("Автоответчик включен, инициализируем...")
 
 	// 🔧 ОПТИМИЗАЦИЯ: Создаём ОДИН провайдер и переиспользуем его
 	// Это экономит ресурсы - один HTTP клиент вместо двух

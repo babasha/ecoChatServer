@@ -1,11 +1,15 @@
 package llm
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
+
+	"github.com/egor/ecochatserver/database"
 )
 
 // ============================================================================
@@ -37,50 +41,46 @@ func NewProvider(config *ProviderConfig) (Provider, error) {
 	}
 }
 
-// LoadConfigFromEnv загружает конфигурацию из переменных окружения
+// LoadConfigFromEnv загружает конфигурацию из БД (приоритет) или переменных окружения
+// Приоритет: 1) ENV переменная, 2) БД, 3) дефолтное значение
 func LoadConfigFromEnv() *ProviderConfig {
 	config := &ProviderConfig{
 		Type:    ProviderDefault,
 		Timeout: 30, // по умолчанию 30 секунд
 	}
 
-	// Читаем тип провайдера
-	if providerType := os.Getenv("LLM_PROVIDER"); providerType != "" {
-		config.Type = ProviderType(providerType)
-	}
+	// Читаем тип провайдера из БД (с fallback на ENV и дефолт)
+	providerTypeStr := database.GetSetting("LLM_PROVIDER", string(ProviderDefault))
+	config.Type = ProviderType(providerTypeStr)
 
-	// Читаем API ключ в зависимости от провайдера
+	log.Printf("[PROVIDER_FACTORY] Loading config: provider=%s", config.Type)
+
+	// Читаем API ключ в зависимости от провайдера (из БД с fallback на ENV)
 	switch config.Type {
 	case ProviderGemini:
-		config.APIKey = os.Getenv("GEMINI_API_KEY")
-		config.Model = getEnvOrDefault("GEMINI_MODEL", "gemini-2.5-flash")
+		config.APIKey = database.GetSetting("GEMINI_API_KEY", "")
+		config.Model = database.GetSetting("GEMINI_MODEL", "gemini-2.5-flash")
 	case ProviderOpenAI:
-		config.APIKey = os.Getenv("OPENAI_API_KEY")
-		config.Model = getEnvOrDefault("OPENAI_MODEL", "gpt-4o-mini")
-		config.BaseURL = getEnvOrDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
+		config.APIKey = database.GetSetting("OPENAI_API_KEY", "")
+		config.Model = database.GetSetting("OPENAI_MODEL", "gpt-4o-mini")
+		config.BaseURL = database.GetSetting("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	case ProviderLMStudio:
-		config.APIKey = os.Getenv("LMSTUDIO_API_KEY") // опционален для LM Studio
-		config.BaseURL = getEnvOrDefault("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
-		config.Model = getEnvOrDefault("LMSTUDIO_MODEL", "local-model")
+		config.APIKey = database.GetSetting("LMSTUDIO_API_KEY", "") // опционален для LM Studio
+		config.BaseURL = database.GetSetting("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
+		config.Model = database.GetSetting("LMSTUDIO_MODEL", "local-model")
 	case ProviderClaude:
-		config.APIKey = os.Getenv("ANTHROPIC_API_KEY")
-		config.Model = getEnvOrDefault("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+		config.APIKey = database.GetSetting("ANTHROPIC_API_KEY", "")
+		config.Model = database.GetSetting("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 	case ProviderOllama:
-		config.BaseURL = getEnvOrDefault("OLLAMA_BASE_URL", "http://localhost:11434")
-		config.Model = getEnvOrDefault("OLLAMA_MODEL", "llama3.1")
+		config.BaseURL = database.GetSetting("OLLAMA_BASE_URL", "http://localhost:11434")
+		config.Model = database.GetSetting("OLLAMA_MODEL", "llama3.1")
 	}
 
-	// Читаем таймаут
-	if timeoutStr := os.Getenv("LLM_API_TIMEOUT"); timeoutStr != "" {
-		if timeout, err := strconv.Atoi(timeoutStr); err == nil {
-			config.Timeout = timeout
-		}
-	}
+	// Читаем таймаут из БД
+	config.Timeout = database.GetSettingInt("LLM_API_TIMEOUT", 30)
 
-	// Читаем кастомный base URL (если указан)
-	if baseURL := os.Getenv("LLM_BASE_URL"); baseURL != "" {
-		config.BaseURL = baseURL
-	}
+	log.Printf("[PROVIDER_FACTORY] Config loaded: type=%s, model=%s, timeout=%ds",
+		config.Type, config.Model, config.Timeout)
 
 	return config
 }
@@ -188,4 +188,160 @@ func newLMStudioProvider(config *ProviderConfig) (Provider, error) {
 
 	log.Printf("[PROVIDER_FACTORY] LM Studio provider created with base URL: %s", config.BaseURL)
 	return adapter, nil
+}
+
+// ============================================================================
+// GLOBAL PROVIDER with HOT-SWAP support
+// ============================================================================
+
+var (
+	globalProvider Provider
+	providerMutex  sync.RWMutex
+)
+
+// GetGlobalProvider возвращает глобальный провайдер (thread-safe)
+func GetGlobalProvider() Provider {
+	providerMutex.RLock()
+	defer providerMutex.RUnlock()
+	return globalProvider
+}
+
+// SetGlobalProvider устанавливает глобальный провайдер (thread-safe)
+func SetGlobalProvider(provider Provider) {
+	providerMutex.Lock()
+	defer providerMutex.Unlock()
+	globalProvider = provider
+	log.Printf("[PROVIDER_FACTORY] 🔄 Global provider updated: %s", provider.GetName())
+}
+
+// InitializeGlobalProvider инициализирует глобальный провайдер
+// Сначала пытается загрузить из БД, если не удалось - из env
+func InitializeGlobalProvider(db *sql.DB) error {
+	log.Printf("[PROVIDER_FACTORY] Initializing global provider...")
+
+	// Пытаемся загрузить из БД
+	if db != nil {
+		err := ReloadProviderFromDB(db)
+		if err == nil {
+			log.Printf("[PROVIDER_FACTORY] ✅ Provider loaded from database")
+			return nil
+		}
+		log.Printf("[PROVIDER_FACTORY] ⚠️ Failed to load from DB: %v, falling back to env", err)
+	}
+
+	// Fallback на env переменные
+	config := LoadConfigFromEnv()
+	provider, err := NewProvider(config)
+	if err != nil {
+		return fmt.Errorf("failed to create provider from env: %w", err)
+	}
+
+	SetGlobalProvider(provider)
+	log.Printf("[PROVIDER_FACTORY] ✅ Provider loaded from environment: %s", provider.GetName())
+	return nil
+}
+
+// ReloadProviderFromDB перезагружает провайдера из БД (HOT-SWAP)
+func ReloadProviderFromDB(db *sql.DB) error {
+	// Импортируем здесь чтобы избежать циклических зависимостей
+	// queries package будет импортирован динамически
+
+	// Получаем настройки из БД
+	query := `
+		SELECT
+			active_provider,
+			gemini_api_key, gemini_model,
+			openai_api_key, openai_model, openai_base_url,
+			lmstudio_base_url, lmstudio_model, lmstudio_api_key,
+			claude_api_key, claude_model,
+			api_timeout_seconds
+		FROM llm_settings
+		WHERE id = '00000000-0000-0000-0000-000000000001'::UUID
+		LIMIT 1
+	`
+
+	var (
+		activeProvider    string
+		geminiAPIKey      sql.NullString
+		geminiModel       string
+		openaiAPIKey      sql.NullString
+		openaiModel       string
+		openaiBaseURL     string
+		lmstudioBaseURL   string
+		lmstudioModel     string
+		lmstudioAPIKey    sql.NullString
+		claudeAPIKey      sql.NullString
+		claudeModel       string
+		apiTimeoutSeconds int
+	)
+
+	err := db.QueryRow(query).Scan(
+		&activeProvider,
+		&geminiAPIKey, &geminiModel,
+		&openaiAPIKey, &openaiModel, &openaiBaseURL,
+		&lmstudioBaseURL, &lmstudioModel, &lmstudioAPIKey,
+		&claudeAPIKey, &claudeModel,
+		&apiTimeoutSeconds,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("no settings found in database")
+		}
+		return fmt.Errorf("failed to query settings: %w", err)
+	}
+
+	// Создаем конфигурацию на основе активного провайдера
+	config := &ProviderConfig{
+		Type:    ProviderType(activeProvider),
+		Timeout: apiTimeoutSeconds,
+	}
+
+	switch config.Type {
+	case ProviderGemini:
+		config.APIKey = geminiAPIKey.String
+		config.Model = geminiModel
+
+	case ProviderOpenAI:
+		config.APIKey = openaiAPIKey.String
+		config.Model = openaiModel
+		config.BaseURL = openaiBaseURL
+
+	case ProviderLMStudio:
+		config.BaseURL = lmstudioBaseURL
+		config.Model = lmstudioModel
+		config.APIKey = lmstudioAPIKey.String
+
+	case ProviderClaude:
+		config.APIKey = claudeAPIKey.String
+		config.Model = claudeModel
+
+	default:
+		return fmt.Errorf("unknown provider type: %s", activeProvider)
+	}
+
+	// Создаем нового провайдера
+	provider, err := NewProvider(config)
+	if err != nil {
+		return fmt.Errorf("failed to create provider: %w", err)
+	}
+
+	// Устанавливаем как глобального
+	SetGlobalProvider(provider)
+
+	log.Printf("[PROVIDER_FACTORY] 🔥 HOT-SWAP completed: %s", provider.GetName())
+	return nil
+}
+
+// ProviderConfigFromDB создает конфигурацию провайдера из БД настроек (для тестирования)
+func ProviderConfigFromDB(settings interface{}, providerType string) *ProviderConfig {
+	// Эта функция используется в llm_settings_handler.go для тестирования
+	// Принимает *queries.LLMSettings но мы не можем импортировать queries здесь (циклическая зависимость)
+	// Поэтому используем interface{} и type assertion
+
+	// Используем рефлексию для получения полей из settings
+	// Или создаем простую структуру для передачи данных
+
+	// Для простоты, пока что возвращаем nil и обработаем это в handler
+	return nil
 }
