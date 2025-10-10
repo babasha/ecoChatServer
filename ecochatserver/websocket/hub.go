@@ -162,7 +162,7 @@ func (h *Hub) unregisterClient(c *Client) {
 	// Удаляем из основной мапы
 	if _, ok := h.clients[c]; ok {
 		delete(h.clients, c)
-		close(c.send)
+		close(c.Send)
 	}
 
 	// Удаляем по типу клиента
