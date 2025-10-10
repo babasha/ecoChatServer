@@ -117,10 +117,8 @@ func DisconnectSession(c *gin.Context) {
 
 	// Закрываем соединение после небольшой задержки, чтобы сообщение успело дойти
 	time.AfterFunc(500*time.Millisecond, func() {
-		if client.Conn != nil {
-			client.Conn.Close()
-			log.Printf("DisconnectSession: соединение клиента %s закрыто", sessionID)
-		}
+		client.Disconnect()
+		log.Printf("DisconnectSession: клиент %s отключен", sessionID)
 	})
 
 	c.JSON(http.StatusOK, gin.H{

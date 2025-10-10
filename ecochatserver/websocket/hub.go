@@ -159,11 +159,15 @@ func (h *Hub) unregisterClient(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Удаляем из основной мапы
-	if _, ok := h.clients[c]; ok {
-		delete(h.clients, c)
-		close(c.Send)
+	// Проверяем существование клиента - защита второго уровня (sync.Once в Client + проверка здесь)
+	if _, ok := h.clients[c]; !ok {
+		// Клиент уже был отключен, выходим (не обновляем статистику!)
+		return
 	}
+
+	// Удаляем из основной мапы
+	delete(h.clients, c)
+	close(c.Send)
 
 	// Удаляем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
@@ -234,7 +238,7 @@ func (h *Hub) cleanupClient(client *Client) {
 	go func() {
 		// Даем клиенту короткое время для восстановления
 		time.Sleep(100 * time.Millisecond)
-		h.Unregister <- client
+		client.Disconnect()
 	}()
 }
 

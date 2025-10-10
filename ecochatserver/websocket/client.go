@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +42,9 @@ type Client struct {
 	ConnectedAt   time.Time // Время подключения
 	LastActivity  time.Time // Время последней активности
 	MessageCount  int       // Количество отправленных сообщений
+
+	// Защита от повторного отключения
+	disconnectOnce sync.Once // Гарантирует однократное отключение
 }
 
 // NewClient создает нового WebSocket клиента
@@ -69,23 +73,41 @@ func (c *Client) SendJSON(data interface{}) error {
 		return err
 	}
 
-	c.Send <- json
-	return nil
+	// Защита от отправки в закрытый канал
+	select {
+	case c.Send <- json:
+		return nil
+	default:
+		return err // Канал закрыт или заполнен
+	}
 }
 
-// SendErro r отправляет сообщение об ошибке
+// SendError отправляет сообщение об ошибке
 func (c *Client) SendError(code, message string) {
 	errorMsg, _ := NewErrorMessage(code, message)
-	c.Send <- errorMsg
+
+	// Защита от отправки в закрытый канал
+	select {
+	case c.Send <- errorMsg:
+		// Отправлено успешно
+	default:
+		// Канал закрыт или заполнен, игнорируем
+		log.Printf("SendError: не удалось отправить ошибку клиенту %s (канал недоступен)", c.ID)
+	}
+}
+
+// Disconnect безопасно отключает клиента (вызывается только один раз благодаря sync.Once)
+func (c *Client) Disconnect() {
+	c.disconnectOnce.Do(func() {
+		c.hub.Unregister <- c
+		c.Conn.Close()
+		log.Printf("Client disconnected: %s (%s)", c.ClientType, c.ID)
+	})
 }
 
 // ReadPump читает сообщения из WebSocket, парсит их и вызывает handler.
 func (c *Client) ReadPump(messageHandler func(client *Client, message []byte)) {
-	defer func() {
-		c.hub.Unregister <- c
-		c.Conn.Close()
-		log.Printf("WebSocket closed: %s (%s)", c.ClientType, c.ID)
-	}()
+	defer c.Disconnect()
 
 	c.Conn.SetReadLimit(maxMessageSize)
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -124,9 +146,7 @@ func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		c.hub.Unregister <- c
-		c.Conn.Close()
-		log.Printf("WritePump closed: %s (%s)", c.ClientType, c.ID)
+		c.Disconnect()
 	}()
 
 	for {
