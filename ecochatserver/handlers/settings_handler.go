@@ -2,11 +2,15 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
+	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/llm"
 	"github.com/gin-gonic/gin"
 )
 
@@ -170,4 +174,163 @@ func GetCurrentSettings() ServerSettings {
 	settingsMutex.RLock()
 	defer settingsMutex.RUnlock()
 	return currentSettings
+}
+
+// ============================================================================
+// LLM SETTINGS HANDLERS
+// ============================================================================
+
+// GetSettings получает настройки по категории
+func GetSettings(c *gin.Context) {
+	category := c.Query("category")
+
+	if category == "" {
+		// Получаем все настройки
+		settings, err := database.GetAllSettings()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to fetch settings: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, settings)
+		return
+	}
+
+	// Получаем настройки по категории
+	settings, err := database.GetSettingsByCategory(category)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to fetch settings for category %s: %v", category, err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, settings)
+}
+
+// UpdateSettingsBatch массово обновляет настройки
+func UpdateSettingsBatch(c *gin.Context) {
+	var request struct {
+		Settings map[string]string `json:"settings"`
+		Category string            `json:"category"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid request: %v", err),
+		})
+		return
+	}
+
+	if len(request.Settings) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No settings provided",
+		})
+		return
+	}
+
+	// Сохраняем каждую настройку
+	for key, value := range request.Settings {
+		if err := database.SetSetting(key, value, "", request.Category); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to save setting %s: %v", key, err),
+			})
+			return
+		}
+	}
+
+	// Инвалидируем кеш настроек
+	database.InvalidateSettingsCache()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("Updated %d settings", len(request.Settings)),
+	})
+}
+
+// ReloadLLMProvider перезагружает LLM провайдера (HOT-SWAP)
+func ReloadLLMProvider(c *gin.Context) {
+	// Перезагружаем провайдера из БД
+	err := llm.ReloadProviderFromDB(database.DB)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to reload provider: %v", err),
+		})
+		return
+	}
+
+	provider := llm.GetGlobalProvider()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Provider reloaded successfully",
+		"provider": provider.GetName(),
+	})
+}
+
+// TestLLMConnection тестирует подключение к LLM провайдеру
+func TestLLMConnection(c *gin.Context) {
+	var request struct {
+		Provider string `json:"provider"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid request: %v", err),
+		})
+		return
+	}
+
+	if request.Provider == "" {
+		request.Provider = database.GetSetting("LLM_PROVIDER", "gemini")
+	}
+
+	// Создаем тестовый провайдер на основе текущих настроек
+	config := llm.LoadConfigFromEnv()
+
+	// Если запрошен другой провайдер, переключаем
+	if request.Provider != string(config.Type) {
+		config.Type = llm.ProviderType(request.Provider)
+	}
+
+	provider, err := llm.NewProvider(config)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to create provider: %v", err),
+		})
+		return
+	}
+
+	// Тестовый запрос
+	ctx := c.Request.Context()
+	startTime := time.Now()
+
+	response, err := provider.GenerateResponse(
+		ctx,
+		"Hello! Please respond with a simple greeting.",
+		[]llm.Message{},
+		&llm.GenerateOptions{
+			Temperature: 0.7,
+			MaxTokens:   50,
+		},
+	)
+
+	latency := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Test failed: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("%s connection successful", config.Type),
+		"provider": provider.GetName(),
+		"response": response.Text,
+		"latency": latency,
+	})
 }
