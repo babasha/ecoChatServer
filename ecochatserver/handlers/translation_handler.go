@@ -13,15 +13,15 @@ import (
 
 // TranslationService предоставляет функции для перевода сообщений
 type TranslationService struct {
-	llmClient llm.LLM // Используем интерфейс вместо конкретного типа
-	db        *sql.DB
+	provider llm.Provider // Используем универсальный провайдер вместо старого LLM интерфейса
+	db       *sql.DB
 }
 
 // NewTranslationService создает новый TranslationService
-func NewTranslationService(llmClient llm.LLM) *TranslationService {
+func NewTranslationService(provider llm.Provider) *TranslationService {
 	return &TranslationService{
-		llmClient: llmClient,
-		db:        database.DB,
+		provider: provider,
+		db:       database.DB,
 	}
 }
 
@@ -53,7 +53,7 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 
 	// 🚀 ОПТИМИЗАЦИЯ: Используем DetectAndTranslate - один запрос вместо двух!
 	log.Printf("TranslateUserMessage: определение языка И перевод за один запрос")
-	result, err := ts.llmClient.DetectAndTranslate(ctx, content, targetLang)
+	result, err := ts.provider.DetectAndTranslate(ctx, content, targetLang)
 	if err != nil {
 		log.Printf("TranslateUserMessage: ошибка DetectAndTranslate: %v", err)
 		// Если не удалось, возвращаем оригинал
@@ -158,7 +158,7 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 
 	// Переводим текст
 	log.Printf("TranslateAdminMessage: перевод с %s на %s", sourceLang, clientLang)
-	translated, err := ts.llmClient.TranslateText(ctx, content, sourceLang, clientLang)
+	translated, err := ts.provider.TranslateText(ctx, content, sourceLang, clientLang)
 	if err != nil {
 		log.Printf("TranslateAdminMessage: ошибка перевода: %v", err)
 		return &TranslationResult{

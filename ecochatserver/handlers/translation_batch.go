@@ -29,22 +29,17 @@ func (ts *TranslationService) TranslateBatch(ctx context.Context, texts []string
 		return texts, nil
 	}
 
-	log.Printf("TranslateBatch: перевод %d текстов с %s на %s", len(texts), fromLang, toLang)
+	log.Printf("TranslateBatch: перевод %d текстов с %s на %s за ОДИН запрос", len(texts), fromLang, toLang)
 
-	// Используем прямой метод GeminiClient для batch перевода
-	// Если llmClient это GeminiClient - используем его TranslateBatch
-	if geminiClient, ok := ts.llmClient.(*llm.GeminiClient); ok {
-		translations, err := geminiClient.TranslateBatch(ctx, texts, fromLang, toLang)
-		if err != nil {
-			return nil, fmt.Errorf("TranslateBatch: %w", err)
-		}
-		log.Printf("TranslateBatch: успешно переведено %d текстов", len(translations))
-		return translations, nil
+	// 🔧 ОПТИМИЗАЦИЯ: Используем универсальный Provider.TranslateBatch
+	// Все провайдеры (Gemini, OpenAI, Claude) реализуют этот метод
+	translations, err := ts.provider.TranslateBatch(ctx, texts, fromLang, toLang)
+	if err != nil {
+		return nil, fmt.Errorf("TranslateBatch: %w", err)
 	}
 
-	// Fallback для других клиентов (не должно использоваться)
-	log.Printf("TranslateBatch: WARNING - используется fallback метод, не GeminiClient")
-	return nil, fmt.Errorf("TranslateBatch: только GeminiClient поддерживает batch перевод")
+	log.Printf("TranslateBatch: успешно переведено %d текстов за один API вызов", len(translations))
+	return translations, nil
 }
 
 // TranslateMessagesForAdmin переводит сообщения для отображения админу

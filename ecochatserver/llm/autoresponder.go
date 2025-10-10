@@ -238,18 +238,8 @@ Your task: help customers quickly and humanly.
 // типы и конфиг
 // ---------------------------------------------------------------------------
 
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type LLM interface {
-	GenerateResponse(ctx context.Context, input string, history []Message) (string, error)
-	GenerateResponseWithTools(ctx context.Context, userMessage string, chatHistory []Message, tools []GeminiTool) (textResponse string, functionCall *GeminiFunctionCall, err error)
-	ContinueWithFunctionResult(ctx context.Context, chatHistory []Message, functionCall *GeminiFunctionCall, functionResult string) (string, error)
-	TranslateText(ctx context.Context, text, fromLang, toLang string) (string, error)
-	DetectAndTranslate(ctx context.Context, text, targetLang string) (*DetectAndTranslateResult, error)
-}
+// Примечание: Message определён в provider_types.go
+// Примечание: Provider интерфейс определён в provider_types.go (заменяет старый LLM интерфейс)
 
 type AutoResponderConfig struct {
 	Enabled         bool   `json:"enabled"`
@@ -268,7 +258,7 @@ func GetDefaultConfig() AutoResponderConfig {
 }
 
 type AutoResponder struct {
-	client       LLM
+	provider     Provider // Универсальный провайдер LLM (заменяет старый client)
 	storeClient  *StoreClient
 	config       AutoResponderConfig
 	mu           sync.RWMutex
@@ -297,9 +287,10 @@ type EscalationState struct {
 	ReturnedAt    *time.Time
 }
 
-func NewAutoResponder(client LLM, cfg AutoResponderConfig) *AutoResponder {
+// NewAutoResponder создаёт новый AutoResponder с указанным провайдером
+func NewAutoResponder(provider Provider, cfg AutoResponderConfig) *AutoResponder {
 	ar := &AutoResponder{
-		client:               client,
+		provider:             provider,
 		storeClient:          NewStoreClient(),
 		config:               cfg,
 		history:              make(map[string][]Message),
@@ -314,10 +305,22 @@ func NewAutoResponder(client LLM, cfg AutoResponderConfig) *AutoResponder {
 	// Запускаем очистку старых записей попыток доступа
 	go ar.cleanupUnauthorizedAttempts()
 
-	log.Println("[AUTORESPONDER] [SECURITY] Инициализирован с усиленной защитой доступа к заказам")
+	log.Printf("[AUTORESPONDER] [SECURITY] Инициализирован с провайдером: %s", provider.GetName())
+	log.Println("[AUTORESPONDER] [SECURITY] Усиленная защита доступа к заказам активна")
 	log.Println("[AUTORESPONDER] История будет автоматически обрезаться до 20 сообщений (~4000 токенов)")
 
 	return ar
+}
+
+// NewAutoResponderWithConfig создаёт AutoResponder используя конфигурацию из env
+func NewAutoResponderWithConfig(cfg AutoResponderConfig) (*AutoResponder, error) {
+	// Создаём провайдера из переменных окружения
+	provider, err := NewProvider(nil) // nil = использовать LoadConfigFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider: %w", err)
+	}
+
+	return NewAutoResponder(provider, cfg), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -521,48 +524,58 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
 	defer cancel()
 
-	// 🔧 FUNCTION CALLING: Пробуем использовать function calling для product queries
-	tools := GetStoreFunctionTools()
-	log.Printf("[AUTORESPONDER] Отправляем запрос в LLM с %d tools, сообщение: %s", len(tools), msg.Content)
-	textResp, funcCall, err := ar.client.GenerateResponseWithTools(genCtx, msg.Content, hist, tools)
+	// 🔧 FUNCTION CALLING: Используем универсальный интерфейс с поддержкой tools
+	tools := GetUniversalStoreFunctionTools()
+	log.Printf("[AUTORESPONDER] Отправляем запрос в провайдер %s с %d tools", ar.provider.GetName(), len(tools))
+
+	response, err := ar.provider.GenerateWithTools(genCtx, msg.Content, hist, tools, &GenerateOptions{
+		Temperature: 0.7,
+		MaxTokens:   1000,
+	})
 	if err != nil {
-		log.Printf("[AUTORESPONDER] Ошибка GenerateResponseWithTools: %v", err)
-		return nil, fmt.Errorf("GenerateResponseWithTools: %w", err)
+		log.Printf("[AUTORESPONDER] Ошибка GenerateWithTools: %v", err)
+		return nil, fmt.Errorf("provider GenerateWithTools: %w", err)
 	}
 
-	log.Printf("[AUTORESPONDER] Получен ответ от LLM: funcCall=%v, textResp=%s", funcCall != nil, textResp)
+	log.Printf("[AUTORESPONDER] Получен ответ: funcCall=%v, text=%s", response.FunctionCall != nil, response.Text)
 
 	var rawResp string
 
-	// Если LLM хочет вызвать функцию - выполняем её
-	if funcCall != nil {
-		log.Printf("[FUNCTION_CALLING] LLM вызывает функцию: %s с аргументами: %+v", funcCall.Name, funcCall.Args)
+	// Если провайдер хочет вызвать функцию - выполняем её
+	if response.FunctionCall != nil {
+		log.Printf("[FUNCTION_CALLING] Провайдер вызывает функцию: %s с аргументами: %+v",
+			response.FunctionCall.Name, response.FunctionCall.Arguments)
 
 		// Выполняем функцию
 		toolCall := ToolCall{
-			Name:      funcCall.Name,
-			Arguments: funcCall.Args,
+			Name:      response.FunctionCall.Name,
+			Arguments: response.FunctionCall.Arguments,
 		}
 		funcResult, err := ExecuteTool(genCtx, ar.storeClient, toolCall)
 		if err != nil {
-			log.Printf("[FUNCTION_CALLING] Ошибка выполнения функции %s: %v", funcCall.Name, err)
+			log.Printf("[FUNCTION_CALLING] Ошибка выполнения функции %s: %v", response.FunctionCall.Name, err)
 			funcResult = fmt.Sprintf("Error executing function: %v", err)
 		}
 
-		log.Printf("[FUNCTION_CALLING] Результат функции %s: %s", funcCall.Name, funcResult)
+		log.Printf("[FUNCTION_CALLING] Результат функции %s: %s", response.FunctionCall.Name, funcResult)
 
-		// Отправляем результат обратно LLM для финального ответа
-		// LLM уже знает язык из исходного сообщения пользователя
-		finalResp, err := ar.client.ContinueWithFunctionResult(genCtx, hist, funcCall, funcResult)
+		// Отправляем результат обратно провайдеру для финального ответа
+		finalResponse, err := ar.provider.ContinueWithFunctionResult(
+			genCtx,
+			hist,
+			response.FunctionCall,
+			funcResult,
+			&GenerateOptions{Temperature: 0.7, MaxTokens: 1000},
+		)
 		if err != nil {
-			return nil, fmt.Errorf("ContinueWithFunctionResult: %w", err)
+			return nil, fmt.Errorf("provider ContinueWithFunctionResult: %w", err)
 		}
 
-		rawResp = finalResp
-		log.Printf("[FUNCTION_CALLING] Финальный ответ LLM: %s", rawResp)
+		rawResp = finalResponse.Text
+		log.Printf("[FUNCTION_CALLING] Финальный ответ провайдера: %s", rawResp)
 	} else {
 		// Обычный текстовый ответ без function call
-		rawResp = textResp
+		rawResp = response.Text
 	}
 
 	// ── фильтр самоидентификации и проверка тегов эскалации ──

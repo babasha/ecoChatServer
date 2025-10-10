@@ -7,20 +7,21 @@ import (
 	"strings"
 )
 
-// Tool представляет инструмент, который может использовать LLM
-type Tool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
-}
+// ============================================================================
+// TOOL EXECUTION - Business logic for executing function calls from LLM
+// ============================================================================
+//
+// Примечание: Типы Tool и ToolCall определены в provider_types.go
 
-// ToolCall представляет вызов инструмента от LLM
+// ToolCall представляет вызов инструмента от LLM (для совместимости с legacy кодом)
+// В будущем можно заменить на FunctionCall из provider_types.go
 type ToolCall struct {
 	Name      string                 `json:"name"`
 	Arguments map[string]interface{} `json:"arguments"`
 }
 
 // GetAvailableTools возвращает список доступных инструментов для LLM
+// DEPRECATED: Используйте GetUniversalStoreFunctionTools() из gemini_adapter.go
 func GetAvailableTools() []Tool {
 	return []Tool{
 		{

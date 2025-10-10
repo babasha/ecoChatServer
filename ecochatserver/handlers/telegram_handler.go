@@ -43,14 +43,21 @@ func InitAutoResponder() {
 		return
 	}
 
-	// Используем Gemini API вместо локальной LLM
-	client := llm.NewGeminiClient()
-	cfg := llm.GetDefaultConfig()
-	AutoResponder = llm.NewAutoResponder(client, cfg)
+	// 🔧 ОПТИМИЗАЦИЯ: Создаём ОДИН провайдер и переиспользуем его
+	// Это экономит ресурсы - один HTTP клиент вместо двух
+	provider, err := llm.NewProvider(nil)
+	if err != nil {
+		log.Fatalf("InitAutoResponder: не удалось создать провайдера: %v", err)
+	}
+	log.Printf("Провайдер LLM инициализирован: %s", provider.GetName())
 
-	// Инициализируем сервис перевода
-	Translator = NewTranslationService(client)
-	log.Println("Сервис перевода успешно инициализирован (используется Gemini API)")
+	// Создаём AutoResponder с переиспользованием провайдера
+	cfg := llm.GetDefaultConfig()
+	AutoResponder = llm.NewAutoResponder(provider, cfg)
+
+	// Инициализируем сервис перевода с ТЕМ ЖЕ провайдером (переиспользование!)
+	Translator = NewTranslationService(provider)
+	log.Printf("Сервис перевода инициализирован (переиспользует провайдер)")
 
 	// Устанавливаем callback для отправки сообщений извинения
 	AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {
