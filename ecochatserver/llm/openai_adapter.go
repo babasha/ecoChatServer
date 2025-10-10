@@ -50,12 +50,15 @@ type openAIToolChoice struct {
 }
 
 type openAIChatRequest struct {
-	Model       string          `json:"model"`
-	Messages    []openAIMessage `json:"messages"`
-	Temperature float32         `json:"temperature,omitempty"`
-	MaxTokens   int             `json:"max_tokens,omitempty"`
-	Tools       []openAITool    `json:"tools,omitempty"`
-	ToolChoice  interface{}     `json:"tool_choice,omitempty"` // "auto", "none", или объект
+	Model          string          `json:"model"`
+	Messages       []openAIMessage `json:"messages"`
+	Temperature    float32         `json:"temperature,omitempty"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Tools          []openAITool    `json:"tools,omitempty"`
+	ToolChoice     interface{}     `json:"tool_choice,omitempty"` // "auto", "none", или объект
+	ResponseFormat *struct {
+		Type string `json:"type"` // "json_object" для JSON mode
+	} `json:"response_format,omitempty"`
 }
 
 type openAIChatResponse struct {
@@ -258,23 +261,44 @@ func (a *OpenAIAdapter) DetectAndTranslate(
 	text string,
 	targetLang string,
 ) (*TranslationResult, error) {
-	prompt := fmt.Sprintf(`Detect the language of the text and translate it to %s.
+	messages := []openAIMessage{
+		{
+			Role:    "system",
+			Content: "You are a translator. Always respond with valid JSON only, no markdown.",
+		},
+		{
+			Role: "user",
+			Content: fmt.Sprintf(`Detect the language of the text and translate it to %s.
 Return a JSON response in this format:
 {
   "detected_language": "language_code",
   "translated_text": "translated text here"
 }
 
-Text: %s`, targetLang, text)
+Text: %s`, targetLang, text),
+		},
+	}
 
-	resp, err := a.GenerateResponse(ctx, prompt, nil, &GenerateOptions{
+	req := openAIChatRequest{
+		Model:       a.model,
+		Messages:    messages,
 		Temperature: 0.3,
 		MaxTokens:   500,
-	})
+		ResponseFormat: &struct {
+			Type string `json:"type"`
+		}{
+			Type: "json_object",
+		},
+	}
+
+	chatResp, err := a.sendRequest(ctx, req)
 
 	if err != nil {
 		return nil, err
 	}
+
+	// Парсим ответ
+	resp := a.parseResponse(chatResp)
 
 	// Парсим JSON ответ
 	var result struct {
@@ -284,7 +308,7 @@ Text: %s`, targetLang, text)
 
 	if err := json.Unmarshal([]byte(resp.Text), &result); err != nil {
 		// Если не получилось распарсить - возвращаем как есть
-		log.Printf("[OPENAI_ADAPTER] Failed to parse DetectAndTranslate JSON: %v", err)
+		log.Printf("[OPENAI_ADAPTER] Failed to parse DetectAndTranslate JSON: %v, raw text: %s", err, resp.Text)
 		return &TranslationResult{
 			DetectedLang: "unknown",
 			Translation:  resp.Text,
