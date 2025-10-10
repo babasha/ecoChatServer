@@ -294,6 +294,7 @@ func (h *Hub) SendToChat(chatID string, message []byte) int {
 }
 
 // SendConnectionStatus уведомляет о подключении/отключении.
+// ОПТИМИЗИРОВАНО: отправляет уведомления только админам, а не всем клиентам
 func (h *Hub) SendConnectionStatus(c *Client, online bool) {
 	payload := struct {
 		ClientType string `json:"clientType"`
@@ -309,7 +310,11 @@ func (h *Hub) SendConnectionStatus(c *Client, online bool) {
 		Timestamp:  time.Now().Format(time.RFC3339),
 	}
 	msg, _ := NewMessage("connection_status", payload)
-	h.BroadcastMessage(msg)
+
+	// Отправляем только админам вместо broadcast всем клиентам
+	sent := h.SendToAllAdmins(msg)
+	log.Printf("SendConnectionStatus: уведомление о %s %s отправлено %d админам",
+		c.ClientType, map[bool]string{true: "подключении", false: "отключении"}[online], sent)
 }
 
 // GetStats возвращает статистику хаба
