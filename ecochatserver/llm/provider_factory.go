@@ -25,7 +25,9 @@ func NewProvider(config *ProviderConfig) (Provider, error) {
 	case ProviderGemini:
 		return newGeminiProvider(config)
 	case ProviderOpenAI:
-		return nil, fmt.Errorf("OpenAI provider not implemented yet")
+		return newOpenAIProvider(config)
+	case ProviderLMStudio:
+		return newLMStudioProvider(config)
 	case ProviderClaude:
 		return nil, fmt.Errorf("Claude provider not implemented yet")
 	case ProviderOllama:
@@ -55,6 +57,11 @@ func LoadConfigFromEnv() *ProviderConfig {
 	case ProviderOpenAI:
 		config.APIKey = os.Getenv("OPENAI_API_KEY")
 		config.Model = getEnvOrDefault("OPENAI_MODEL", "gpt-4o-mini")
+		config.BaseURL = getEnvOrDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
+	case ProviderLMStudio:
+		config.APIKey = os.Getenv("LMSTUDIO_API_KEY") // опционален для LM Studio
+		config.BaseURL = getEnvOrDefault("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
+		config.Model = getEnvOrDefault("LMSTUDIO_MODEL", "local-model")
 	case ProviderClaude:
 		config.APIKey = os.Getenv("ANTHROPIC_API_KEY")
 		config.Model = getEnvOrDefault("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
@@ -105,10 +112,11 @@ func ValidateConfig(config *ProviderConfig) error {
 		if config.APIKey == "" {
 			return fmt.Errorf("API key is required for %s provider", config.Type)
 		}
-	case ProviderOllama:
+	case ProviderOllama, ProviderLMStudio:
 		if config.BaseURL == "" {
-			return fmt.Errorf("base URL is required for Ollama provider")
+			return fmt.Errorf("base URL is required for %s provider", config.Type)
 		}
+		// API key опционален для локальных провайдеров
 	default:
 		return fmt.Errorf("unknown provider type: %s", config.Type)
 	}
@@ -137,5 +145,47 @@ func newGeminiProvider(config *ProviderConfig) (Provider, error) {
 		return nil, fmt.Errorf("failed to initialize Gemini adapter: %w", err)
 	}
 
+	return adapter, nil
+}
+
+// newOpenAIProvider создаёт OpenAI провайдера
+func newOpenAIProvider(config *ProviderConfig) (Provider, error) {
+	if err := ValidateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid OpenAI config: %w", err)
+	}
+
+	adapter := NewOpenAIAdapter(
+		config.BaseURL,
+		config.APIKey,
+		config.Model,
+		GetDefaultTimeout(config),
+	)
+
+	if err := adapter.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize OpenAI adapter: %w", err)
+	}
+
+	return adapter, nil
+}
+
+// newLMStudioProvider создаёт LM Studio провайдера
+func newLMStudioProvider(config *ProviderConfig) (Provider, error) {
+	if err := ValidateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid LM Studio config: %w", err)
+	}
+
+	// LM Studio использует тот же адаптер что и OpenAI
+	adapter := NewOpenAIAdapter(
+		config.BaseURL,
+		config.APIKey, // может быть пустым для LM Studio
+		config.Model,
+		GetDefaultTimeout(config),
+	)
+
+	if err := adapter.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize LM Studio adapter: %w", err)
+	}
+
+	log.Printf("[PROVIDER_FACTORY] LM Studio provider created with base URL: %s", config.BaseURL)
 	return adapter, nil
 }

@@ -93,11 +93,12 @@ type Provider interface {
 type ProviderType string
 
 const (
-	ProviderGemini  ProviderType = "gemini"
-	ProviderOpenAI  ProviderType = "openai"
-	ProviderClaude  ProviderType = "claude"
-	ProviderOllama  ProviderType = "ollama" // Локальные модели
-	ProviderDefault ProviderType = "gemini" // По умолчанию
+	ProviderGemini   ProviderType = "gemini"
+	ProviderOpenAI   ProviderType = "openai"
+	ProviderLMStudio ProviderType = "lmstudio" // LM Studio (локальная LLM через OpenAI-совместимый API)
+	ProviderClaude   ProviderType = "claude"
+	ProviderOllama   ProviderType = "ollama"   // Локальные модели Ollama
+	ProviderDefault  ProviderType = "gemini"   // По умолчанию
 )
 
 // ProviderConfig конфигурация провайдера
