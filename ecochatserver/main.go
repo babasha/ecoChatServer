@@ -346,7 +346,7 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.GET("/settings", handlers.GetSettings)
 		api.PUT("/settings/batch", handlers.UpdateSettingsBatch)
 		api.POST("/llm/reload", handlers.ReloadLLMProvider)
-		api.POST("/llm/test", handlers.TestLLMConnection)
+		api.POST("/llm/test", handlers.TestLLMProviderConnection)
 
 		// Публичная статистика WebSocket (для Dashboard без аутентификации)
 		api.GET("/stats/websocket", func(c *gin.Context) {

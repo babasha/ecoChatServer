@@ -177,7 +177,7 @@ func GetCurrentSettings() ServerSettings {
 }
 
 // ============================================================================
-// LLM SETTINGS HANDLERS
+// LLM SETTINGS HANDLERS (Simple version for app_settings table)
 // ============================================================================
 
 // GetSettings получает настройки по категории
@@ -270,8 +270,8 @@ func ReloadLLMProvider(c *gin.Context) {
 	})
 }
 
-// TestLLMConnection тестирует подключение к LLM провайдеру
-func TestLLMConnection(c *gin.Context) {
+// TestLLMProviderConnection тестирует подключение к LLM провайдеру (renamed to avoid conflict)
+func TestLLMProviderConnection(c *gin.Context) {
 	var request struct {
 		Provider string `json:"provider"`
 	}
