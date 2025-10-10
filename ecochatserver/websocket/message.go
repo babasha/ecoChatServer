@@ -2,9 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
-	"github.com/egor/ecochatserver/models"
 	"github.com/google/uuid"
-	"time"
 )
 
 // WebSocketMessage — общая обёртка для всех JSON-сообщений по WS.
@@ -25,54 +23,6 @@ func NewMessage(msgType string, payload interface{}) ([]byte, error) {
 		Payload: raw,
 	}
 	return json.Marshal(envelope)
-}
-
-// NewChatMessage строит сообщение о новом чате или сообщении.
-func NewChatMessage(chat *models.Chat, message *models.Message) ([]byte, error) {
-	payload := struct {
-		ChatID      uuid.UUID       `json:"chatId"`
-		Message     *models.Message `json:"message"`
-		UnreadCount int             `json:"unreadCount,omitempty"`
-	}{
-		ChatID:  message.ChatID,
-		Message: message,
-	}
-
-	// Если чат есть, добавляем счетчик непрочитанных
-	if chat != nil {
-		// Вычисляем непрочитанные сообщения
-		unread := 0
-		for _, msg := range chat.Messages {
-			if msg.Sender == "user" && !msg.Read {
-				unread++
-			}
-		}
-		payload.UnreadCount = unread
-	}
-
-	return NewMessage("new_message", payload)
-}
-
-// NewWidgetMessage создает сообщение для отправки виджету
-func NewWidgetMessage(message *models.Message) ([]byte, error) {
-	// Упрощенная версия сообщения для виджета
-	payload := struct {
-		ID        string `json:"id"`
-		ChatID    string `json:"chatId"`
-		Content   string `json:"content"`
-		Sender    string `json:"sender"`
-		Timestamp string `json:"timestamp"`
-		Type      string `json:"type,omitempty"`
-	}{
-		ID:        message.ID.String(),
-		ChatID:    message.ChatID.String(),
-		Content:   message.Content,
-		Sender:    message.Sender,
-		Timestamp: message.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
-		Type:      message.Type,
-	}
-
-	return NewMessage("widget_message", payload)
 }
 
 // NewTypingMessage уведомляет, что пользователь печатает.
@@ -101,17 +51,3 @@ func NewErrorMessage(code, text string) ([]byte, error) {
 	return NewMessage("error", payload)
 }
 
-// NewLightMessage - легковесное сообщение без полной загрузки чата
-func NewLightMessage(chatID uuid.UUID, message *models.Message) ([]byte, error) {
-	payload := struct {
-		ChatID    string          `json:"chatId"`
-		Message   *models.Message `json:"message"`
-		Timestamp string          `json:"timestamp"`
-	}{
-		ChatID:    chatID.String(),
-		Message:   message,
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
-
-	return NewMessage("chat_update", payload)
-}

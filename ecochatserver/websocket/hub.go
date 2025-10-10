@@ -381,17 +381,18 @@ func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
 // БЕЗОПАСНОСТЬ: проверяет что виджет принадлежит этому userID
 func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSourceID string) bool {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	// Находим виджет по userID
 	client, exists := h.widgetsByUserID[userID]
 	if !exists {
+		h.mu.Unlock()
 		log.Printf("UpdateWidgetChatID: виджет с userID %s не найден", userID)
 		return false
 	}
 
 	// ПРОВЕРКА БЕЗОПАСНОСТИ: виджет может обновлять только свой чат
 	if chatUserSourceID != userID {
+		h.mu.Unlock()
 		log.Printf("UpdateWidgetChatID: SECURITY WARNING - попытка обновить чужой чат! widgetUserID=%s, chatUserSourceID=%s",
 			userID, chatUserSourceID)
 		return false
@@ -436,6 +437,11 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 	// Удаляем из widgetsByUserID, так как chat_id теперь известен
 	delete(h.widgetsByUserID, userID)
 
+	log.Printf("UpdateWidgetChatID: виджет успешно перерегистрирован с новым chat_id %s", newChatID)
+
+	// ВАЖНО: Разблокируем мьютекс ПЕРЕД отправкой в канал, чтобы избежать deadlock
+	h.mu.Unlock()
+
 	// Отправляем виджету уведомление о новом chat_id
 	payload := struct {
 		ChatID string `json:"chatId"`
@@ -451,7 +457,6 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 		}
 	}
 
-	log.Printf("UpdateWidgetChatID: виджет успешно перерегистрирован с новым chat_id %s", newChatID)
 	return true
 }
 

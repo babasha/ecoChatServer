@@ -52,47 +52,6 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	}
 	log.Printf("GetChats: найдено всего чатов с фильтром: %d", total)
 
-	// Для отладки - проверим ВСЕ чаты клиента без фильтра по assigned_to
-	var totalWithoutFilter int
-	debugQuery := "SELECT COUNT(*) FROM chats WHERE client_id=$1"
-	if err := db.QueryRowContext(ctx, debugQuery, clientID).Scan(&totalWithoutFilter); err == nil {
-		log.Printf("GetChats: всего чатов клиента без фильтра по assigned_to: %d", totalWithoutFilter)
-
-		// Проверим, есть ли чаты с assigned_to не равным текущему админу
-		var assignedToOthers int
-		if err := db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM chats WHERE client_id=$1 AND assigned_to IS NOT NULL AND assigned_to != $2",
-			clientID, adminID,
-		).Scan(&assignedToOthers); err == nil {
-			log.Printf("GetChats: чатов назначенных другим админам: %d", assignedToOthers)
-		}
-	}
-
-	// Для отладки - выведем все чаты клиента
-	debugRows, err := db.QueryContext(ctx,
-		"SELECT id, user_id, client_id, assigned_to, status, created_at FROM chats WHERE client_id=$1 ORDER BY created_at DESC LIMIT 10",
-		clientID)
-	if err == nil {
-		defer debugRows.Close()
-		log.Printf("GetChats: последние 10 чатов клиента для отладки:")
-		i := 0
-		for debugRows.Next() {
-			var chatID, userID, clientID uuid.UUID
-			var assignedTo sql.NullString
-			var status string
-			var createdAt time.Time
-			if err := debugRows.Scan(&chatID, &userID, &clientID, &assignedTo, &status, &createdAt); err == nil {
-				assignedToStr := "NULL"
-				if assignedTo.Valid {
-					assignedToStr = assignedTo.String
-				}
-				log.Printf("  чат %d: ID=%s, userID=%s, clientID=%s, assignedTo=%s, status=%s, created=%v",
-					i, chatID, userID, clientID, assignedToStr, status, createdAt)
-				i++
-			}
-		}
-	}
-
 	// Основной запрос для получения чатов
 	const q = `
       SELECT
