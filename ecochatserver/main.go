@@ -380,6 +380,7 @@ func setupAPIRoutes(r *gin.Engine) {
 
 		// Session cookie authentication для Next.js admin panel
 		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.LoginHandler)
+		api.GET("/auth/me", middleware.SessionMiddleware(), handlers.MeHandler)
 		api.POST("/auth/logout", handlers.LogoutHandler)
 
 		// OAuth 2.0 token endpoint для админки (DEPRECATED - используйте /auth/login)

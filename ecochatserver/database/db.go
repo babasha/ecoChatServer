@@ -162,7 +162,9 @@ func buildDSN() string {
 func buildUsersDSN() string {
 	// Если переменные не заданы, возвращаем пустую строку
 	host := os.Getenv("USERS_PG_HOST")
+	log.Printf("[DB] DEBUG: USERS_PG_HOST = '%s'", host)
 	if host == "" {
+		log.Println("[DB] DEBUG: USERS_PG_HOST пустой, используем основную БД")
 		return "" // Используем основную БД
 	}
 

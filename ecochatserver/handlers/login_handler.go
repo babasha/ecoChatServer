@@ -131,6 +131,39 @@ func buildCookieHeader(token string, secure bool, domain string) string {
 	return cookie
 }
 
+// MeHandler проверяет текущую сессию и возвращает данные пользователя
+// GET /api/auth/me
+func MeHandler(c *gin.Context) {
+	// Middleware уже проверил токен и установил adminID в контекст
+	adminID, exists := c.Get("adminID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	role, _ := c.Get("role")
+
+	// Получаем полные данные админа из базы
+	admin, err := database.GetAdmin(adminID.(string))
+	if err != nil || admin == nil {
+		log.Printf("MeHandler: не удалось найти администратора: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	var response LoginResponse
+	response.Admin.ID = admin.ID.String()
+	response.Admin.Email = admin.Email
+	response.Admin.Name = admin.Name
+	response.Admin.Role = role.(string)
+
+	c.JSON(http.StatusOK, response)
+}
+
 // LogoutHandler обрабатывает logout и удаляет session cookie
 // POST /api/auth/logout
 func LogoutHandler(c *gin.Context) {
