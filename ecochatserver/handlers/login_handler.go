@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/middleware"
