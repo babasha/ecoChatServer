@@ -16,7 +16,8 @@ const (
 
 // Прокси-функции для внешнего использования
 func GetAdmin(email string) (*models.Admin, error) {
-	return queries.GetAdmin(DB, email)
+	// Используем UsersDB для админов (БД ballast)
+	return queries.GetAdmin(UsersDB, email)
 }
 
 func VerifyPassword(pw, hash string) error {
