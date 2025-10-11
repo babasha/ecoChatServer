@@ -11,7 +11,7 @@ type WebSocketMessage struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-// NewMessage упаковывает любой payload в JSON вида:
+// NewMessage  упаковывает любой payload в JSON вида:
 // { "type": "...", "payload": { ... } }
 func NewMessage(msgType string, payload interface{}) ([]byte, error) {
 	raw, err := json.Marshal(payload)
