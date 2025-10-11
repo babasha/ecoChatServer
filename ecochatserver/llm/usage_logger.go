@@ -45,14 +45,41 @@ func InitUsageLogger() error {
 	dbPassword := os.Getenv("LLM_LOGS_DB_PASSWORD")
 	dbName := os.Getenv("LLM_LOGS_DB_NAME")
 
+	// Если переменные для LLM логов не установлены, используем основную БД
 	if dbHost == "" || dbPassword == "" {
-		log.Println("[LLM_USAGE_LOGGER] WARNING: LLM logs DB credentials not set, logging disabled")
-		return nil
+		log.Println("[LLM_USAGE_LOGGER] LLM logs DB credentials not set, using main DB")
+		dbHost = os.Getenv("PG_HOST")
+		dbPort = os.Getenv("PG_PORT")
+		dbUser = os.Getenv("PG_USER")
+		dbPassword = os.Getenv("PG_PASSWORD")
+		dbName = os.Getenv("PG_DATABASE")
+
+		if dbHost == "" || dbPassword == "" {
+			log.Println("[LLM_USAGE_LOGGER] WARNING: Main DB credentials also not set, logging disabled")
+			return nil
+		}
+	}
+
+	// Устанавливаем значения по умолчанию
+	if dbPort == "" {
+		dbPort = "5432"
+	}
+	if dbUser == "" {
+		dbUser = "postgres"
+	}
+	if dbName == "" {
+		dbName = "railway"
+	}
+
+	// Определяем SSL mode (для Railway обычно require)
+	sslMode := "require"
+	if os.Getenv("PG_SSL_MODE") != "" {
+		sslMode = os.Getenv("PG_SSL_MODE")
 	}
 
 	// Формируем connection string
 	connStr := "host=" + dbHost + " port=" + dbPort + " user=" + dbUser +
-		" password=" + dbPassword + " dbname=" + dbName + " sslmode=require"
+		" password=" + dbPassword + " dbname=" + dbName + " sslmode=" + sslMode
 
 	// Подключаемся к БД
 	db, err := sqlx.Connect("postgres", connStr)
