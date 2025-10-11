@@ -148,7 +148,23 @@ func (a *OpenAIAdapter) GenerateResponse(
 		return nil, err
 	}
 
-	return a.parseResponse(resp), nil
+	result := a.parseResponse(resp)
+
+	// Логируем использование токенов
+	if result != nil && result.Usage != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			ClientID:         opts.GetClientID(),
+			ChatID:           opts.GetChatID(),
+			Provider:         "openai",
+			Model:            a.model,
+			PromptTokens:     result.Usage.PromptTokens,
+			CompletionTokens: result.Usage.CompletionTokens,
+			TotalTokens:      result.Usage.TotalTokens,
+			RequestType:      "chat",
+		})
+	}
+
+	return result, nil
 }
 
 // GenerateWithTools генерирует ответ с поддержкой function calling
@@ -179,7 +195,23 @@ func (a *OpenAIAdapter) GenerateWithTools(
 		return nil, err
 	}
 
-	return a.parseResponse(resp), nil
+	result := a.parseResponse(resp)
+
+	// Логируем использование токенов
+	if result != nil && result.Usage != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			ClientID:         opts.GetClientID(),
+			ChatID:           opts.GetChatID(),
+			Provider:         "openai",
+			Model:            a.model,
+			PromptTokens:     result.Usage.PromptTokens,
+			CompletionTokens: result.Usage.CompletionTokens,
+			TotalTokens:      result.Usage.TotalTokens,
+			RequestType:      "function_call",
+		})
+	}
+
+	return result, nil
 }
 
 // ContinueWithFunctionResult продолжает диалог с результатом выполнения функции
@@ -228,7 +260,23 @@ func (a *OpenAIAdapter) ContinueWithFunctionResult(
 		return nil, err
 	}
 
-	return a.parseResponse(resp), nil
+	res := a.parseResponse(resp)
+
+	// Логируем использование токенов
+	if res != nil && res.Usage != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			ClientID:         opts.GetClientID(),
+			ChatID:           opts.GetChatID(),
+			Provider:         "openai",
+			Model:            a.model,
+			PromptTokens:     res.Usage.PromptTokens,
+			CompletionTokens: res.Usage.CompletionTokens,
+			TotalTokens:      res.Usage.TotalTokens,
+			RequestType:      "function_call",
+		})
+	}
+
+	return res, nil
 }
 
 // TranslateText переводит текст с одного языка на другой
@@ -251,6 +299,8 @@ func (a *OpenAIAdapter) TranslateText(
 	if err != nil {
 		return "", err
 	}
+
+	// Логирование уже происходит в GenerateResponse, дополнительно не нужно
 
 	return resp.Text, nil
 }
@@ -299,6 +349,18 @@ Text: %s`, targetLang, text),
 
 	// Парсим ответ
 	resp := a.parseResponse(chatResp)
+
+	// Логируем использование токенов
+	if resp != nil && resp.Usage != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			Provider:         "openai",
+			Model:            a.model,
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+			RequestType:      "translation",
+		})
+	}
 
 	// Парсим JSON ответ
 	var result struct {

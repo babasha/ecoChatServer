@@ -1,6 +1,10 @@
 package llm
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 // ============================================================================
 // UNIVERSAL TYPES - Provider-agnostic data structures
@@ -34,6 +38,35 @@ type GenerateOptions struct {
 	MaxTokens      int     `json:"max_tokens,omitempty"`
 	SystemPrompt   string  `json:"system_prompt,omitempty"`
 	ResponseFormat string  `json:"response_format,omitempty"` // "text" или "json"
+
+	// Для логирования использования токенов
+	ClientID       *uuid.UUID `json:"-"` // UUID клиента (для статистики)
+	ChatID         *uuid.UUID `json:"-"` // UUID чата (для статистики)
+	AdminID        *uuid.UUID `json:"-"` // UUID админа (для статистики)
+}
+
+// GetClientID возвращает ClientID для логирования
+func (o *GenerateOptions) GetClientID() *uuid.UUID {
+	if o == nil {
+		return nil
+	}
+	return o.ClientID
+}
+
+// GetChatID возвращает ChatID для логирования
+func (o *GenerateOptions) GetChatID() *uuid.UUID {
+	if o == nil {
+		return nil
+	}
+	return o.ChatID
+}
+
+// GetAdminID возвращает AdminID для логирования
+func (o *GenerateOptions) GetAdminID() *uuid.UUID {
+	if o == nil {
+		return nil
+	}
+	return o.AdminID
 }
 
 // Response универсальный ответ от провайдера

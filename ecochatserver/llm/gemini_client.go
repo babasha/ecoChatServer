@@ -112,6 +112,11 @@ type GeminiResponse struct {
 			Probability string `json:"probability"`
 		} `json:"safetyRatings,omitempty"`
 	} `json:"promptFeedback,omitempty"`
+	UsageMetadata *struct {
+		PromptTokenCount     int `json:"promptTokenCount"`
+		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		TotalTokenCount      int `json:"totalTokenCount"`
+	} `json:"usageMetadata,omitempty"`
 }
 
 // NewGeminiClient создаёт новый GeminiClient
@@ -325,6 +330,18 @@ func (c *GeminiClient) GenerateResponse(
 		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", candidate.FinishReason)
 	}
 
+	// Логируем использование токенов
+	if geminiResp.UsageMetadata != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			Provider:         "gemini",
+			Model:            "gemini-2.5-flash",
+			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+			RequestType:      "chat",
+		})
+	}
+
 	// Извлекаем текст из Parts
 	if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok {
 		return text, nil
@@ -423,6 +440,18 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	// Логируем для отладки
 	candidateJSON, _ := json.Marshal(candidate)
 	log.Printf("[GEMINI] Candidate response: %s", string(candidateJSON))
+
+	// Логируем использование токенов
+	if geminiResp.UsageMetadata != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			Provider:         "gemini",
+			Model:            "gemini-2.5-flash",
+			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+			RequestType:      "function_call",
+		})
+	}
 
 	// Проверяем есть ли function call в candidate.FunctionCall (старый формат)
 	if candidate.FunctionCall != nil {
@@ -561,6 +590,18 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 
 	candidate := geminiResp.Candidates[0]
 
+	// Логируем использование токенов
+	if geminiResp.UsageMetadata != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			Provider:         "gemini",
+			Model:            "gemini-2.5-flash",
+			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+			RequestType:      "function_call",
+		})
+	}
+
 	// Проверяем thoughtContent (Gemini 2.0 thinking mode)
 	if candidate.ThoughtContent != nil && candidate.ThoughtContent.Text != "" {
 		log.Printf("[GEMINI] Extracted text from thoughtContent")
@@ -658,6 +699,18 @@ func (c *GeminiClient) TranslateText(ctx context.Context, text, fromLang, toLang
 		json.NewDecoder(resp.Body).Decode(&geminiResp)
 		resp.Body.Close()
 
+		// Логируем использование токенов
+		if geminiResp.UsageMetadata != nil {
+			_ = LogUsage(ctx, UsageLogEntry{
+				Provider:         "gemini",
+				Model:            "gemini-2.5-flash",
+				PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+				CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+				TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+				RequestType:      "translation",
+			})
+		}
+
 		if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
 			if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok && text != "" {
 				return strings.Trim(strings.TrimSpace(text), "\"'"), nil
@@ -739,6 +792,18 @@ If text is already in %s, return it as translation with detected language.`, tar
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
 		return nil, fmt.Errorf("empty response from Gemini")
+	}
+
+	// Логируем использование токенов
+	if geminiResp.UsageMetadata != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			Provider:         "gemini",
+			Model:            "gemini-2.5-flash",
+			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+			RequestType:      "translation",
+		})
 	}
 
 	responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
@@ -846,6 +911,18 @@ func (c *GeminiClient) TranslateBatch(ctx context.Context, texts []string, fromL
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
 		return nil, fmt.Errorf("empty response from Gemini")
+	}
+
+	// Логируем использование токенов
+	if geminiResp.UsageMetadata != nil {
+		_ = LogUsage(ctx, UsageLogEntry{
+			Provider:         "gemini",
+			Model:            "gemini-2.5-flash",
+			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+			RequestType:      "translation",
+		})
 	}
 
 	responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)

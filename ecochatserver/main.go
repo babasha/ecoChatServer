@@ -18,6 +18,7 @@ import (
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/handlers"
+	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/middleware"
 	"github.com/egor/ecochatserver/websocket"
 )
@@ -41,6 +42,15 @@ func main() {
 		log.Fatalf("Ошибка инициализации базы данных: %v", err)
 	}
 	defer database.Close()
+
+	// ─── LLM Usage Logger ────────────────────────────────────────────────────
+	if err := llm.InitUsageLogger(); err != nil {
+		log.Printf("WARNING: LLM usage logger initialization failed: %v", err)
+		log.Println("LLM usage logging will be disabled")
+	} else {
+		log.Println("✓ LLM usage logger initialized")
+	}
+	defer llm.CloseUsageLogger()
 
 	// Простое кэширование инициализировано
 	log.Println("Простое кэширование инициализировано")
@@ -441,6 +451,10 @@ func setupAPIRoutes(r *gin.Engine) {
 					"timestamp": time.Now().Format(time.RFC3339),
 				})
 			})
+
+			// LLM Usage Analytics
+			auth.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
+			auth.GET("/llm-usage/summary", handlers.GetLLMUsageSummary)
 		}
 	}
 
