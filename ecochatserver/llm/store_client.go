@@ -201,15 +201,15 @@ func FormatOrderInfo(order *Order) string {
 	}
 
 	statusMap := map[string]string{
-		"pending":              "В обработке",
-		"confirmed":            "Подтвержден",
-		"preparing":            "Готовится",
-		"ready_for_delivery":   "Готов к доставке",
-		"courier_assigned":     "Курьер назначен",
-		"in_delivery":          "В пути",
-		"delivered":            "Доставлен",
-		"cancelled":            "Отменен",
-		"failed_delivery":      "Не удалось доставить",
+		"pending":            "В обработке",
+		"confirmed":          "Подтвержден",
+		"preparing":          "Готовится",
+		"ready_for_delivery": "Готов к доставке",
+		"courier_assigned":   "Курьер назначен",
+		"in_delivery":        "В пути",
+		"delivered":          "Доставлен",
+		"cancelled":          "Отменен",
+		"failed_delivery":    "Не удалось доставить",
 	}
 
 	statusRu := statusMap[order.Status]
@@ -325,15 +325,15 @@ func FormatOrdersList(orders []Order) string {
 	}
 
 	statusMap := map[string]string{
-		"pending":              "В обработке",
-		"confirmed":            "Подтвержден",
-		"preparing":            "Готовится",
-		"ready_for_delivery":   "Готов к доставке",
-		"courier_assigned":     "Курьер назначен",
-		"in_delivery":          "В пути",
-		"delivered":            "Доставлен",
-		"cancelled":            "Отменен",
-		"failed_delivery":      "Не удалось доставить",
+		"pending":            "В обработке",
+		"confirmed":          "Подтвержден",
+		"preparing":          "Готовится",
+		"ready_for_delivery": "Готов к доставке",
+		"courier_assigned":   "Курьер назначен",
+		"in_delivery":        "В пути",
+		"delivered":          "Доставлен",
+		"cancelled":          "Отменен",
+		"failed_delivery":    "Не удалось доставить",
 	}
 
 	result := fmt.Sprintf("📦 Найдено заказов: %d\n\n", len(orders))
@@ -375,12 +375,12 @@ type Product struct {
 
 // Category представляет категорию товаров
 type Category struct {
-	ID       int     `json:"id"`
-	NameRu   string  `json:"name_ru"`
-	NameEn   string  `json:"name_en"`
-	NamePt   string  `json:"name_pt"`
-	NameEs   string  `json:"name_es"`
-	ParentID *int    `json:"parent_id"`
+	ID       int    `json:"id"`
+	NameRu   string `json:"name_ru"`
+	NameEn   string `json:"name_en"`
+	NamePt   string `json:"name_pt"`
+	NameEs   string `json:"name_es"`
+	ParentID *int   `json:"parent_id"`
 }
 
 // GetAllProducts получает список всех доступных продуктов

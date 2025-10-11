@@ -258,12 +258,12 @@ func GetDefaultConfig() AutoResponderConfig {
 }
 
 type AutoResponder struct {
-	provider     Provider // Универсальный провайдер LLM (заменяет старый client)
-	storeClient  *StoreClient
-	config       AutoResponderConfig
-	mu           sync.RWMutex
-	history      map[string][]Message
-	historyMgr   *HistoryManager // Менеджер истории для управления токенами
+	provider    Provider // Универсальный провайдер LLM (заменяет старый client)
+	storeClient *StoreClient
+	config      AutoResponderConfig
+	mu          sync.RWMutex
+	history     map[string][]Message
+	historyMgr  *HistoryManager // Менеджер истории для управления токенами
 	// Состояние эскалации для каждого чата
 	escalations map[string]*EscalationState
 	// Callback для отправки сообщений извинения через WebSocket
@@ -274,10 +274,10 @@ type AutoResponder struct {
 
 // UnauthorizedAttemptTracker отслеживает попытки доступа без авторизации
 type UnauthorizedAttemptTracker struct {
-	Count       int
+	Count        int
 	FirstAttempt time.Time
 	LastAttempt  time.Time
-	Blocked     bool
+	Blocked      bool
 	BlockedUntil *time.Time
 }
 
@@ -961,4 +961,3 @@ func (ar *AutoResponder) ResetUnauthorizedAttempts(chatID string) {
 	ar.mu.Unlock()
 	log.Printf("[AUTORESPONDER] [SECURITY] Сброшен счетчик попыток для чата %s", chatID)
 }
-

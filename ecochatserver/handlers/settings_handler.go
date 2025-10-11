@@ -264,8 +264,8 @@ func ReloadLLMProvider(c *gin.Context) {
 	provider := llm.GetGlobalProvider()
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Provider reloaded successfully",
+		"success":  true,
+		"message":  "Provider reloaded successfully",
 		"provider": provider.GetName(),
 	})
 }
@@ -327,10 +327,10 @@ func TestLLMProviderConnection(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("%s connection successful", config.Type),
+		"success":  true,
+		"message":  fmt.Sprintf("%s connection successful", config.Type),
 		"provider": provider.GetName(),
 		"response": response.Text,
-		"latency": latency,
+		"latency":  latency,
 	})
 }

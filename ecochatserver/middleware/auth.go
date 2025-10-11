@@ -34,7 +34,38 @@ func init() {
 	jwtKey = []byte(jwtSecret)
 }
 
+// SessionMiddleware проверяет session cookie (httpOnly) и авторизует запрос
+// Используется для запросов от Next.js admin panel
+func SessionMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Получаем session cookie
+		sessionToken, err := c.Cookie("session")
+		if err != nil || sessionToken == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется авторизация"})
+			c.Abort()
+			return
+		}
+
+		// Валидируем JWT токен из cookie
+		claims, err := ValidateToken(sessionToken)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "неверный или устаревший токен"})
+			c.Abort()
+			return
+		}
+
+		// Устанавливаем данные пользователя в контексте
+		c.Set("adminID", claims.AdminID)
+		c.Set("clientID", claims.ClientID)
+		c.Set("role", claims.Role)
+
+		c.Next()
+	}
+}
+
 // AuthMiddleware проверяет JWT токен и авторизует запрос
+// DEPRECATED: Используйте SessionMiddleware для admin panel
+// Оставлено для обратной совместимости с Bearer token API
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Получаем токен из заголовка

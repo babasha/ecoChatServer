@@ -314,14 +314,14 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 
 // chatCoreInfo содержит базовую информацию о чате после создания/поиска
 type chatCoreInfo struct {
-	ChatID               uuid.UUID
-	User                 *models.User
-	ClientID             uuid.UUID
-	Source               string
-	BotID                string
-	IsNewChat            bool      // true если чат только что создан
-	CreatedAt            time.Time // только для новых чатов
-	UpdatedAt            time.Time // только для новых чатов
+	ChatID    uuid.UUID
+	User      *models.User
+	ClientID  uuid.UUID
+	Source    string
+	BotID     string
+	IsNewChat bool      // true если чат только что создан
+	CreatedAt time.Time // только для новых чатов
+	UpdatedAt time.Time // только для новых чатов
 }
 
 // getOrCreateChatCore - внутренняя функция для создания/поиска чата

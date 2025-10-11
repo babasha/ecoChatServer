@@ -40,9 +40,9 @@ type GenerateOptions struct {
 	ResponseFormat string  `json:"response_format,omitempty"` // "text" или "json"
 
 	// Для логирования использования токенов
-	ClientID       *uuid.UUID `json:"-"` // UUID клиента (для статистики)
-	ChatID         *uuid.UUID `json:"-"` // UUID чата (для статистики)
-	AdminID        *uuid.UUID `json:"-"` // UUID админа (для статистики)
+	ClientID *uuid.UUID `json:"-"` // UUID клиента (для статистики)
+	ChatID   *uuid.UUID `json:"-"` // UUID чата (для статистики)
+	AdminID  *uuid.UUID `json:"-"` // UUID админа (для статистики)
 }
 
 // GetClientID возвращает ClientID для логирования
@@ -130,15 +130,15 @@ const (
 	ProviderOpenAI   ProviderType = "openai"
 	ProviderLMStudio ProviderType = "lmstudio" // LM Studio (локальная LLM через OpenAI-совместимый API)
 	ProviderClaude   ProviderType = "claude"
-	ProviderOllama   ProviderType = "ollama"   // Локальные модели Ollama
-	ProviderDefault  ProviderType = "gemini"   // По умолчанию
+	ProviderOllama   ProviderType = "ollama" // Локальные модели Ollama
+	ProviderDefault  ProviderType = "gemini" // По умолчанию
 )
 
 // ProviderConfig конфигурация провайдера
 type ProviderConfig struct {
-	Type    ProviderType `json:"type"`              // Тип провайдера
-	APIKey  string       `json:"api_key,omitempty"` // API ключ (если требуется)
+	Type    ProviderType `json:"type"`               // Тип провайдера
+	APIKey  string       `json:"api_key,omitempty"`  // API ключ (если требуется)
 	BaseURL string       `json:"base_url,omitempty"` // Базовый URL (для кастомных эндпоинтов)
-	Model   string       `json:"model,omitempty"`   // Название модели
-	Timeout int          `json:"timeout,omitempty"` // Таймаут в секундах
+	Model   string       `json:"model,omitempty"`    // Название модели
+	Timeout int          `json:"timeout,omitempty"`  // Таймаут в секундах
 }

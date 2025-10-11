@@ -11,10 +11,10 @@ import (
 
 // TranslateBatchRequest содержит информацию для batch перевода
 type TranslateBatchRequest struct {
-	Text     string
-	From     string
-	To       string
-	Index    int // Индекс для сопоставления с результатом
+	Text  string
+	From  string
+	To    string
+	Index int // Индекс для сопоставления с результатом
 }
 
 // TranslateBatch переводит несколько текстов за один API вызов

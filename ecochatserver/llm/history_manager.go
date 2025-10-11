@@ -6,9 +6,9 @@ import (
 
 // HistoryManager управляет размером истории диалога
 type HistoryManager struct {
-	maxMessages      int // Максимальное количество сообщений в истории
-	maxTotalTokens   int // Приблизительный лимит токенов (4 символа = 1 токен)
-	systemTokens     int // Количество токенов в системном промпте
+	maxMessages    int // Максимальное количество сообщений в истории
+	maxTotalTokens int // Приблизительный лимит токенов (4 символа = 1 токен)
+	systemTokens   int // Количество токенов в системном промпте
 }
 
 func NewHistoryManager() *HistoryManager {
@@ -75,11 +75,11 @@ func (hm *HistoryManager) EstimateTokens(text string) int {
 func (hm *HistoryManager) GetStats(history []Message) map[string]interface{} {
 	if len(history) == 0 {
 		return map[string]interface{}{
-			"messages":         0,
-			"estimatedTokens":  0,
-			"systemTokens":     hm.systemTokens,
-			"availableTokens":  hm.maxTotalTokens,
-			"utilizationPct":   0.0,
+			"messages":        0,
+			"estimatedTokens": 0,
+			"systemTokens":    hm.systemTokens,
+			"availableTokens": hm.maxTotalTokens,
+			"utilizationPct":  0.0,
 		}
 	}
 

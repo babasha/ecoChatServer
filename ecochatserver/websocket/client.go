@@ -27,7 +27,7 @@ var (
 // Client представляет одно WebSocket-соединение.
 type Client struct {
 	hub          *Hub
-	Conn         *websocket.Conn // ЭКСПОРТИРОВАНО для DisconnectSession
+	Conn         *websocket.Conn  // ЭКСПОРТИРОВАНО для DisconnectSession
 	Send         chan interface{} // ЭКСПОРТИРОВАНО: исходящие сообщения (изменено на interface{} для гибкости)
 	ClientType   string           // ЭКСПОРТИРОВАНО: "admin" или "widget"
 	ID           string           // ЭКСПОРТИРОВАНО: уникальный ID сессии (строка для удобства)
@@ -37,11 +37,11 @@ type Client struct {
 	Context      *gin.Context     // Gin context для доступа к данным запроса/аутентификации
 
 	// Метаданные сессии для мониторинга
-	IP            string    // IP адрес клиента
-	UserAgent     string    // User Agent браузера
-	ConnectedAt   time.Time // Время подключения
-	LastActivity  time.Time // Время последней активности
-	MessageCount  int       // Количество отправленных сообщений
+	IP           string    // IP адрес клиента
+	UserAgent    string    // User Agent браузера
+	ConnectedAt  time.Time // Время подключения
+	LastActivity time.Time // Время последней активности
+	MessageCount int       // Количество отправленных сообщений
 
 	// Защита от повторного отключения
 	disconnectOnce sync.Once // Гарантирует однократное отключение
@@ -51,18 +51,18 @@ type Client struct {
 func NewClient(hub *Hub, conn *websocket.Conn, clientType string, id uuid.UUID, chatID uuid.UUID) *Client {
 	now := time.Now()
 	return &Client{
-		hub:           hub,
-		Conn:          conn,
-		Send:          make(chan interface{}, 256),
-		ClientType:    clientType,
-		ID:            uuid.New().String(), // Генерируем уникальный ID сессии
-		UserID:        id,
-		ChatID:        chatID,
-		ConnectedAt:   now,
-		LastActivity:  now,
-		MessageCount:  0,
-		IP:            "",
-		UserAgent:     "",
+		hub:          hub,
+		Conn:         conn,
+		Send:         make(chan interface{}, 256),
+		ClientType:   clientType,
+		ID:           uuid.New().String(), // Генерируем уникальный ID сессии
+		UserID:       id,
+		ChatID:       chatID,
+		ConnectedAt:  now,
+		LastActivity: now,
+		MessageCount: 0,
+		IP:           "",
+		UserAgent:    "",
 	}
 }
 

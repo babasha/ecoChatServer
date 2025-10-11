@@ -17,7 +17,7 @@ import (
 type UsageLogger struct {
 	db      *sqlx.DB
 	logChan chan UsageLogEntry // Канал для асинхронного логирования
-	done    chan struct{}       // Канал для graceful shutdown
+	done    chan struct{}      // Канал для graceful shutdown
 }
 
 // UsageLogEntry представляет запись о использовании LLM
@@ -89,10 +89,10 @@ func InitUsageLogger() error {
 	}
 
 	// Настраиваем пул соединений для оптимальной производительности
-	db.SetMaxOpenConns(25)                    // Максимум 25 открытых соединений
-	db.SetMaxIdleConns(5)                     // 5 idle соединений в пуле
-	db.SetConnMaxLifetime(5 * time.Minute)    // Переподключение каждые 5 минут
-	db.SetConnMaxIdleTime(1 * time.Minute)    // Закрывать idle соединения через 1 минуту
+	db.SetMaxOpenConns(25)                 // Максимум 25 открытых соединений
+	db.SetMaxIdleConns(5)                  // 5 idle соединений в пуле
+	db.SetConnMaxLifetime(5 * time.Minute) // Переподключение каждые 5 минут
+	db.SetConnMaxIdleTime(1 * time.Minute) // Закрывать idle соединения через 1 минуту
 
 	// Проверяем подключение
 	if err := db.Ping(); err != nil {
@@ -251,15 +251,15 @@ func GetDailyStats(ctx context.Context, startDate, endDate time.Time, clientID *
 
 	for rows.Next() {
 		var (
-			date          time.Time
-			provider      string
-			model         string
-			requestType   sql.NullString
-			requestCount  int64
-			promptTokens  int64
-			compTokens    int64
-			totalTokens   int64
-			avgTokens     float64
+			date         time.Time
+			provider     string
+			model        string
+			requestType  sql.NullString
+			requestCount int64
+			promptTokens int64
+			compTokens   int64
+			totalTokens  int64
+			avgTokens    float64
 		)
 
 		if err := rows.Scan(&date, &provider, &model, &requestType, &requestCount, &promptTokens, &compTokens, &totalTokens, &avgTokens); err != nil {
@@ -268,15 +268,15 @@ func GetDailyStats(ctx context.Context, startDate, endDate time.Time, clientID *
 		}
 
 		result := map[string]interface{}{
-			"date":                     date.Format("2006-01-02"),
-			"provider":                 provider,
-			"model":                    model,
-			"request_type":             requestType.String,
-			"request_count":            requestCount,
-			"total_prompt_tokens":      promptTokens,
-			"total_completion_tokens":  compTokens,
-			"total_tokens":             totalTokens,
-			"avg_tokens_per_request":   avgTokens,
+			"date":                    date.Format("2006-01-02"),
+			"provider":                provider,
+			"model":                   model,
+			"request_type":            requestType.String,
+			"request_count":           requestCount,
+			"total_prompt_tokens":     promptTokens,
+			"total_completion_tokens": compTokens,
+			"total_tokens":            totalTokens,
+			"avg_tokens_per_request":  avgTokens,
 		}
 
 		results = append(results, result)
@@ -340,10 +340,10 @@ func GetCostEstimates(ctx context.Context, startDate, endDate time.Time, clientI
 		}
 
 		result := map[string]interface{}{
-			"date":              date.Format("2006-01-02"),
-			"provider":          provider,
-			"request_count":     requestCount,
-			"total_tokens":      totalTokens,
+			"date":               date.Format("2006-01-02"),
+			"provider":           provider,
+			"request_count":      requestCount,
+			"total_tokens":       totalTokens,
 			"estimated_cost_usd": cost,
 		}
 

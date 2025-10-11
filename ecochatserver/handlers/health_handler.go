@@ -24,11 +24,11 @@ type HealthData struct {
 
 // HealthState представляет состояние здоровья системы
 type HealthState struct {
-	Overall string        `json:"overall"` // "healthy" | "degraded" | "unhealthy"
-	System  SystemMetrics `json:"system"`
-	Database DatabaseHealth `json:"database"`
-	Backend BackendHealth  `json:"backend"`
-	APILatency int         `json:"apiLatency"` // задержка API в мс
+	Overall    string         `json:"overall"` // "healthy" | "degraded" | "unhealthy"
+	System     SystemMetrics  `json:"system"`
+	Database   DatabaseHealth `json:"database"`
+	Backend    BackendHealth  `json:"backend"`
+	APILatency int            `json:"apiLatency"` // задержка API в мс
 }
 
 // SystemMetrics представляет системные метрики
@@ -40,20 +40,20 @@ type SystemMetrics struct {
 
 // MemoryInfo представляет информацию о памяти
 type MemoryInfo struct {
-	Total         uint64  `json:"total"`
-	Used          uint64  `json:"used"`
-	Free          uint64  `json:"free"`
-	UsagePercent  float64 `json:"usagePercent"`
-	TotalGB       string  `json:"totalGB"`
-	UsedGB        string  `json:"usedGB"`
-	FreeGB        string  `json:"freeGB"`
+	Total        uint64  `json:"total"`
+	Used         uint64  `json:"used"`
+	Free         uint64  `json:"free"`
+	UsagePercent float64 `json:"usagePercent"`
+	TotalGB      string  `json:"totalGB"`
+	UsedGB       string  `json:"usedGB"`
+	FreeGB       string  `json:"freeGB"`
 }
 
 // CPUInfo представляет информацию о CPU
 type CPUInfo struct {
-	Count       int              `json:"count"`
-	LoadAverage LoadAverageInfo  `json:"loadAverage"`
-	LoadPercent string           `json:"loadPercent"`
+	Count       int             `json:"count"`
+	LoadAverage LoadAverageInfo `json:"loadAverage"`
+	LoadPercent string          `json:"loadPercent"`
 }
 
 // LoadAverageInfo представляет среднюю загрузку CPU

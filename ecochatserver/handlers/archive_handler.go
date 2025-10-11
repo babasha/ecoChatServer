@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/models"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // ResolveChat помечает чат как решенный и архивирует его
@@ -133,8 +133,8 @@ func ResolveChat(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Chat resolved and archived",
+		"success":  true,
+		"message":  "Chat resolved and archived",
 		"deleteAt": deleteAt,
 	})
 }

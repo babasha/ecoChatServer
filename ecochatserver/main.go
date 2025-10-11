@@ -378,7 +378,11 @@ func setupAPIRoutes(r *gin.Engine) {
 			})
 		})
 
-		// OAuth 2.0 token endpoint для админки (строгий rate limit)
+		// Session cookie authentication для Next.js admin panel
+		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.LoginHandler)
+		api.POST("/auth/logout", handlers.LogoutHandler)
+
+		// OAuth 2.0 token endpoint для админки (DEPRECATED - используйте /auth/login)
 		api.POST("/auth/token", middleware.StrictRateLimitMiddleware(), handlers.TokenHandler)
 
 		// Webhook для Telegram и других внешних сервисов
@@ -408,42 +412,42 @@ func setupAPIRoutes(r *gin.Engine) {
 			})
 		}
 
-		// Защищенные API-маршруты (требуется токен + rate limiting)
-		auth := api.Group("/")
-		auth.Use(middleware.AuthMiddleware())
-		auth.Use(middleware.ModerateRateLimitMiddleware())
+		// Защищенные API-маршруты для админки (session cookie authentication)
+		admin := api.Group("/")
+		admin.Use(middleware.SessionMiddleware()) // ← Session cookie вместо Bearer token
+		admin.Use(middleware.ModerateRateLimitMiddleware())
 		{
 			// Получение списка чатов для админки
-			auth.GET("/chats", handlers.GetChats)
+			admin.GET("/chats", handlers.GetChats)
 
 			// Получение конкретного чата с сообщениями
-			auth.GET("/chats/:id", handlers.GetChatByID)
+			admin.GET("/chats/:id", handlers.GetChatByID)
 
 			// Отправка сообщения в чат от админа
-			auth.POST("/chats/:id/messages", handlers.SendMessageToChat)
+			admin.POST("/chats/:id/messages", handlers.SendMessageToChat)
 
 			// Управление автоответчиком для чата
-			auth.PUT("/chats/:id/auto-responder", handlers.ToggleAutoResponder)
+			admin.PUT("/chats/:id/auto-responder", handlers.ToggleAutoResponder)
 
 			// Пометка сообщений как прочитанных
-			auth.POST("/chats/:id/read", handlers.MarkChatMessagesAsRead)
+			admin.POST("/chats/:id/read", handlers.MarkChatMessagesAsRead)
 
 			// Настройки админа (языковые предпочтения)
-			auth.GET("/admin/settings", handlers.GetAdminSettings)
-			auth.PUT("/admin/settings", handlers.UpdateAdminSettings)
+			admin.GET("/admin/settings", handlers.GetAdminSettings)
+			admin.PUT("/admin/settings", handlers.UpdateAdminSettings)
 
 			// LLM Usage Analytics (защищённые эндпоинты для админки)
-			auth.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
-			auth.GET("/llm-usage/summary", handlers.GetLLMUsageSummary)
+			admin.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
+			admin.GET("/llm-usage/summary", handlers.GetLLMUsageSummary)
 
 			// Архивирование чатов
-			auth.POST("/chats/:id/resolve", handlers.ResolveChat)
-			auth.GET("/archived-chats", handlers.GetArchivedChats)
-			auth.GET("/archived-chats/:id/messages", handlers.GetArchivedChatMessages)
-			auth.POST("/archived-chats/:id/toggle-timer", handlers.ToggleArchiveTimer)
+			admin.POST("/chats/:id/resolve", handlers.ResolveChat)
+			admin.GET("/archived-chats", handlers.GetArchivedChats)
+			admin.GET("/archived-chats/:id/messages", handlers.GetArchivedChatMessages)
+			admin.POST("/archived-chats/:id/toggle-timer", handlers.ToggleArchiveTimer)
 
 			// Статистика для администраторов
-			auth.GET("/admin/stats", func(c *gin.Context) {
+			admin.GET("/admin/stats", func(c *gin.Context) {
 				stats := handlers.WebSocketHub.GetStats()
 				activeClients := handlers.WebSocketHub.GetActiveClients()
 

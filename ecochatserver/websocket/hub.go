@@ -15,11 +15,11 @@ const (
 
 // Hub отвечает за регистрацию  клиентов и  вещание сообщений.
 type Hub struct {
-	clients     map[*Client]bool
-	adminsByID  map[string]*Client
-	widgetsByID map[string]map[*Client]bool
-	chatClients map[string]map[*Client]bool
-	widgetsByUserID map[string]*Client  // Виджеты по userID для обновления chat_id
+	clients         map[*Client]bool
+	adminsByID      map[string]*Client
+	widgetsByID     map[string]map[*Client]bool
+	chatClients     map[string]map[*Client]bool
+	widgetsByUserID map[string]*Client // Виджеты по userID для обновления chat_id
 
 	Broadcast  chan []byte
 	Register   chan *Client

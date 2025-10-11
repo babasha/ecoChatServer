@@ -50,7 +50,7 @@ func GetLLMUsageStats(c *gin.Context) {
 	stats, err := llm.GetDailyStats(c.Request.Context(), startDate, endDate, clientID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get LLM usage stats",
+			"error":   "Failed to get LLM usage stats",
 			"details": err.Error(),
 		})
 		return
@@ -60,7 +60,7 @@ func GetLLMUsageStats(c *gin.Context) {
 	costs, err := llm.GetCostEstimates(c.Request.Context(), startDate, endDate, clientID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get cost estimates",
+			"error":   "Failed to get cost estimates",
 			"details": err.Error(),
 		})
 		return
@@ -70,7 +70,7 @@ func GetLLMUsageStats(c *gin.Context) {
 	aggregates, err := llm.GetDailyAggregates(c.Request.Context(), startDate, endDate, clientID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get daily aggregates",
+			"error":   "Failed to get daily aggregates",
 			"details": err.Error(),
 		})
 		return
@@ -114,10 +114,10 @@ func GetLLMUsageSummary(c *gin.Context) {
 
 	// Подсчитываем итоги
 	var (
-		totalRequests      int64
-		totalTokens        int64
-		totalCost          float64
-		providerBreakdown  = make(map[string]int64)
+		totalRequests     int64
+		totalTokens       int64
+		totalCost         float64
+		providerBreakdown = make(map[string]int64)
 	)
 
 	for _, stat := range stats {
@@ -143,11 +143,11 @@ func GetLLMUsageSummary(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"summary": gin.H{
-			"total_requests":      totalRequests,
-			"total_tokens":        totalTokens,
-			"total_cost_usd":      totalCost,
-			"provider_breakdown":  providerBreakdown,
-			"period_days":         30,
+			"total_requests":     totalRequests,
+			"total_tokens":       totalTokens,
+			"total_cost_usd":     totalCost,
+			"provider_breakdown": providerBreakdown,
+			"period_days":        30,
 		},
 	})
 }

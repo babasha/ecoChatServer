@@ -191,11 +191,11 @@ func TelegramWebhook(c *gin.Context) {
 
 	userMsg, err := database.AddMessage(
 		chat.ID,
-		messageContent,    // Сохраняем оригинальный текст пользователя
+		messageContent, // Сохраняем оригинальный текст пользователя
 		"user",
 		userUUID,
 		msgType,
-		messageMetadata,   // Метаданные содержат translations для админа
+		messageMetadata, // Метаданные содержат translations для админа
 	)
 	if err != nil {
 		log.Printf("TelegramWebhook: AddMessage error: %v", err)

@@ -41,7 +41,7 @@ type GeminiClient struct {
 
 // GeminiMessage представляет сообщение в формате Gemini
 type GeminiMessage struct {
-	Role  string                 `json:"role"`
+	Role  string                   `json:"role"`
 	Parts []map[string]interface{} `json:"parts"`
 }
 
@@ -106,7 +106,7 @@ type GeminiCandidate struct {
 type GeminiResponse struct {
 	Candidates     []GeminiCandidate `json:"candidates"`
 	PromptFeedback *struct {
-		BlockReason string `json:"blockReason,omitempty"`
+		BlockReason   string `json:"blockReason,omitempty"`
 		SafetyRatings []struct {
 			Category    string `json:"category"`
 			Probability string `json:"probability"`

@@ -40,9 +40,9 @@ type LLMUsageStats struct {
 
 // DailyCostEstimate представляет оценку стоимости по дням
 type DailyCostEstimate struct {
-	Date         string  `json:"date" db:"date"`
-	Provider     string  `json:"provider" db:"provider"`
-	TotalTokens  int64   `json:"total_tokens" db:"total_tokens"`
-	RequestCount int64   `json:"request_count" db:"total_requests"`
+	Date          string  `json:"date" db:"date"`
+	Provider      string  `json:"provider" db:"provider"`
+	TotalTokens   int64   `json:"total_tokens" db:"total_tokens"`
+	RequestCount  int64   `json:"request_count" db:"total_requests"`
 	EstimatedCost float64 `json:"estimated_cost_usd" db:"total_cost"`
 }

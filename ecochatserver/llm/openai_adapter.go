@@ -26,14 +26,14 @@ type OpenAIAdapter struct {
 
 // OpenAI API request/response types
 type openAIMessage struct {
-	Role    string `json:"role"`    // system, user, assistant, tool
-	Content string `json:"content"`
+	Role       string `json:"role"` // system, user, assistant, tool
+	Content    string `json:"content"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 type openAITool struct {
-	Type     string                 `json:"type"` // всегда "function"
-	Function openAIToolFunction     `json:"function"`
+	Type     string             `json:"type"` // всегда "function"
+	Function openAIToolFunction `json:"function"`
 }
 
 type openAIToolFunction struct {

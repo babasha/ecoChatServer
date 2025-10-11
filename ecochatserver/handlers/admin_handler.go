@@ -174,9 +174,9 @@ func SendMessageToChat(c *gin.Context) {
 	const maxMessageLength = 2000
 	if len(request.Content) > maxMessageLength {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Сообщение слишком длинное",
-			"details": "Максимальная длина сообщения - 2000 символов",
-			"maxLength": maxMessageLength,
+			"error":         "Сообщение слишком длинное",
+			"details":       "Максимальная длина сообщения - 2000 символов",
+			"maxLength":     maxMessageLength,
 			"currentLength": len(request.Content),
 		})
 		return
@@ -202,7 +202,7 @@ func SendMessageToChat(c *gin.Context) {
 			// Продолжаем с оригинальным текстом
 		} else if result != nil {
 			// ВАЖНО: Сохраняем ОРИГИНАЛ в content, перевод в metadata
-			messageContent = request.Content // Оставляем оригинальный текст!
+			messageContent = request.Content  // Оставляем оригинальный текст!
 			messageMetadata = result.Metadata // metadata уже содержит translations
 
 			if result.WasTranslated {

@@ -10,16 +10,16 @@ import (
 
 // AnalyticsData представляет аналитические данные из базы данных
 type AnalyticsData struct {
-	TotalMessages              int                       `json:"totalMessages"`
-	MessagesBySender           []MessagesBySenderStat    `json:"messagesBySender"`
-	AdminStats                 []AdminStat               `json:"adminStats"`
-	ArchivedChatsCount         int                       `json:"archivedChatsCount"`
-	TotalChatsCount            int                       `json:"totalChatsCount"`
-	AutoResponderChatsCount    int                       `json:"autoResponderChatsCount"`
-	TranslationRequestsCount   int                       `json:"translationRequestsCount"`
-	ChatsByStatus              []ChatStatusStat          `json:"chatsByStatus"`
-	AvgResponseTimeMinutes     *string                   `json:"avgResponseTimeMinutes"`
-	ReadStats                  ReadStatsSummary          `json:"readStats"`
+	TotalMessages            int                    `json:"totalMessages"`
+	MessagesBySender         []MessagesBySenderStat `json:"messagesBySender"`
+	AdminStats               []AdminStat            `json:"adminStats"`
+	ArchivedChatsCount       int                    `json:"archivedChatsCount"`
+	TotalChatsCount          int                    `json:"totalChatsCount"`
+	AutoResponderChatsCount  int                    `json:"autoResponderChatsCount"`
+	TranslationRequestsCount int                    `json:"translationRequestsCount"`
+	ChatsByStatus            []ChatStatusStat       `json:"chatsByStatus"`
+	AvgResponseTimeMinutes   *string                `json:"avgResponseTimeMinutes"`
+	ReadStats                ReadStatsSummary       `json:"readStats"`
 }
 
 // MessagesBySenderStat представляет статистику сообщений по отправителям

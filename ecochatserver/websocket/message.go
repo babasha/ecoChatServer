@@ -50,4 +50,3 @@ func NewErrorMessage(code, text string) ([]byte, error) {
 	}
 	return NewMessage("error", payload)
 }
-
