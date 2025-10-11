@@ -21,6 +21,7 @@ func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
          WHERE email=$1`
 
 	fmt.Printf("[GetAdmin] Executing query for email: %s\n", email)
+	fmt.Printf("[GetAdmin] Query: %s\n", q)
 
 	if err := db.QueryRowContext(ctx, q, email).Scan(
 		&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &admin.Role,
