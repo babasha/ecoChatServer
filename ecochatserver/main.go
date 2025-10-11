@@ -378,6 +378,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			})
 		})
 
+		// LLM Usage Analytics (публичные для админки через Next.js proxy)
+		api.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
+		api.GET("/llm-usage/summary", handlers.GetLLMUsageSummary)
+
 		// OAuth 2.0 token endpoint для админки (строгий rate limit)
 		api.POST("/auth/token", middleware.StrictRateLimitMiddleware(), handlers.TokenHandler)
 
@@ -451,10 +455,6 @@ func setupAPIRoutes(r *gin.Engine) {
 					"timestamp": time.Now().Format(time.RFC3339),
 				})
 			})
-
-			// LLM Usage Analytics
-			auth.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
-			auth.GET("/llm-usage/summary", handlers.GetLLMUsageSummary)
 		}
 	}
 
