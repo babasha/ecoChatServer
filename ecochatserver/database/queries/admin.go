@@ -13,22 +13,23 @@ func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
 	defer cancel()
 
 	var admin models.Admin
-	var avatarNull sql.NullString
 
 	const q = `
-        SELECT id,name,email,password_hash,avatar,role,client_id,active
+        SELECT id, name, email, password, role
           FROM admins
          WHERE email=$1`
 	if err := db.QueryRowContext(ctx, q, email).Scan(
-		&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash,
-		&avatarNull, &admin.Role, &admin.ClientID, &admin.Active,
+		&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &admin.Role,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetAdmin: %w", err)
 	}
-	admin.Avatar = nullStringToPointer(avatarNull)
+
+	// По умолчанию аккаунты активны (колонка active отсутствует в БД)
+	admin.Active = true
+
 	return &admin, nil
 }
 
