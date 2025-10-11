@@ -66,11 +66,22 @@ func GetLLMUsageStats(c *gin.Context) {
 		return
 	}
 
+	// Получаем агрегированные данные по датам (для графиков, без детализации)
+	aggregates, err := llm.GetDailyAggregates(c.Request.Context(), startDate, endDate, clientID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get daily aggregates",
+			"details": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"stats":    stats,
-			"costs":    costs,
+			"stats":      stats,
+			"costs":      costs,
+			"aggregates": aggregates, // Агрегированные данные для графиков
 			"period": gin.H{
 				"start": startDateStr,
 				"end":   endDateStr,

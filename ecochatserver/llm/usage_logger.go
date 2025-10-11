@@ -15,7 +15,9 @@ import (
 
 // UsageLogger отвечает за логирование использования LLM токенов
 type UsageLogger struct {
-	db *sqlx.DB
+	db      *sqlx.DB
+	logChan chan UsageLogEntry // Канал для асинхронного логирования
+	done    chan struct{}       // Канал для graceful shutdown
 }
 
 // UsageLogEntry представляет запись о использовании LLM
@@ -59,26 +61,50 @@ func InitUsageLogger() error {
 		return err
 	}
 
+	// Настраиваем пул соединений для оптимальной производительности
+	db.SetMaxOpenConns(25)                    // Максимум 25 открытых соединений
+	db.SetMaxIdleConns(5)                     // 5 idle соединений в пуле
+	db.SetConnMaxLifetime(5 * time.Minute)    // Переподключение каждые 5 минут
+	db.SetConnMaxIdleTime(1 * time.Minute)    // Закрывать idle соединения через 1 минуту
+
 	// Проверяем подключение
 	if err := db.Ping(); err != nil {
 		log.Printf("[LLM_USAGE_LOGGER] ERROR: Failed to ping LLM logs DB: %v", err)
 		return err
 	}
 
-	globalUsageLogger = &UsageLogger{db: db}
-	log.Println("[LLM_USAGE_LOGGER] ✅ Successfully connected to LLM logs DB")
+	// Создаём логгер с асинхронным каналом (буфер 1000 записей)
+	globalUsageLogger = &UsageLogger{
+		db:      db,
+		logChan: make(chan UsageLogEntry, 1000),
+		done:    make(chan struct{}),
+	}
+
+	// Запускаем worker goroutine для асинхронной записи
+	go globalUsageLogger.worker()
+
+	log.Println("[LLM_USAGE_LOGGER] ✅ Successfully connected to LLM logs DB (async mode)")
 
 	return nil
 }
 
-// LogUsage записывает использование токенов в БД
+// LogUsage записывает использование токенов в БД (асинхронно, неблокирующая операция)
 func LogUsage(ctx context.Context, entry UsageLogEntry) error {
 	if globalUsageLogger == nil {
 		// Логирование отключено - ничего не делаем
 		return nil
 	}
 
-	return globalUsageLogger.log(ctx, entry)
+	// Неблокирующая отправка в канал
+	select {
+	case globalUsageLogger.logChan <- entry:
+		// Успешно отправлено
+		return nil
+	default:
+		// Канал заполнен, пропускаем запись (чтобы не блокировать основной поток)
+		log.Printf("[LLM_USAGE_LOGGER] WARNING: Log channel full, dropping entry")
+		return nil
+	}
 }
 
 // log записывает запись в БД
@@ -125,10 +151,37 @@ func (l *UsageLogger) log(ctx context.Context, entry UsageLogEntry) error {
 		return err
 	}
 
-	log.Printf("[LLM_USAGE_LOGGER] ✅ Logged: %s/%s - %d tokens (type: %s)",
-		entry.Provider, entry.Model, entry.TotalTokens, entry.RequestType)
-
+	// Убрали избыточное логирование для производительности
 	return nil
+}
+
+// worker обрабатывает записи из канала в фоновом режиме
+func (l *UsageLogger) worker() {
+	log.Println("[LLM_USAGE_LOGGER] Worker started")
+
+	for {
+		select {
+		case entry := <-l.logChan:
+			// Записываем в БД (без блокировки основного потока)
+			if err := l.log(context.Background(), entry); err != nil {
+				log.Printf("[LLM_USAGE_LOGGER] Worker error: %v", err)
+			}
+		case <-l.done:
+			// Получен сигнал остановки
+			log.Println("[LLM_USAGE_LOGGER] Worker shutting down...")
+
+			// Обрабатываем оставшиеся записи в канале
+			for {
+				select {
+				case entry := <-l.logChan:
+					_ = l.log(context.Background(), entry)
+				default:
+					log.Println("[LLM_USAGE_LOGGER] Worker stopped")
+					return
+				}
+			}
+		}
+	}
 }
 
 // GetDailyStats получает агрегированную статистику по дням
@@ -273,10 +326,85 @@ func GetCostEstimates(ctx context.Context, startDate, endDate time.Time, clientI
 	return results, nil
 }
 
-// Close закрывает подключение к БД
-func CloseUsageLogger() error {
-	if globalUsageLogger != nil && globalUsageLogger.db != nil {
-		return globalUsageLogger.db.Close()
+// GetDailyAggregates получает данные агрегированные только по датам (без детализации по провайдерам)
+// Используется для графиков на фронтенде, чтобы избежать агрегации на клиенте
+func GetDailyAggregates(ctx context.Context, startDate, endDate time.Time, clientID *uuid.UUID) ([]map[string]interface{}, error) {
+	if globalUsageLogger == nil {
+		return nil, sql.ErrNoRows
 	}
+
+	query := `
+		SELECT
+			DATE(timestamp) as date,
+			COUNT(*) as requests,
+			SUM(total_tokens) as tokens
+		FROM llm_usage_logs
+		WHERE timestamp BETWEEN $1 AND $2
+	`
+
+	args := []interface{}{startDate, endDate}
+
+	if clientID != nil {
+		query += " AND client_id = $3"
+		args = append(args, clientID)
+	}
+
+	query += " GROUP BY DATE(timestamp) ORDER BY DATE(timestamp) DESC"
+
+	rows, err := globalUsageLogger.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+
+	for rows.Next() {
+		var (
+			date     time.Time
+			requests int64
+			tokens   int64
+		)
+
+		if err := rows.Scan(&date, &requests, &tokens); err != nil {
+			log.Printf("[LLM_USAGE_LOGGER] ERROR scanning row: %v", err)
+			continue
+		}
+
+		result := map[string]interface{}{
+			"date":     date.Format("2006-01-02"),
+			"requests": requests,
+			"tokens":   tokens,
+		}
+
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// CloseUsageLogger корректно завершает работу логгера (graceful shutdown)
+func CloseUsageLogger() error {
+	if globalUsageLogger == nil {
+		return nil
+	}
+
+	log.Println("[LLM_USAGE_LOGGER] Initiating graceful shutdown...")
+
+	// Сигнализируем worker'у о завершении
+	close(globalUsageLogger.done)
+
+	// Даём worker'у время обработать оставшиеся записи (максимум 5 секунд)
+	time.Sleep(2 * time.Second)
+
+	// Закрываем подключение к БД
+	if globalUsageLogger.db != nil {
+		if err := globalUsageLogger.db.Close(); err != nil {
+			log.Printf("[LLM_USAGE_LOGGER] ERROR closing DB: %v", err)
+			return err
+		}
+	}
+
+	log.Println("[LLM_USAGE_LOGGER] ✅ Shutdown complete")
 	return nil
 }
