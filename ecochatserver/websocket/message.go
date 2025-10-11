@@ -39,7 +39,7 @@ func NewTypingMessage(chatID uuid.UUID, isTyping bool, sender string) ([]byte, e
 	return NewMessage("typing", payload)
 }
 
-// NewErrorMessage формирует ошибку на WS-канале.
+// NewErrorMessage формир ует ошибку на WS-канале.
 func NewErrorMessage(code, text string) ([]byte, error) {
 	payload := struct {
 		Code string `json:"code"`
