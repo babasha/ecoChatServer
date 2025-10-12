@@ -160,7 +160,7 @@ func GetAnalytics(c *gin.Context) {
 			END as status,
 			COUNT(*) as count
 		FROM chats
-		GROUP BY status
+		GROUP BY is_archived, assigned_to
 	`)
 	if err != nil {
 		log.Printf("GetAnalytics: ошибка получения статистики по статусам чатов: %v", err)
