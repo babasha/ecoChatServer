@@ -36,7 +36,9 @@ func InitAutoResponder() {
 	// Это экономит ресурсы - один HTTP клиент вместо двух
 	provider, err := llm.NewProvider(nil)
 	if err != nil {
-		log.Fatalf("InitAutoResponder: не удалось создать провайдера: %v", err)
+		log.Printf("InitAutoResponder: не удалось создать провайдера: %v", err)
+		log.Println("Автоответчик будет недоступен до настройки LLM провайдера")
+		return
 	}
 	log.Printf("Провайдер LLM инициализирован: %s", provider.GetName())
 

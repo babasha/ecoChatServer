@@ -86,7 +86,8 @@ func GetSettingFromDB(key string) (string, error) {
 	}
 
 	var value sql.NullString
-	query := `SELECT value FROM app_settings WHERE key = $1`
+	// JSONB хранит значения в JSON формате, используем #>> '{}' чтобы извлечь как текст
+	query := `SELECT value #>> '{}' FROM app_settings WHERE key = $1`
 	err := DB.QueryRow(query, key).Scan(&value)
 
 	if err == sql.ErrNoRows {
@@ -105,22 +106,22 @@ func GetSettingFromDB(key string) (string, error) {
 }
 
 // SetSetting сохраняет значение настройки в БД
-func SetSetting(key string, value string, description string, category string) error {
+func SetSetting(key string, value string, description string) error {
 	if DB == nil {
 		return fmt.Errorf("database connection is nil")
 	}
 
+	// Оборачиваем значение в JSONB (добавляем кавычки для строки)
 	query := `
-		INSERT INTO app_settings (key, value, description, category)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO app_settings (key, value, description)
+		VALUES ($1, to_jsonb($2::text), $3)
 		ON CONFLICT (key) DO UPDATE SET
-			value = EXCLUDED.value,
+			value = to_jsonb($2::text),
 			description = EXCLUDED.description,
-			category = EXCLUDED.category,
 			updated_at = CURRENT_TIMESTAMP
 	`
 
-	_, err := DB.Exec(query, key, value, description, category)
+	_, err := DB.Exec(query, key, value, description)
 	if err != nil {
 		return fmt.Errorf("failed to set setting: %w", err)
 	}
@@ -140,7 +141,7 @@ func GetAllSettings() (map[string]string, error) {
 		return nil, fmt.Errorf("database connection is nil")
 	}
 
-	query := `SELECT key, value FROM app_settings WHERE value IS NOT NULL ORDER BY category, key`
+	query := `SELECT key, value #>> '{}' FROM app_settings WHERE value IS NOT NULL ORDER BY key`
 	rows, err := DB.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query settings: %w", err)
@@ -160,31 +161,6 @@ func GetAllSettings() (map[string]string, error) {
 	return settings, nil
 }
 
-// GetSettingsByCategory получает все настройки определённой категории
-func GetSettingsByCategory(category string) (map[string]string, error) {
-	if DB == nil {
-		return nil, fmt.Errorf("database connection is nil")
-	}
-
-	query := `SELECT key, value FROM app_settings WHERE category = $1 AND value IS NOT NULL ORDER BY key`
-	rows, err := DB.Query(query, category)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query settings: %w", err)
-	}
-	defer rows.Close()
-
-	settings := make(map[string]string)
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			log.Printf("[SETTINGS] Ошибка чтения настройки: %v", err)
-			continue
-		}
-		settings[key] = value
-	}
-
-	return settings, nil
-}
 
 // InvalidateSettingsCache очищает кеш настроек
 func InvalidateSettingsCache() {

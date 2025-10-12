@@ -352,17 +352,14 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.GET("/server-settings", handlers.GetServerSettings)
 		api.PUT("/server-settings", handlers.UpdateServerSettings)
 
-		// LLM Settings API
-		api.GET("/settings", handlers.GetSettings)
-		api.GET("/settings/llm", func(c *gin.Context) {
-			c.Request.URL.RawQuery = "category=llm"
-			handlers.GetSettings(c)
-		})
-		api.PUT("/settings/llm", handlers.UpdateSettingsBatch)
-		api.PUT("/settings/batch", handlers.UpdateSettingsBatch)
-		api.POST("/settings/llm/test", handlers.TestLLMProviderConnection)
-		api.POST("/llm/reload", handlers.ReloadLLMProvider)
-		api.POST("/llm/test", handlers.TestLLMProviderConnection)
+		// LLM Settings API (app_settings based)
+		api.GET("/settings", handlers.GetSettings)                            // Все настройки как map
+		api.GET("/settings/llm", handlers.GetLLMSettingsSimple)               // LLM настройки в структуре для фронтенда
+		api.PUT("/settings/llm", handlers.UpdateLLMSettingsSimple)            // Обновление LLM настроек с hot-swap
+		api.PUT("/settings/batch", handlers.UpdateSettingsBatch)              // Batch обновление настроек
+		api.POST("/settings/llm/test", handlers.TestLLMProviderConnection)    // Тестирование LLM подключения
+		api.POST("/llm/reload", handlers.ReloadLLMProvider)                   // Ручной reload провайдера
+		api.POST("/llm/test", handlers.TestLLMProviderConnection)             // Альтернативный endpoint для теста
 
 		// Публичная статистика WebSocket (для Dashboard без аутентификации)
 		api.GET("/stats/websocket", func(c *gin.Context) {
