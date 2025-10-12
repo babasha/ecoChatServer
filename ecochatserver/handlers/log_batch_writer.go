@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -162,9 +163,19 @@ func batchInsertServerLogs(batch []logQueueItem) error {
 			timestamp = time.Now()
 		}
 
+		// Конвертируем metadata в JSON для PostgreSQL JSONB
+		var metadataJSON []byte
+		if item.metadata != nil {
+			metadataJSON, err = json.Marshal(item.metadata)
+			if err != nil {
+				log.Printf("[LOGS_DB] Failed to marshal metadata: %v", err)
+				metadataJSON = []byte("{}")
+			}
+		}
+
 		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)",
 			i*5+1, i*5+2, i*5+3, i*5+4, i*5+5))
-		valueArgs = append(valueArgs, timestamp, string(item.entry.Level), item.entry.Message, item.source, item.metadata)
+		valueArgs = append(valueArgs, timestamp, string(item.entry.Level), item.entry.Message, item.source, metadataJSON)
 	}
 
 	query := fmt.Sprintf("INSERT INTO server_logs (timestamp, level, message, source, metadata) VALUES %s",
@@ -207,9 +218,19 @@ func batchInsertWebSocketLogs(batch []logQueueItem) error {
 			}
 		}
 
+		// Конвертируем metadata в JSON для PostgreSQL JSONB
+		var metadataJSON []byte
+		if item.metadata != nil {
+			metadataJSON, err = json.Marshal(item.metadata)
+			if err != nil {
+				log.Printf("[LOGS_DB] Failed to marshal metadata: %v", err)
+				metadataJSON = []byte("{}")
+			}
+		}
+
 		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 			i*7+1, i*7+2, i*7+3, i*7+4, i*7+5, i*7+6, i*7+7))
-		valueArgs = append(valueArgs, timestamp, string(item.entry.Level), item.entry.Message, item.source, clientID, clientType, item.metadata)
+		valueArgs = append(valueArgs, timestamp, string(item.entry.Level), item.entry.Message, item.source, clientID, clientType, metadataJSON)
 	}
 
 	query := fmt.Sprintf("INSERT INTO websocket_logs (timestamp, level, message, source, client_id, client_type, metadata) VALUES %s",
