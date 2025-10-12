@@ -164,13 +164,18 @@ func batchInsertServerLogs(batch []logQueueItem) error {
 		}
 
 		// Конвертируем metadata в JSON для PostgreSQL JSONB
-		var metadataJSON []byte
+		var metadataJSON interface{}
 		if item.metadata != nil {
-			metadataJSON, err = json.Marshal(item.metadata)
+			var jsonBytes []byte
+			jsonBytes, err = json.Marshal(item.metadata)
 			if err != nil {
 				log.Printf("[LOGS_DB] Failed to marshal metadata: %v", err)
-				metadataJSON = []byte("{}")
+				metadataJSON = nil
+			} else {
+				metadataJSON = jsonBytes
 			}
+		} else {
+			metadataJSON = nil
 		}
 
 		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)",
@@ -219,13 +224,18 @@ func batchInsertWebSocketLogs(batch []logQueueItem) error {
 		}
 
 		// Конвертируем metadata в JSON для PostgreSQL JSONB
-		var metadataJSON []byte
+		var metadataJSON interface{}
 		if item.metadata != nil {
-			metadataJSON, err = json.Marshal(item.metadata)
+			var jsonBytes []byte
+			jsonBytes, err = json.Marshal(item.metadata)
 			if err != nil {
 				log.Printf("[LOGS_DB] Failed to marshal metadata: %v", err)
-				metadataJSON = []byte("{}")
+				metadataJSON = nil
+			} else {
+				metadataJSON = jsonBytes
 			}
+		} else {
+			metadataJSON = nil
 		}
 
 		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)",
