@@ -84,20 +84,21 @@ func LoginHandler(c *gin.Context) {
 	isProduction := os.Getenv("GIN_MODE") == "release"
 	domain := os.Getenv("COOKIE_DOMAIN") // например, ".vercel.app" для поддоменов
 
-	c.SetCookie(
-		"session",    // name
-		token,        // value
-		86400,        // maxAge (24 часа в секундах)
-		"/",          // path
-		domain,       // domain (пустая строка = текущий домен)
-		isProduction, // secure (только HTTPS в production)
-		true,         // httpOnly
-	)
-
-	// CORS: Для поддоменов или разных доменов нужно явно указать SameSite=None
-	// Gin не поддерживает SameSite напрямую в SetCookie, устанавливаем через заголовок
+	// CORS: Для cross-domain нужно явно указать SameSite=None
+	// Gin не поддерживает SameSite напрямую в SetCookie, поэтому для cross-domain
+	// используем ручную установку заголовка
 	if os.Getenv("ENABLE_CROSS_DOMAIN_COOKIES") == "true" {
 		c.Header("Set-Cookie", buildCookieHeader(token, isProduction, domain))
+	} else {
+		c.SetCookie(
+			"session",    // name
+			token,        // value
+			86400,        // maxAge (24 часа в секундах)
+			"/",          // path
+			domain,       // domain (пустая строка = текущий домен)
+			isProduction, // secure (только HTTPS в production)
+			true,         // httpOnly
+		)
 	}
 
 	log.Printf("LoginHandler: session cookie установлена для: %s", req.Email)
@@ -119,13 +120,10 @@ func buildCookieHeader(token string, secure bool, domain string) string {
 	cookie += "; Max-Age=86400"
 	cookie += "; HttpOnly"
 	cookie += "; SameSite=None" // Для cross-domain requests
+	cookie += "; Secure"        // SameSite=None требует Secure (всегда для cross-domain)
 
 	if domain != "" {
 		cookie += "; Domain=" + domain
-	}
-
-	if secure {
-		cookie += "; Secure"
 	}
 
 	return cookie
