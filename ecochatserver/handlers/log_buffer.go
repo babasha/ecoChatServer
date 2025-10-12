@@ -159,8 +159,8 @@ func InitLogBuffers() {
 	WebSocketLogsBuffer = NewLogBuffer(1000) // Храним последние 1000 WebSocket логов
 
 	// Инициализируем очередь для batch записи в БД
-	logWriteQueue = make(chan logQueueItem, 1000) // Буфер на 1000 логов
-	logBatchTicker = time.NewTicker(2 * time.Second) // Flush каждые 2 секунды
+	logWriteQueue = make(chan logQueueItem, 10000) // Буфер на 10000 логов (для 10-минутных интервалов)
+	logBatchTicker = time.NewTicker(10 * time.Minute) // Flush каждые 10 минут
 
 	// Запускаем воркер для batch записи логов
 	go logBatchWriter()

@@ -146,8 +146,8 @@ func buildServerLogsFilter(level, source, startTime, endTime string) (string, []
 
 // GetServerLogsFromDB возвращает серверные логи из БД с пагинацией и фильтрами
 func GetServerLogsFromDB(c *gin.Context) {
-	if database.DB == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+	if logsDB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Logs database not available"})
 		return
 	}
 
@@ -178,7 +178,7 @@ func GetServerLogsFromDB(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	rows, err := database.DB.QueryContext(ctx, query, args...)
+	rows, err := logsDB.QueryContext(ctx, query, args...)
 	if err != nil {
 		log.Printf("Error querying server logs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching logs"})
@@ -205,7 +205,7 @@ func GetServerLogsFromDB(c *gin.Context) {
 	// COUNT запрос - переиспользуем WHERE условия
 	var total int
 	countWhere, countArgs := buildServerLogsFilter(level, source, startTime, endTime)
-	database.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM server_logs WHERE 1=1"+countWhere, countArgs...).Scan(&total)
+	logsDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM server_logs WHERE 1=1"+countWhere, countArgs...).Scan(&total)
 
 	c.JSON(http.StatusOK, gin.H{
 		"logs":  logs,
@@ -237,8 +237,8 @@ func buildWebSocketLogsFilter(level, clientType string) (string, []interface{}) 
 
 // GetWebSocketLogsFromDB возвращает WebSocket логи из БД
 func GetWebSocketLogsFromDB(c *gin.Context) {
-	if database.DB == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+	if logsDB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Logs database not available"})
 		return
 	}
 
@@ -267,7 +267,7 @@ func GetWebSocketLogsFromDB(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	rows, err := database.DB.QueryContext(ctx, query, args...)
+	rows, err := logsDB.QueryContext(ctx, query, args...)
 	if err != nil {
 		log.Printf("Error querying websocket logs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching logs"})
@@ -294,7 +294,7 @@ func GetWebSocketLogsFromDB(c *gin.Context) {
 	// COUNT запрос - переиспользуем WHERE условия
 	var total int
 	countWhere, countArgs := buildWebSocketLogsFilter(level, clientType)
-	database.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM websocket_logs WHERE 1=1"+countWhere, countArgs...).Scan(&total)
+	logsDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM websocket_logs WHERE 1=1"+countWhere, countArgs...).Scan(&total)
 
 	c.JSON(http.StatusOK, gin.H{
 		"logs":  logs,

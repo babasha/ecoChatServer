@@ -25,7 +25,7 @@ type logQueueItem struct {
 var (
 	logWriteQueue  chan logQueueItem
 	logBatchTicker *time.Ticker
-	logsDB         *sql.DB // Отдельное подключение для логов
+	logsDB         *sql.DB // Отдельное подключение для логов (используется в log_handlers.go)
 )
 
 // InitLogsDB инициализирует отдельное подключение к БД для логов
