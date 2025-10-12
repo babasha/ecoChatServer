@@ -91,7 +91,7 @@ func GetAnalytics(c *gin.Context) {
 			COUNT(DISTINCT c.id) as chat_count
 		FROM admins a
 		LEFT JOIN messages m ON a.id = m.sender_id AND m.sender = 'admin'
-		LEFT JOIN chats c ON a.id = c.admin_id
+		LEFT JOIN chats c ON a.id = c.assigned_to
 		WHERE a.active = true
 		GROUP BY a.id, a.name
 	`)
@@ -111,7 +111,7 @@ func GetAnalytics(c *gin.Context) {
 
 	// 4. Количество архивированных чатов
 	var archivedCount int
-	err = database.DB.QueryRow(`SELECT COUNT(*) FROM chats WHERE archived = true`).Scan(&archivedCount)
+	err = database.DB.QueryRow(`SELECT COUNT(*) FROM chats WHERE is_archived = true`).Scan(&archivedCount)
 	if err != nil {
 		log.Printf("GetAnalytics: ошибка получения количества архивированных чатов: %v", err)
 		archivedCount = 0
@@ -154,8 +154,8 @@ func GetAnalytics(c *gin.Context) {
 	rows, err = database.DB.Query(`
 		SELECT
 			CASE
-				WHEN archived = true THEN 'archived'
-				WHEN admin_id IS NULL THEN 'unassigned'
+				WHEN is_archived = true THEN 'archived'
+				WHEN assigned_to IS NULL THEN 'unassigned'
 				ELSE 'active'
 			END as status,
 			COUNT(*) as count
@@ -180,18 +180,18 @@ func GetAnalytics(c *gin.Context) {
 	var avgResponseTime *string
 	err = database.DB.QueryRow(`
 		SELECT
-			ROUND(AVG(EXTRACT(EPOCH FROM (admin_msg.created_at - user_msg.created_at)) / 60)::numeric, 1)::text
+			ROUND(AVG(EXTRACT(EPOCH FROM (admin_msg.timestamp - user_msg.timestamp)) / 60)::numeric, 1)::text
 		FROM messages user_msg
 		JOIN messages admin_msg ON user_msg.chat_id = admin_msg.chat_id
 		WHERE user_msg.sender = 'user'
 		AND admin_msg.sender = 'admin'
-		AND admin_msg.created_at > user_msg.created_at
-		AND admin_msg.created_at = (
-			SELECT MIN(created_at)
+		AND admin_msg.timestamp > user_msg.timestamp
+		AND admin_msg.timestamp = (
+			SELECT MIN(timestamp)
 			FROM messages
 			WHERE chat_id = user_msg.chat_id
 			AND sender = 'admin'
-			AND created_at > user_msg.created_at
+			AND timestamp > user_msg.timestamp
 		)
 	`).Scan(&avgResponseTime)
 	if err != nil {
