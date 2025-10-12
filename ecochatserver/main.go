@@ -302,8 +302,8 @@ func setupCORS(r *gin.Engine) {
 				return false
 			},
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
-			ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key", "Cookie"},
+			ExposeHeaders:    []string{"Content-Length", "X-Request-ID", "Set-Cookie"},
 			AllowCredentials: true,
 			MaxAge:           12 * time.Hour,
 		}
