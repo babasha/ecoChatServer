@@ -167,8 +167,8 @@ func Authenticate(email, password string) (string, error) {
 		return "", errors.New("неверные учетные данные")
 	}
 
-	// Проверяем активен ли аккаунт
-	if !admin.Active {
+	// Проверяем статус аккаунта
+	if admin.Status != "active" {
 		return "", errors.New("аккаунт деактивирован")
 	}
 
@@ -177,8 +177,8 @@ func Authenticate(email, password string) (string, error) {
 		return "", errors.New("неверные учетные данные")
 	}
 
-	// Генерируем JWT токен, передавая строки вместо uuid.UUID
-	token, err := GenerateToken(admin.ID.String(), admin.ClientID.String(), admin.Role)
+	// Генерируем JWT токен (clientID больше не используется)
+	token, err := GenerateToken(admin.ID.String(), "", admin.Role)
 	if err != nil {
 		return "", err
 	}

@@ -14,17 +14,34 @@ func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
 
 	var admin models.Admin
 
-	// В БД ballast колонка называется "password" (не password_hash)
-	// и нет колонок avatar, client_id, active
+	// Используем таблицу users с JOIN на roles
 	const q = `
-        SELECT id, name, email, password, role
-          FROM admins
-         WHERE email=$1`
+        SELECT
+            u.id,
+            u.email,
+            u.display_name,
+            u.password_hash,
+            u.avatar_url,
+            u.status,
+            u.email_verified,
+            u.role_id,
+            COALESCE(r.name, 'user') as role_name
+        FROM users u
+        LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.email = $1 AND u.deleted_at IS NULL`
 
 	fmt.Printf("[GetAdmin] Executing query for email: %s\n", email)
 
 	if err := db.QueryRowContext(ctx, q, email).Scan(
-		&admin.ID, &admin.Name, &admin.Email, &admin.PasswordHash, &admin.Role,
+		&admin.ID,
+		&admin.Email,
+		&admin.Name,
+		&admin.PasswordHash,
+		&admin.Avatar,
+		&admin.Status,
+		&admin.EmailVerified,
+		&admin.RoleID,
+		&admin.Role,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			fmt.Printf("[GetAdmin] No rows found for email: %s\n", email)
@@ -34,12 +51,55 @@ func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
 		return nil, fmt.Errorf("GetAdmin: %w", err)
 	}
 
-	// Значения по умолчанию для отсутствующих колонок
-	admin.Active = true
-	admin.Avatar = nil
-	// ClientID будет нулевым UUID по умолчанию
+	fmt.Printf("[GetAdmin] Found user: id=%s, email=%s, role=%s, status=%s\n", admin.ID, admin.Email, admin.Role, admin.Status)
 
-	fmt.Printf("[GetAdmin] Found admin: id=%s, email=%s, role=%s\n", admin.ID, admin.Email, admin.Role)
+	return &admin, nil
+}
+
+func GetAdminByID(db *sql.DB, adminID string) (*models.Admin, error) {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	var admin models.Admin
+
+	// Используем таблицу users с JOIN на roles
+	const q = `
+        SELECT
+            u.id,
+            u.email,
+            u.display_name,
+            u.password_hash,
+            u.avatar_url,
+            u.status,
+            u.email_verified,
+            u.role_id,
+            COALESCE(r.name, 'user') as role_name
+        FROM users u
+        LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1 AND u.deleted_at IS NULL`
+
+	fmt.Printf("[GetAdminByID] Executing query for id: %s\n", adminID)
+
+	if err := db.QueryRowContext(ctx, q, adminID).Scan(
+		&admin.ID,
+		&admin.Email,
+		&admin.Name,
+		&admin.PasswordHash,
+		&admin.Avatar,
+		&admin.Status,
+		&admin.EmailVerified,
+		&admin.RoleID,
+		&admin.Role,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Printf("[GetAdminByID] No rows found for id: %s\n", adminID)
+			return nil, nil
+		}
+		fmt.Printf("[GetAdminByID] Error: %v\n", err)
+		return nil, fmt.Errorf("GetAdminByID: %w", err)
+	}
+
+	fmt.Printf("[GetAdminByID] Found user: id=%s, email=%s, role=%s, status=%s\n", admin.ID, admin.Email, admin.Role, admin.Status)
 
 	return &admin, nil
 }

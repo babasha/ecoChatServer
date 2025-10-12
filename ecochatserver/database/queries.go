@@ -20,6 +20,11 @@ func GetAdmin(email string) (*models.Admin, error) {
 	return queries.GetAdmin(UsersDB, email)
 }
 
+func GetAdminByID(adminID string) (*models.Admin, error) {
+	// Используем UsersDB для админов (БД ballast)
+	return queries.GetAdminByID(UsersDB, adminID)
+}
+
 func VerifyPassword(pw, hash string) error {
 	return queries.VerifyPassword(pw, hash)
 }

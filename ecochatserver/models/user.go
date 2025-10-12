@@ -15,15 +15,17 @@ type User struct {
 }
 
 // Admin представляет собой структуру администратора
+// Маппится на таблицу users с соответствующими ролями
 type Admin struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"password_hash,omitempty"`
-	Avatar       *string   `json:"avatar,omitempty"`
-	Role         string    `json:"role"`     // "admin", "support", etc.
-	ClientID     uuid.UUID `json:"clientId"` // ID клиента, на которого работает админ
-	Active       bool      `json:"active"`
+	ID           uuid.UUID  `json:"id"`
+	Email        string     `json:"email"`
+	Name         string     `json:"name"` // display_name в БД
+	PasswordHash string     `json:"password_hash,omitempty"`
+	Avatar       *string    `json:"avatar,omitempty"` // avatar_url в БД
+	Role         string     `json:"role"`             // из таблицы roles через role_id
+	RoleID       *uuid.UUID `json:"role_id,omitempty"`
+	Status       string     `json:"status"`       // active, inactive, suspended, banned
+	EmailVerified bool      `json:"email_verified"`
 }
 
 // Client представляет собой структуру клиента (компании)

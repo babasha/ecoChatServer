@@ -50,9 +50,9 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Проверяем активен ли аккаунт
-	if !admin.Active {
-		log.Printf("LoginHandler: аккаунт деактивирован: %s", req.Email)
+	// Проверяем статус аккаунта (active, inactive, suspended, banned)
+	if admin.Status != "active" {
+		log.Printf("LoginHandler: аккаунт недоступен (status=%s): %s", admin.Status, req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "Аккаунт деактивирован",
 		})
@@ -70,8 +70,8 @@ func LoginHandler(c *gin.Context) {
 
 	log.Printf("LoginHandler: успешная аутентификация для: %s", req.Email)
 
-	// Генерируем JWT токен
-	token, err := middleware.GenerateToken(admin.ID.String(), admin.ClientID.String(), admin.Role)
+	// Генерируем JWT токен (clientID больше не используется, передаем пустую строку)
+	token, err := middleware.GenerateToken(admin.ID.String(), "", admin.Role)
 	if err != nil {
 		log.Printf("LoginHandler: ошибка генерации токена: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -145,8 +145,8 @@ func MeHandler(c *gin.Context) {
 
 	role, _ := c.Get("role")
 
-	// Получаем полные данные админа из базы
-	admin, err := database.GetAdmin(adminID.(string))
+	// Получаем полные данные админа из базы по ID
+	admin, err := database.GetAdminByID(adminID.(string))
 	if err != nil || admin == nil {
 		log.Printf("MeHandler: не удалось найти администратора: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{
