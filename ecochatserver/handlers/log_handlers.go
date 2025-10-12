@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/egor/ecochatserver/database"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -82,25 +81,6 @@ func AddWebSocketLogWithClient(level LogLevel, message, source string, clientID 
 	if WebSocketLogsBuffer != nil {
 		WebSocketLogsBuffer.AddLogWithMetadata(level, message, source, metadata)
 	}
-}
-
-// CleanupOldLogs запускает очистку старых логов (вызывается периодически)
-func CleanupOldLogs() error {
-	if database.DB == nil {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	_, err := database.DB.ExecContext(ctx, "SELECT cleanup_old_logs()")
-	if err != nil {
-		log.Printf("Error cleaning up old logs: %v", err)
-		return err
-	}
-
-	log.Println("Old logs cleaned up successfully")
-	return nil
 }
 
 // DBLogEntry представляет запись лога из БД

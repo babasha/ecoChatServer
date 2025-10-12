@@ -95,29 +95,8 @@ func main() {
 		}
 	}(ctx)
 
-	// Периодически очищаем старые логи (старше 24 часов)
-	go func(ctx context.Context) {
-		// Первый запуск через 5 минут после старта
-		time.Sleep(5 * time.Minute)
-
-		ticker := time.NewTicker(1 * time.Hour) // Каждый час
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				log.Println("Запуск очистки старых логов...")
-				if err := handlers.CleanupOldLogs(); err != nil {
-					log.Printf("Ошибка очистки логов: %v", err)
-				} else {
-					log.Println("✓ Старые логи успешно удалены")
-				}
-			case <-ctx.Done():
-				log.Println("Остановка очистки логов...")
-				return
-			}
-		}
-	}(ctx)
+	// Примечание: Очистка старых логов запускается автоматически в handlers.InitLogBuffers()
+	// через StartLogCleanupScheduler() - каждый час, первый раз через 5 минут после старта
 
 	// ─── Gin & middleware ───────────────────────────────────────────────────
 	gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
