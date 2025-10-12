@@ -29,40 +29,49 @@ var (
 
 // InitLogsDB инициализирует отдельное подключение к БД для логов
 func InitLogsDB() error {
-	// Получаем креденшалы для БД логов
-	dbHost := os.Getenv("LOGS_DB_HOST")
-	dbPort := os.Getenv("LOGS_DB_PORT")
-	dbUser := os.Getenv("LOGS_DB_USER")
-	dbPassword := os.Getenv("LOGS_DB_PASSWORD")
-	dbName := os.Getenv("LOGS_DB_NAME")
+	var connStr string
 
-	// Если переменные не установлены, используем основную БД
-	if dbHost == "" || dbPassword == "" {
-		log.Println("[LOGS_DB] Logs DB credentials not set, using main DB")
-		logsDB = database.DB
-		return nil
-	}
+	// Вариант 1: Используем DATABASE_URL (приоритет)
+	// Это удобно для Railway Variable Reference: ${{ Logs.DATABASE_URL }}
+	logsDBURL := os.Getenv("LOGS_DB_URL")
+	if logsDBURL != "" {
+		connStr = logsDBURL
+	} else {
+		// Вариант 2: Собираем из отдельных переменных
+		dbHost := os.Getenv("LOGS_DB_HOST")
+		dbPort := os.Getenv("LOGS_DB_PORT")
+		dbUser := os.Getenv("LOGS_DB_USER")
+		dbPassword := os.Getenv("LOGS_DB_PASSWORD")
+		dbName := os.Getenv("LOGS_DB_NAME")
 
-	// Устанавливаем значения по умолчанию
-	if dbPort == "" {
-		dbPort = "5432"
-	}
-	if dbUser == "" {
-		dbUser = "postgres"
-	}
-	if dbName == "" {
-		dbName = "railway"
-	}
+		// Если переменные не установлены, используем основную БД
+		if dbHost == "" || dbPassword == "" {
+			log.Println("[LOGS_DB] Logs DB credentials not set, using main DB")
+			logsDB = database.DB
+			return nil
+		}
 
-	// Определяем SSL mode
-	sslMode := "require"
-	if os.Getenv("LOGS_DB_SSL_MODE") != "" {
-		sslMode = os.Getenv("LOGS_DB_SSL_MODE")
-	}
+		// Устанавливаем значения по умолчанию
+		if dbPort == "" {
+			dbPort = "5432"
+		}
+		if dbUser == "" {
+			dbUser = "postgres"
+		}
+		if dbName == "" {
+			dbName = "railway"
+		}
 
-	// Формируем connection string
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		dbHost, dbPort, dbUser, dbPassword, dbName, sslMode)
+		// Определяем SSL mode
+		sslMode := "require"
+		if os.Getenv("LOGS_DB_SSL_MODE") != "" {
+			sslMode = os.Getenv("LOGS_DB_SSL_MODE")
+		}
+
+		// Формируем connection string
+		connStr = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			dbHost, dbPort, dbUser, dbPassword, dbName, sslMode)
+	}
 
 	// Подключаемся к БД
 	db, err := sql.Open("postgres", connStr)
@@ -83,7 +92,7 @@ func InitLogsDB() error {
 	}
 
 	logsDB = db
-	log.Printf("[LOGS_DB] ✅ Connected to separate logs DB at %s:%s", dbHost, dbPort)
+	log.Printf("[LOGS_DB] ✅ Connected to separate logs DB")
 	return nil
 }
 
