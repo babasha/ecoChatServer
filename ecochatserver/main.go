@@ -26,7 +26,7 @@ import (
 func main() {
 	// Логи по файлу и строке
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Println("EcoChat server starting with anti-duplication optimizations…")
+	logInfo("EcoChat server starting with anti-duplication optimizations…")
 
 	// Создаем context для graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -34,7 +34,7 @@ func main() {
 
 	// Загружаем .env (только для dev)
 	if err := godotenv.Load(); err != nil {
-		log.Println("Примечание: файл .env не найден или не загружен, используем переменные окружения")
+		logInfo("Примечание: файл .env не найден или не загружен, используем переменные окружения")
 	}
 
 	// ─── PostgreSQL ──────────────────────────────────────────────────────────
@@ -45,15 +45,15 @@ func main() {
 
 	// ─── LLM Usage Logger ────────────────────────────────────────────────────
 	if err := llm.InitUsageLogger(); err != nil {
-		log.Printf("WARNING: LLM usage logger initialization failed: %v", err)
-		log.Println("LLM usage logging will be disabled")
+		logWarning("WARNING: LLM usage logger initialization failed: " + err.Error())
+		logWarning("LLM usage logging will be disabled")
 	} else {
-		log.Println("✓ LLM usage logger initialized")
+		logInfo("✓ LLM usage logger initialized")
 	}
 	defer llm.CloseUsageLogger()
 
 	// Простое кэширование инициализировано
-	log.Println("Простое кэширование инициализировано")
+	logInfo("Простое кэширование инициализировано")
 
 	// Периодически обновляем партиции
 	go func(ctx context.Context) {
@@ -95,6 +95,30 @@ func main() {
 		}
 	}(ctx)
 
+	// Периодически очищаем старые логи (старше 24 часов)
+	go func(ctx context.Context) {
+		// Первый запуск через 5 минут после старта
+		time.Sleep(5 * time.Minute)
+
+		ticker := time.NewTicker(1 * time.Hour) // Каждый час
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				log.Println("Запуск очистки старых логов...")
+				if err := handlers.CleanupOldLogs(); err != nil {
+					log.Printf("Ошибка очистки логов: %v", err)
+				} else {
+					log.Println("✓ Старые логи успешно удалены")
+				}
+			case <-ctx.Done():
+				log.Println("Остановка очистки логов...")
+				return
+			}
+		}
+	}(ctx)
+
 	// ─── Gin & middleware ───────────────────────────────────────────────────
 	gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
 	r := gin.New()
@@ -117,23 +141,29 @@ func main() {
 
 	// ─── Автоответчик (если используется) ───────────────────────────────────
 	handlers.InitAutoResponder()
-	log.Println("Автоответчик инициализирован")
+	logInfo("Автоответчик инициализирован")
 
 	// ─── Инициализация буферов логов ─────────────────────────────────────────
 	handlers.InitLogBuffers()
-	log.Println("Буферы логов инициализированы")
+
+	// Устанавливаем функцию логирования для middleware
+	middleware.SetLogFunc(func(level, message, source string) {
+		handlers.AddServerLog(handlers.LogLevel(level), message, source)
+	})
+
+	logInfo("Буферы логов инициализированы")
 
 	// ─── Инициализация настроек сервера ───────────────────────────────────────
 	handlers.InitServerSettings()
-	log.Println("Настройки сервера инициализированы")
+	logInfo("Настройки сервера инициализированы")
 
 	// ─── REST API & WebSocket ───────────────────────────────────────────────
 	setupAPIRoutes(r)
-	log.Println("API маршруты настроены")
+	logInfo("API маршруты настроены")
 
 	// ─── HTTP-server ─────────────────────────────────────────────────────────
 	addr := ":" + getEnv("PORT", "8080")
-	log.Printf("HTTP сервер запускается на %s", addr)
+	logInfo("HTTP сервер запускается на " + addr)
 
 	server := &http.Server{
 		Addr:         addr,
@@ -150,7 +180,7 @@ func main() {
 		}
 	}()
 
-	log.Println("✓ Сервер запущен успешно")
+	logInfo("✓ Сервер запущен успешно")
 
 	// Ожидаем сигнал остановки (Ctrl+C или SIGTERM)
 	quit := make(chan os.Signal, 1)
@@ -337,9 +367,13 @@ func setupAPIRoutes(r *gin.Engine) {
 		// Health-check с расширенными метриками системы
 		api.GET("/health", handlers.GetHealthData)
 
-		// Логи для админки
+		// Логи для админки (in-memory буферы)
 		api.GET("/logs/server", handlers.GetServerLogs)
 		api.GET("/logs/websocket", handlers.GetWebSocketLogs)
+
+		// Логи из БД (для аналитики, с фильтрами и пагинацией)
+		api.GET("/logs/server/db", handlers.GetServerLogsFromDB)
+		api.GET("/logs/websocket/db", handlers.GetWebSocketLogsFromDB)
 
 		// Активные сессии и управление ими
 		api.GET("/sessions/active", handlers.GetActiveSessions)
@@ -484,4 +518,22 @@ func setupAPIRoutes(r *gin.Engine) {
 			},
 		})
 	})
+}
+
+// logInfo логирует информационное сообщение в консоль и буфер
+func logInfo(msg string) {
+	log.Println(msg)
+	handlers.AddServerLog(handlers.LogLevelInfo, msg, "Server")
+}
+
+// logError логирует ошибку в консоль и буфер
+func logError(msg string) {
+	log.Println(msg)
+	handlers.AddServerLog(handlers.LogLevelError, msg, "Server")
+}
+
+// logWarning логирует предупреждение в консоль и буфер
+func logWarning(msg string) {
+	log.Println(msg)
+	handlers.AddServerLog(handlers.LogLevelWarning, msg, "Server")
 }
