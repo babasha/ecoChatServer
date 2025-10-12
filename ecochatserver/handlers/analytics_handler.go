@@ -82,17 +82,18 @@ func GetAnalytics(c *gin.Context) {
 	}
 
 	// 3. Статистика по админам
+	// Читаем из таблицы admins в БД чатов (database.DB)
 	rows, err = database.DB.Query(`
 		SELECT
-			u.id as admin_id,
-			u.username as admin_name,
+			a.id as admin_id,
+			a.name as admin_name,
 			COUNT(DISTINCT m.id) as message_count,
 			COUNT(DISTINCT c.id) as chat_count
-		FROM users u
-		LEFT JOIN messages m ON u.id = m.sender_id AND m.sender = 'admin'
-		LEFT JOIN chats c ON u.id = c.admin_id
-		WHERE u.role = 'admin'
-		GROUP BY u.id, u.username
+		FROM admins a
+		LEFT JOIN messages m ON a.id = m.sender_id AND m.sender = 'admin'
+		LEFT JOIN chats c ON a.id = c.admin_id
+		WHERE a.active = true
+		GROUP BY a.id, a.name
 	`)
 	if err != nil {
 		log.Printf("GetAnalytics: ошибка получения статистики по админам: %v", err)
