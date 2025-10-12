@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -149,6 +150,11 @@ var (
 
 // InitLogBuffers инициализирует буферы логов
 func InitLogBuffers() {
+	// Инициализируем подключение к БД логов
+	if err := InitLogsDB(); err != nil {
+		log.Printf("[LOGS] WARNING: Failed to initialize logs DB: %v", err)
+	}
+
 	ServerLogsBuffer = NewLogBuffer(1000)    // Храним последние 1000 серверных логов
 	WebSocketLogsBuffer = NewLogBuffer(1000) // Храним последние 1000 WebSocket логов
 

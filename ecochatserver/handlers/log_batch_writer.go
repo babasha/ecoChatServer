@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 )
 
 // logQueueItem представляет элемент очереди для записи логов
@@ -21,7 +24,68 @@ type logQueueItem struct {
 var (
 	logWriteQueue  chan logQueueItem
 	logBatchTicker *time.Ticker
+	logsDB         *sql.DB // Отдельное подключение для логов
 )
+
+// InitLogsDB инициализирует отдельное подключение к БД для логов
+func InitLogsDB() error {
+	// Получаем креденшалы для БД логов
+	dbHost := os.Getenv("LOGS_DB_HOST")
+	dbPort := os.Getenv("LOGS_DB_PORT")
+	dbUser := os.Getenv("LOGS_DB_USER")
+	dbPassword := os.Getenv("LOGS_DB_PASSWORD")
+	dbName := os.Getenv("LOGS_DB_NAME")
+
+	// Если переменные не установлены, используем основную БД
+	if dbHost == "" || dbPassword == "" {
+		log.Println("[LOGS_DB] Logs DB credentials not set, using main DB")
+		logsDB = database.DB
+		return nil
+	}
+
+	// Устанавливаем значения по умолчанию
+	if dbPort == "" {
+		dbPort = "5432"
+	}
+	if dbUser == "" {
+		dbUser = "postgres"
+	}
+	if dbName == "" {
+		dbName = "railway"
+	}
+
+	// Определяем SSL mode
+	sslMode := "require"
+	if os.Getenv("LOGS_DB_SSL_MODE") != "" {
+		sslMode = os.Getenv("LOGS_DB_SSL_MODE")
+	}
+
+	// Формируем connection string
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		dbHost, dbPort, dbUser, dbPassword, dbName, sslMode)
+
+	// Подключаемся к БД
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Printf("[LOGS_DB] ERROR: Failed to open logs DB connection: %v", err)
+		return err
+	}
+
+	// Настраиваем пул соединений
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	// Проверяем подключение
+	if err := db.Ping(); err != nil {
+		log.Printf("[LOGS_DB] ERROR: Failed to ping logs DB: %v", err)
+		return err
+	}
+
+	logsDB = db
+	log.Printf("[LOGS_DB] ✅ Connected to separate logs DB at %s:%s", dbHost, dbPort)
+	return nil
+}
 
 // logBatchWriter обрабатывает batch запись логов в БД
 func logBatchWriter() {
@@ -72,7 +136,7 @@ func logBatchWriter() {
 
 // batchInsertServerLogs выполняет batch insert серверных логов
 func batchInsertServerLogs(batch []logQueueItem) error {
-	if database.DB == nil || len(batch) == 0 {
+	if logsDB == nil || len(batch) == 0 {
 		return nil
 	}
 
@@ -97,13 +161,13 @@ func batchInsertServerLogs(batch []logQueueItem) error {
 	query := fmt.Sprintf("INSERT INTO server_logs (timestamp, level, message, source, metadata) VALUES %s",
 		strings.Join(valueStrings, ","))
 
-	_, err := database.DB.ExecContext(ctx, query, valueArgs...)
+	_, err := logsDB.ExecContext(ctx, query, valueArgs...)
 	return err
 }
 
 // batchInsertWebSocketLogs выполняет batch insert WebSocket логов
 func batchInsertWebSocketLogs(batch []logQueueItem) error {
-	if database.DB == nil || len(batch) == 0 {
+	if logsDB == nil || len(batch) == 0 {
 		return nil
 	}
 
@@ -142,6 +206,6 @@ func batchInsertWebSocketLogs(batch []logQueueItem) error {
 	query := fmt.Sprintf("INSERT INTO websocket_logs (timestamp, level, message, source, client_id, client_type, metadata) VALUES %s",
 		strings.Join(valueStrings, ","))
 
-	_, err := database.DB.ExecContext(ctx, query, valueArgs...)
+	_, err := logsDB.ExecContext(ctx, query, valueArgs...)
 	return err
 }
