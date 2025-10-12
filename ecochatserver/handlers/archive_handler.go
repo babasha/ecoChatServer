@@ -132,6 +132,9 @@ func ResolveChat(c *gin.Context) {
 		return
 	}
 
+	// Инвалидируем Redis кеш после архивации
+	database.InvalidateChatsCacheForAll()
+
 	c.JSON(http.StatusOK, gin.H{
 		"success":  true,
 		"message":  "Chat resolved and archived",
@@ -386,6 +389,8 @@ func AutoArchiveInactiveChats() {
 
 	if archivedCount > 0 {
 		log.Printf("Auto-archived %d inactive chats", archivedCount)
+		// Инвалидируем Redis кеш после автоархивации
+		database.InvalidateChatsCacheForAll()
 	}
 }
 

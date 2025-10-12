@@ -24,6 +24,7 @@ type Chat struct {
 	IsArchived           bool                   `json:"isArchived"`              // Архивирован ли чат
 	ArchiveTimerPaused   bool                   `json:"archiveTimerPaused"`      // Приостановлен ли таймер архивации
 	Metadata             map[string]interface{} `json:"metadata,omitempty"`      // Метаданные чата, включая историю LLM
+	IsNewChat            bool                   `json:"-"`                       // Флаг нового чата (не отправляется на фронт)
 }
 
 // ChatResponse для отправки на фронтенд

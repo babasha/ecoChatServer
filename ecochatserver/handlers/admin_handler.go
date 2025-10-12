@@ -247,6 +247,9 @@ func SendMessageToChat(c *gin.Context) {
 	// Обновляем время чата
 	updateChatTimestamp(chatID)
 
+	// Инвалидируем Redis кеш (lastMessage изменилось)
+	database.InvalidateChatsCacheForAll()
+
 	// Для WebSocket нужно отправить переведенное сообщение клиенту
 	// Создаем копию сообщения для виджета с переводом
 	widgetMessage := *message

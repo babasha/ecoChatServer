@@ -1,6 +1,7 @@
 package database
 
 import (
+	"log"
 	"time"
 
 	"github.com/egor/ecochatserver/database/queries"
@@ -30,7 +31,26 @@ func VerifyPassword(pw, hash string) error {
 }
 
 func GetChats(clientID, adminID uuid.UUID, page, size int) ([]models.ChatResponse, int, error) {
-	return queries.GetChats(DB, clientID, adminID, page, size)
+	// Пробуем получить из Redis кеша
+	if chats, total, found := GetCachedChats(clientID, adminID, page, size); found {
+		return chats, total, nil
+	}
+
+	// Кеша нет - загружаем из БД
+	chats, total, err := queries.GetChats(DB, clientID, adminID, page, size)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Сохраняем в кеш
+	SetCachedChats(clientID, adminID, page, size, chats, total)
+
+	return chats, total, nil
+}
+
+// InvalidateChatsCache инвалидирует кеш чатов
+func InvalidateChatsCache() {
+	InvalidateChatsCacheForAll()
 }
 
 func GetChatByID(chatID uuid.UUID, limit int, beforeTimestamp string) (*models.Chat, int, error) {
@@ -67,13 +87,35 @@ func MarkSpecificMessagesAsRead(messageIDs []uuid.UUID) (int, error) {
 func GetOrCreateChat(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 ) (*models.Chat, error) {
-	return queries.GetOrCreateChat(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	chat, err := queries.GetOrCreateChat(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Инвалидируем кеш ТОЛЬКО для новых чатов
+	if chat.IsNewChat {
+		InvalidateChatsCache()
+		log.Printf("GetOrCreateChat: новый чат %s, кеш инвалидирован", chat.ID)
+	}
+
+	return chat, nil
 }
 
 func GetOrCreateChatMetadata(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 ) (*models.Chat, error) {
-	return queries.GetOrCreateChatMetadata(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	chat, err := queries.GetOrCreateChatMetadata(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Инвалидируем кеш ТОЛЬКО для новых чатов
+	if chat.IsNewChat {
+		InvalidateChatsCache()
+		log.Printf("GetOrCreateChatMetadata: новый чат %s, кеш инвалидирован", chat.ID)
+	}
+
+	return chat, nil
 }
 
 func EnsureClientWithAPIKey(apiKey, clientName string) (uuid.UUID, error) {

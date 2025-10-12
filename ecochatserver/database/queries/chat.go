@@ -435,8 +435,11 @@ func GetOrCreateChat(
 		return nil, fmt.Errorf("ошибка получения чата: %w", err)
 	}
 
-	log.Printf("GetOrCreateChat: успешно, возвращаем чат ID=%s с %d сообщениями",
-		chat.ID, len(chat.Messages))
+	// Сохраняем флаг isNewChat для использования во внешнем слое
+	chat.IsNewChat = info.IsNewChat
+
+	log.Printf("GetOrCreateChat: успешно, возвращаем чат ID=%s с %d сообщениями, isNewChat=%v",
+		chat.ID, len(chat.Messages), info.IsNewChat)
 	return chat, nil
 }
 
@@ -510,6 +513,7 @@ func GetOrCreateChatMetadata(
 		AssignedTo:           assignedTo,
 		AutoResponderEnabled: autoResponderEnabled,
 		IsArchived:           isArchived,
+		IsNewChat:            info.IsNewChat, // Сохраняем флаг
 	}
 
 	log.Printf("GetOrCreateChatMetadata: успешно, возвращаем чат ID=%s БЕЗ сообщений, isNewChat=%v",

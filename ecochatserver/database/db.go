@@ -75,6 +75,13 @@ func Init() error {
 		// Не прерываем запуск сервера из-за партиций
 	}
 
+	// Инициализируем Redis (опционально)
+	if err := InitRedis(); err != nil {
+		log.Printf("[REDIS] Warning: не удалось подключиться к Redis: %v", err)
+		log.Println("[REDIS] Сервер будет работать без кеширования")
+		// Не прерываем запуск сервера из-за Redis
+	}
+
 	return nil
 }
 
@@ -126,6 +133,8 @@ func Close() {
 	if UsersDB != nil && UsersDB != DB {
 		_ = UsersDB.Close()
 	}
+	// Закрываем Redis
+	CloseRedis()
 }
 
 // ─────────────────────────────── helpers
