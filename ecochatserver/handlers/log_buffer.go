@@ -126,6 +126,11 @@ func (lb *LogBuffer) Subscribe(subscriberID string) chan LogEntry {
 	lb.subMu.Lock()
 	defer lb.subMu.Unlock()
 
+	// Если клиент уже подписан, закрываем старый канал (чтобы завершить старую горутину)
+	if oldCh, exists := lb.subscribers[subscriberID]; exists {
+		close(oldCh)
+	}
+
 	ch := make(chan LogEntry, 100) // Буфер на 100 логов
 	lb.subscribers[subscriberID] = ch
 	return ch
