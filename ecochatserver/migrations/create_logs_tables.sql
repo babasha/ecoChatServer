@@ -39,12 +39,12 @@ CREATE INDEX IF NOT EXISTS idx_websocket_logs_client_id ON websocket_logs (clien
 CREATE INDEX IF NOT EXISTS idx_websocket_logs_client_type ON websocket_logs (client_type);
 CREATE INDEX IF NOT EXISTS idx_websocket_logs_created_at ON websocket_logs (created_at DESC);
 
--- Функция для очистки старых логов (старше 30 дней)
+-- Функция для очистки старых логов (старше 24 часов)
 CREATE OR REPLACE FUNCTION cleanup_old_logs()
 RETURNS void AS $$
 BEGIN
-    DELETE FROM server_logs WHERE created_at < NOW() - INTERVAL '30 days';
-    DELETE FROM websocket_logs WHERE created_at < NOW() - INTERVAL '30 days';
+    DELETE FROM server_logs WHERE created_at < NOW() - INTERVAL '24 hours';
+    DELETE FROM websocket_logs WHERE created_at < NOW() - INTERVAL '24 hours';
 END;
 $$ LANGUAGE plpgsql;
 

@@ -165,6 +165,9 @@ func InitLogBuffers() {
 	// Запускаем воркер для batch записи логов
 	go logBatchWriter()
 
+	// Запускаем scheduler для автоочистки старых логов
+	StartLogCleanupScheduler()
+
 	// Добавляем приветственные логи
 	ServerLogsBuffer.AddLog(LogLevelInfo, "Server log buffer initialized", "LogsHandler")
 	WebSocketLogsBuffer.AddLog(LogLevelInfo, "WebSocket log buffer initialized", "LogsHandler")
