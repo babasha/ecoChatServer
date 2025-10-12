@@ -88,7 +88,9 @@ func LoginHandler(c *gin.Context) {
 	// Gin не поддерживает SameSite напрямую в SetCookie, поэтому для cross-domain
 	// используем ручную установку заголовка
 	if os.Getenv("ENABLE_CROSS_DOMAIN_COOKIES") == "true" {
-		c.Header("Set-Cookie", buildCookieHeader(token, isProduction, domain))
+		cookieHeader := buildCookieHeader(token, isProduction, domain)
+		c.Header("Set-Cookie", cookieHeader)
+		log.Printf("LoginHandler: установлен cross-domain cookie для %s: %s", req.Email, cookieHeader)
 	} else {
 		c.SetCookie(
 			"session",    // name
@@ -99,9 +101,8 @@ func LoginHandler(c *gin.Context) {
 			isProduction, // secure (только HTTPS в production)
 			true,         // httpOnly
 		)
+		log.Printf("LoginHandler: установлен same-origin cookie для: %s", req.Email)
 	}
-
-	log.Printf("LoginHandler: session cookie установлена для: %s", req.Email)
 
 	// Возвращаем данные администратора (без токена в JSON)
 	var response LoginResponse
