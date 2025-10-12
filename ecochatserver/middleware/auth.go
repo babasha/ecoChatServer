@@ -41,18 +41,24 @@ func SessionMiddleware() gin.HandlerFunc {
 		// Получаем session cookie
 		sessionToken, err := c.Cookie("session")
 		if err != nil || sessionToken == "" {
+			log.Printf("[SessionMiddleware] Cookie не найдена: %v, origin: %s", err, c.Request.Header.Get("Origin"))
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется авторизация"})
 			c.Abort()
 			return
 		}
 
+		log.Printf("[SessionMiddleware] Cookie получена, длина токена: %d", len(sessionToken))
+
 		// Валидируем JWT токен из cookie
 		claims, err := ValidateToken(sessionToken)
 		if err != nil {
+			log.Printf("[SessionMiddleware] Ошибка валидации токена: %v", err)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "неверный или устаревший токен"})
 			c.Abort()
 			return
 		}
+
+		log.Printf("[SessionMiddleware] Токен валиден для adminID: %s, role: %s", claims.AdminID, claims.Role)
 
 		// Устанавливаем данные пользователя в контексте
 		c.Set("adminID", claims.AdminID)
