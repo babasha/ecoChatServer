@@ -147,3 +147,24 @@ func SaveTranslationsBatch(translations map[uuid.UUID]map[string]string) error {
 func GetTranslation(messageID uuid.UUID, language string) (string, error) {
 	return queries.GetTranslation(DB, messageID, language)
 }
+
+// Push subscription helpers (stored in UsersDB)
+func SavePushSubscription(adminID uuid.UUID, endpoint, p256dh, auth string, subscription []byte) error {
+	return queries.UpsertPushSubscription(UsersDB, adminID, endpoint, p256dh, auth, subscription)
+}
+
+func RemovePushSubscription(adminID uuid.UUID, endpoint string) error {
+	return queries.DeletePushSubscription(UsersDB, adminID, endpoint)
+}
+
+func RemovePushSubscriptionByEndpoint(endpoint string) error {
+	return queries.DeletePushSubscriptionByEndpoint(UsersDB, endpoint)
+}
+
+func ListPushSubscriptions(adminID uuid.UUID) ([]models.PushSubscription, error) {
+	return queries.ListPushSubscriptions(UsersDB, adminID)
+}
+
+func TouchPushSubscription(endpoint string) error {
+	return queries.TouchPushSubscription(UsersDB, endpoint)
+}

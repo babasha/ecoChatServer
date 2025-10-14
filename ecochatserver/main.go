@@ -366,13 +366,13 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.PUT("/server-settings", handlers.UpdateServerSettings)
 
 		// LLM Settings API (app_settings based)
-		api.GET("/settings", handlers.GetSettings)                            // Все настройки как map
-		api.GET("/settings/llm", handlers.GetLLMSettingsSimple)               // LLM настройки в структуре для фронтенда
-		api.PUT("/settings/llm", handlers.UpdateLLMSettingsSimple)            // Обновление LLM настроек с hot-swap
-		api.PUT("/settings/batch", handlers.UpdateSettingsBatch)              // Batch обновление настроек
-		api.POST("/settings/llm/test", handlers.TestLLMProviderConnection)    // Тестирование LLM подключения
-		api.POST("/llm/reload", handlers.ReloadLLMProvider)                   // Ручной reload провайдера
-		api.POST("/llm/test", handlers.TestLLMProviderConnection)             // Альтернативный endpoint для теста
+		api.GET("/settings", handlers.GetSettings)                         // Все настройки как map
+		api.GET("/settings/llm", handlers.GetLLMSettingsSimple)            // LLM настройки в структуре для фронтенда
+		api.PUT("/settings/llm", handlers.UpdateLLMSettingsSimple)         // Обновление LLM настроек с hot-swap
+		api.PUT("/settings/batch", handlers.UpdateSettingsBatch)           // Batch обновление настроек
+		api.POST("/settings/llm/test", handlers.TestLLMProviderConnection) // Тестирование LLM подключения
+		api.POST("/llm/reload", handlers.ReloadLLMProvider)                // Ручной reload провайдера
+		api.POST("/llm/test", handlers.TestLLMProviderConnection)          // Альтернативный endpoint для теста
 
 		// Публичная статистика WebSocket (для Dashboard без аутентификации)
 		api.GET("/stats/websocket", func(c *gin.Context) {
@@ -442,6 +442,11 @@ func setupAPIRoutes(r *gin.Engine) {
 
 			// Пометка сообщений как прочитанных
 			admin.POST("/chats/:id/read", handlers.MarkChatMessagesAsRead)
+
+			// Push notifications for admin panel
+			admin.POST("/push/subscribe", handlers.PushSubscribeHandler)
+			admin.POST("/push/unsubscribe", handlers.PushUnsubscribeHandler)
+			admin.POST("/push/send", handlers.PushSendHandler)
 
 			// Настройки админа (языковые предпочтения)
 			admin.GET("/admin/settings", handlers.GetAdminSettings)
