@@ -72,6 +72,11 @@ func GetWidgetChatMessages(c *gin.Context) {
 
 	log.Printf("GetWidgetChatMessages: найден чат с %d сообщениями (всего: %d)", len(chat.Messages), totalMessages)
 
+	// Обновляем WebSocket привязку, если виджет уже подключен без chat_id
+	if WebSocketHub.UpdateWidgetChatID(userIDStr, chat.ID, chat.User.SourceID) {
+		log.Printf("GetWidgetChatMessages: WebSocket привязка обновлена для userID %s -> chat %s", userIDStr, chat.ID)
+	}
+
 	// Переводим сообщения админа для клиента (lazy caching)
 	if Translator != nil {
 		// Получаем язык клиента из чата

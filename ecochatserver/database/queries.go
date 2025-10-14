@@ -1,6 +1,7 @@
 package database
 
 import (
+	"encoding/json"
 	"log"
 	"time"
 
@@ -150,7 +151,7 @@ func GetTranslation(messageID uuid.UUID, language string) (string, error) {
 
 // Push subscription helpers (stored in UsersDB)
 func SavePushSubscription(adminID uuid.UUID, endpoint, p256dh, auth string, subscription []byte) error {
-	return queries.UpsertPushSubscription(UsersDB, adminID, endpoint, p256dh, auth, subscription)
+	return queries.UpsertPushSubscription(UsersDB, adminID, endpoint, p256dh, auth, json.RawMessage(subscription))
 }
 
 func RemovePushSubscription(adminID uuid.UUID, endpoint string) error {

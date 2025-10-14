@@ -1,12 +1,26 @@
 package handlers
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log"
+	"math/big"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -31,6 +45,22 @@ type pushSendRequest struct {
 	Message string                 `json:"message" binding:"required"`
 	Data    map[string]interface{} `json:"data"`
 }
+
+type vapidConfig struct {
+	privateKey *ecdsa.PrivateKey
+	publicKey  string
+	subject    string
+}
+
+var (
+	vapidOnce sync.Once
+	vapidCfg  *vapidConfig
+	vapidErr  error
+
+	pushHTTPClient = &http.Client{
+		Timeout: 10 * time.Second,
+	}
+)
 
 // PushSubscribeHandler сохраняет подписку браузера администратора
 func PushSubscribeHandler(c *gin.Context) {
@@ -145,33 +175,197 @@ func PushSendHandler(c *gin.Context) {
 		return
 	}
 
-	vapidPrivate := os.Getenv("VAPID_PRIVATE_KEY")
-	vapidPublic := os.Getenv("VAPID_PUBLIC_KEY")
-	vapidEmail := os.Getenv("VAPID_EMAIL")
-
-	if vapidPrivate == "" || vapidPublic == "" || vapidEmail == "" {
-		log.Printf("PushSendHandler: VAPID ключи не настроены, заглушка. title=%s message=%s", req.Title, req.Message)
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"sent":    0,
-			"total":   len(subs),
-			"message": "Push уведомления не отправлены: VAPID ключи не настроены",
-		})
+	cfg, err := getVAPIDConfig()
+	if err != nil {
+		log.Printf("PushSendHandler: VAPID конфигурация недоступна: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Push уведомления не настроены (VAPID)"})
 		return
 	}
 
-	// TODO: Реальная отправка push (webpush-go) — пока просто логируем успешное событие
-	log.Printf("PushSendHandler: псевдо-отправка %d push уведомлений для admin=%s, title=%s", len(subs), adminID, req.Title)
+	log.Printf("PushSendHandler: отправка push для admin=%s, title=%s, подписок=%d", adminID, req.Title, len(subs))
 
+	sent := 0
 	for _, sub := range subs {
-		_ = database.TouchPushSubscription(sub.Endpoint)
+		status, sendErr := sendWebPushNotification(cfg, &sub)
+		if sendErr != nil {
+			log.Printf("PushSendHandler: ошибка отправки на %s: %v", sub.Endpoint, sendErr)
+			continue
+		}
+
+		switch status {
+		case http.StatusGone, http.StatusNotFound:
+			log.Printf("PushSendHandler: удаляем недействительную подписку %s (status=%d)", sub.Endpoint, status)
+			_ = database.RemovePushSubscriptionByEndpoint(sub.Endpoint)
+		default:
+			if status >= 200 && status < 300 {
+				sent++
+				_ = database.TouchPushSubscription(sub.Endpoint)
+			} else {
+				log.Printf("PushSendHandler: неожиданный статус отправки %d для %s", status, sub.Endpoint)
+			}
+		}
 	}
+
+	failed := len(subs) - sent
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"sent":    len(subs),
+		"sent":    sent,
+		"failed":  failed,
 		"total":   len(subs),
-		"message": "Push уведомления поставлены в очередь",
+		"message": fmt.Sprintf("Push уведомления отправлены (%d успешно, %d ошибок)", sent, failed),
 	})
+}
+
+func getVAPIDConfig() (*vapidConfig, error) {
+	vapidOnce.Do(func() {
+		privRaw := strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY"))
+		pubRaw := strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY"))
+		if pubRaw == "" {
+			pubRaw = strings.TrimSpace(os.Getenv("NEXT_PUBLIC_VAPID_PUBLIC_KEY"))
+		}
+		subject := strings.TrimSpace(os.Getenv("VAPID_EMAIL"))
+		if subject == "" {
+			subject = strings.TrimSpace(os.Getenv("VAPID_SUBJECT"))
+		}
+
+		if privRaw == "" || pubRaw == "" || subject == "" {
+			vapidErr = errors.New("VAPID ключи или subject не заданы в переменных окружения")
+			return
+		}
+
+		privBytes, err := decodeBase64URL(privRaw)
+		if err != nil {
+			vapidErr = fmt.Errorf("не удалось декодировать VAPID_PRIVATE_KEY: %w", err)
+			return
+		}
+		if len(privBytes) != 32 {
+			vapidErr = fmt.Errorf("ожидался приватный ключ длиной 32 байта, получили %d", len(privBytes))
+			return
+		}
+
+		priv := new(ecdsa.PrivateKey)
+		priv.PublicKey.Curve = elliptic.P256()
+		priv.D = new(big.Int).SetBytes(privBytes)
+		priv.PublicKey.X, priv.PublicKey.Y = priv.PublicKey.Curve.ScalarBaseMult(privBytes)
+
+		pubBytes, err := decodeBase64URL(pubRaw)
+		if err != nil {
+			vapidErr = fmt.Errorf("не удалось декодировать VAPID_PUBLIC_KEY: %w", err)
+			return
+		}
+		if len(pubBytes) != 65 {
+			vapidErr = fmt.Errorf("ожидался публичный ключ длиной 65 байт, получили %d", len(pubBytes))
+			return
+		}
+
+		if !priv.PublicKey.IsOnCurve(priv.PublicKey.X, priv.PublicKey.Y) {
+			vapidErr = errors.New("полученный VAPID публичный ключ не соответствует кривой P-256")
+			return
+		}
+
+		vapidCfg = &vapidConfig{
+			privateKey: priv,
+			publicKey:  pubRaw,
+			subject:    ensureMailto(subject),
+		}
+	})
+
+	return vapidCfg, vapidErr
+}
+
+func sendWebPushNotification(cfg *vapidConfig, sub *models.PushSubscription) (int, error) {
+	aud, err := audienceFromEndpoint(sub.Endpoint)
+	if err != nil {
+		return 0, err
+	}
+
+	token, err := buildVAPIDToken(cfg.privateKey, cfg.subject, aud)
+	if err != nil {
+		return 0, err
+	}
+
+	// Пока отправляем пустой payload, чтобы избежать обязательного шифрования.
+	httpReq, err := http.NewRequest(http.MethodPost, sub.Endpoint, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	httpReq.Header.Set("TTL", "90")
+	httpReq.Header.Set("Urgency", "normal")
+	httpReq.Header.Set("Authorization", "WebPush "+token)
+	httpReq.Header.Set("Crypto-Key", "p256ecdsa="+cfg.publicKey)
+	httpReq.Header.Set("Content-Length", "0")
+	httpReq.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := pushHTTPClient.Do(httpReq)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	return resp.StatusCode, nil
+}
+
+func buildVAPIDToken(priv *ecdsa.PrivateKey, subject, aud string) (string, error) {
+	headerJSON := `{"alg":"ES256","typ":"JWT"}`
+	header := base64.RawURLEncoding.EncodeToString([]byte(headerJSON))
+
+	exp := time.Now().Add(12 * time.Hour).Unix()
+	payloadStruct := map[string]interface{}{
+		"aud": aud,
+		"exp": exp,
+		"sub": subject,
+	}
+	payloadBytes, err := json.Marshal(payloadStruct)
+	if err != nil {
+		return "", err
+	}
+	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
+
+	signingInput := header + "." + payload
+	hash := sha256.Sum256([]byte(signingInput))
+
+	r, s, err := ecdsa.Sign(rand.Reader, priv, hash[:])
+	if err != nil {
+		return "", err
+	}
+
+	sigBytes := make([]byte, 64)
+	copyWithPadding(sigBytes[:32], r.Bytes())
+	copyWithPadding(sigBytes[32:], s.Bytes())
+
+	signature := base64.RawURLEncoding.EncodeToString(sigBytes)
+	return signingInput + "." + signature, nil
+}
+
+func audienceFromEndpoint(endpoint string) (string, error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("не удалось разобрать endpoint: %w", err)
+	}
+	return fmt.Sprintf("%s://%s", u.Scheme, u.Host), nil
+}
+
+func decodeBase64URL(input string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(input)
+}
+
+func copyWithPadding(dst, src []byte) {
+	if len(src) > len(dst) {
+		copy(dst, src[len(src)-len(dst):])
+		return
+	}
+	copy(dst[len(dst)-len(src):], src)
+}
+
+func ensureMailto(subject string) string {
+	if strings.HasPrefix(subject, "mailto:") {
+		return subject
+	}
+	if strings.Contains(subject, "@") {
+		return "mailto:" + subject
+	}
+	return subject
 }
