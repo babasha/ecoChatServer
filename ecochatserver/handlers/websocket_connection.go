@@ -90,7 +90,19 @@ func ServeWs(c *gin.Context) {
 	var adminID, clientID, chatID uuid.UUID
 	var err error
 
-	if clientType == "admin" && token != "" {
+	if clientType == "admin" {
+		// Для admin подключений поддерживаем как query ?token=, так и session cookie
+		if token == "" {
+			if cookieToken, cookieErr := c.Cookie("session"); cookieErr == nil && cookieToken != "" {
+				token = cookieToken
+				log.Printf("ServeWs: использован session cookie для admin подключения")
+			} else {
+				log.Printf("ServeWs: отсутствует токен и session cookie для admin подключения: %v", cookieErr)
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Отсутствует токен авторизации"})
+				return
+			}
+		}
+
 		// Валидируем JWT токен
 		claims, err := middleware.ValidateToken(token)
 		if err != nil {
@@ -106,11 +118,14 @@ func ServeWs(c *gin.Context) {
 			return
 		}
 
-		clientID, err = uuid.Parse(claims.ClientID)
-		if err != nil {
-			log.Printf("ServeWs: ошибка парсинга clientID: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный clientID"})
-			return
+		if claims.ClientID != "" {
+			clientID, err = uuid.Parse(claims.ClientID)
+			if err != nil {
+				log.Printf("ServeWs: некорректный clientID в токене (%s): %v. Используем uuid.Nil", claims.ClientID, err)
+				clientID = uuid.Nil
+			}
+		} else {
+			clientID = uuid.Nil
 		}
 
 		// Сохраняем данные в контексте для использования в обработчиках
