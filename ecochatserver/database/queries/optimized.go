@@ -19,21 +19,34 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
 	var userID uuid.UUID
 
 	// Получаем только базовую информацию
+	var assignedNull sql.NullString
+	var userSourceID sql.NullString
+
 	err := db.QueryRowContext(ctx, `
         SELECT c.id, c.created_at, c.updated_at, c.status,
-               c.user_id, c.source, c.client_id, c.auto_responder_enabled, c.assigned_to,
-               u.id, u.name, u.email, u.source
+               c.user_id, c.source, c.bot_id, c.client_id, c.auto_responder_enabled, c.assigned_to,
+               u.id, u.name, u.email, u.source, u.source_id
         FROM chats c
         JOIN users u ON c.user_id = u.id
         WHERE c.id = $1
     `, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
-		&userID, &chat.Source, &chat.ClientID, &chat.AutoResponderEnabled, &chat.AssignedTo,
-		&chat.User.ID, &chat.User.Name, &chat.User.Email, &chat.User.Source,
+		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &chat.AutoResponderEnabled, &assignedNull,
+		&chat.User.ID, &chat.User.Name, &chat.User.Email, &chat.User.Source, &userSourceID,
 	)
 
 	if err != nil {
 		return nil, err
+	}
+
+	if assignedNull.Valid {
+		if assignedUUID, err := uuid.Parse(assignedNull.String); err == nil {
+			chat.AssignedTo = &assignedUUID
+		}
+	}
+
+	if userSourceID.Valid {
+		chat.User.SourceID = userSourceID.String
 	}
 
 	return &chat, nil

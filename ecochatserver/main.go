@@ -398,6 +398,8 @@ func setupAPIRoutes(r *gin.Engine) {
 
 		// Webhook для Telegram и других внешних сервисов
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
+		api.GET("/instagram/webhook", handlers.InstagramWebhookVerify)
+		api.POST("/instagram/webhook", handlers.InstagramWebhook)
 
 		// Виджетный API (публичный, для iframe/web widget + мягкий rate limit)
 		// Оставляем для обратной совместимости, но рекомендуем использовать WebSocket

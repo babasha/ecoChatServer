@@ -250,6 +250,9 @@ func SendMessageToChat(c *gin.Context) {
 	// Инвалидируем Redis кеш (lastMessage изменилось)
 	database.InvalidateChatsCacheForAll()
 
+	// Отправляем сообщение во внешние каналы (например, Instagram)
+	go dispatchExternalMessage(chatID, message)
+
 	// Для WebSocket нужно отправить переведенное сообщение клиенту
 	// Создаем копию сообщения для виджета с переводом
 	widgetMessage := *message

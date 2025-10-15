@@ -132,6 +132,11 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	// Быстро обновляем время чата
 	updateChatTimestamp(chatID)
 
+	// Отправляем сообщение во внешние каналы (например, Instagram) для админов
+	if sender == "admin" {
+		go dispatchExternalMessage(chatID, message)
+	}
+
 	// Если это сообщение от админа, очищаем состояние эскалации
 	if sender == "admin" && AutoResponder != nil {
 		AutoResponder.ClearEscalation(chatID.String())
@@ -168,6 +173,7 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					log.Printf("processSendMessage: ошибка сохранения автоответа: %v", err)
 				} else {
 					botMsg = saved
+					go dispatchExternalMessage(chatID, botMsg)
 
 					// Увеличиваем счетчик реальных сообщений чата (включая бота)
 					WebSocketHub.IncrementChatMessage()
