@@ -108,10 +108,19 @@ func InstagramWebhook(c *gin.Context) {
 	for _, entry := range payload.Entry {
 		for _, change := range entry.Changes {
 			if change.Field != "messages" {
+				log.Printf("InstagramWebhook: пропускаем change field=%s", change.Field)
 				continue
 			}
 
+			rawValue := truncateForLog(strings.TrimSpace(string(change.Value)), 800)
+			if rawValue != "" {
+				log.Printf("InstagramWebhook: входящее сообщение raw=%s", rawValue)
+			}
+
 			envelopes := extractInstagramEnvelopes(entry, change)
+			if len(envelopes) == 0 {
+				log.Printf("InstagramWebhook: не удалось извлечь сообщения (entry_id=%s)", entry.ID)
+			}
 			for _, envelope := range envelopes {
 				if err := handleInstagramMessage(c.Request.Context(), envelope); err != nil {
 					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
@@ -705,4 +714,14 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 
 	log.Printf("sendInstagramOutgoingMessage: сообщение отправлено (chat=%s, user=%s)", chat.ID, userID)
 	return nil
+}
+
+func truncateForLog(value string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen] + "...(truncated)"
 }
