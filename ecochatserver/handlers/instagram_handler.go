@@ -114,8 +114,28 @@ func InstagramWebhook(c *gin.Context) {
 
 		// Обработка Direct Messages (формат messaging)
 		for _, msg := range entry.Messaging {
+			// ВРЕМЕННО: обрабатываем message_edit как обычное сообщение в dev режиме
+			// TODO: Удалить после публикации приложения
+			if msg.Message == nil && msg.MessageEdit != nil {
+				numEdit := 0
+				if msg.MessageEdit.NumEdit != "" {
+					if val, err := msg.MessageEdit.NumEdit.Int64(); err == nil {
+						numEdit = int(val)
+					}
+				}
+
+				// Только num_edit=0 (новые сообщения), игнорируем реальные редактирования
+				if numEdit == 0 {
+					log.Printf("InstagramWebhook: [DEV MODE] обрабатываем message_edit как новое сообщение (num_edit=0)")
+					msg.Message = &instagramMessage{
+						MID:  msg.MessageEdit.MID,
+						Text: msg.MessageEdit.Text,
+					}
+				}
+			}
+
 			if msg.Message == nil {
-				log.Printf("InstagramWebhook: пропускаем messaging без message (возможно редактирование или удаление)")
+				log.Printf("InstagramWebhook: пропускаем messaging без message (возможно реальное редактирование или удаление)")
 				continue
 			}
 
@@ -202,10 +222,19 @@ type instagramEntry struct {
 }
 
 type instagramMessaging struct {
-	Sender    *instagramActor   `json:"sender,omitempty"`
-	Recipient *instagramActor   `json:"recipient,omitempty"`
-	Timestamp json.Number       `json:"timestamp"`
-	Message   *instagramMessage `json:"message,omitempty"`
+	Sender      *instagramActor        `json:"sender,omitempty"`
+	Recipient   *instagramActor        `json:"recipient,omitempty"`
+	Timestamp   json.Number            `json:"timestamp"`
+	Message     *instagramMessage      `json:"message,omitempty"`
+	MessageEdit *instagramMessageEdit  `json:"message_edit,omitempty"` // ВРЕМЕННО: для тестирования в dev режиме
+}
+
+// ВРЕМЕННО: структура для message_edit событий в режиме тестирования
+// TODO: Удалить после публикации приложения, когда будут приходить обычные message события
+type instagramMessageEdit struct {
+	MID     string      `json:"mid"`
+	NumEdit json.Number `json:"num_edit"` // 0 = новое сообщение, >0 = редактирование
+	Text    string      `json:"text,omitempty"`
 }
 
 type instagramChange struct {
