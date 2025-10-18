@@ -110,7 +110,26 @@ func InstagramWebhook(c *gin.Context) {
 	processed := 0
 	var processedDetails []gin.H
 	for _, entry := range payload.Entry {
-		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d", entry.ID, len(entry.Changes))
+		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d", entry.ID, len(entry.Changes), len(entry.Messaging))
+
+		// Обработка Direct Messages (формат messaging)
+		for _, msg := range entry.Messaging {
+			if msg.Message == nil {
+				log.Printf("InstagramWebhook: пропускаем messaging без message (возможно редактирование или удаление)")
+				continue
+			}
+
+			envelope := buildInstagramEnvelopeFromMessaging(entry.ID, msg)
+			if err := handleInstagramMessage(c.Request.Context(), envelope); err != nil {
+				log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
+			} else {
+				processed++
+				detail := createProcessedDetail(envelope)
+				processedDetails = append(processedDetails, detail)
+			}
+		}
+
+		// Обработка публичного контента (формат changes)
 		for _, change := range entry.Changes {
 			if change.Field != "messages" {
 				log.Printf("InstagramWebhook: пропускаем change field=%s", change.Field)
@@ -131,46 +150,7 @@ func InstagramWebhook(c *gin.Context) {
 					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
 				} else {
 					processed++
-					messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
-					messageType := strings.TrimSpace(envelope.Message.Type)
-					if messageType == "" && len(envelope.Message.Attachments) > 0 {
-						messageType = envelope.Message.Attachments[0].Type
-					}
-					if messageType == "" {
-						messageType = "text"
-					}
-
-					log.Printf("InstagramWebhook: сообщение от %s (%s) тип=%s", envelope.SenderID, envelope.SenderUsername, messageType)
-
-					timestamp := envelope.Timestamp
-					if timestamp.IsZero() {
-						timestamp = time.Now()
-					}
-
-					detail := gin.H{
-						"sender_id":       envelope.SenderID,
-						"sender_username": envelope.SenderUsername,
-						"recipient_id":    envelope.RecipientID,
-						"message_id":      messageID,
-						"message_type":    messageType,
-						"timestamp":       timestamp.Format(time.RFC3339),
-					}
-
-					if envelope.ThreadID != "" {
-						detail["thread_id"] = envelope.ThreadID
-					}
-
-					if preview := strings.TrimSpace(extractInstagramText(envelope.Message)); preview != "" {
-						if len(preview) > 160 {
-							preview = preview[:160] + "..."
-						}
-						detail["preview"] = preview
-					}
-
-					if len(envelope.Message.Attachments) > 0 {
-						detail["attachments"] = len(envelope.Message.Attachments)
-					}
-
+					detail := createProcessedDetail(envelope)
 					processedDetails = append(processedDetails, detail)
 				}
 			}
@@ -215,9 +195,17 @@ type instagramWebhookPayload struct {
 }
 
 type instagramEntry struct {
-	ID      string            `json:"id"`
-	Time    json.Number       `json:"time"`
-	Changes []instagramChange `json:"changes"`
+	ID        string              `json:"id"`
+	Time      json.Number         `json:"time"`
+	Changes   []instagramChange   `json:"changes"`
+	Messaging []instagramMessaging `json:"messaging"` // Для Instagram Direct Messages
+}
+
+type instagramMessaging struct {
+	Sender    *instagramActor   `json:"sender,omitempty"`
+	Recipient *instagramActor   `json:"recipient,omitempty"`
+	Timestamp json.Number       `json:"timestamp"`
+	Message   *instagramMessage `json:"message,omitempty"`
 }
 
 type instagramChange struct {
@@ -345,6 +333,78 @@ func buildInstagramEnvelope(baseSender, baseRecipient, baseUsername string, defa
 		Message:        msg,
 		Value:          value,
 	}
+}
+
+func buildInstagramEnvelopeFromMessaging(entryID string, msg instagramMessaging) instagramEnvelope {
+	senderID := getActorID(msg.Sender)
+	recipientID := getActorID(msg.Recipient)
+	if recipientID == "" {
+		recipientID = entryID
+	}
+
+	username := getActorUsername(msg.Sender)
+	if username == "" {
+		username = senderID
+	}
+
+	msgTime := parseInstagramTimestamp(msg.Timestamp)
+	if msgTime.IsZero() {
+		msgTime = time.Now()
+	}
+
+	return instagramEnvelope{
+		SenderID:       senderID,
+		SenderUsername: username,
+		RecipientID:    recipientID,
+		Timestamp:      msgTime,
+		ThreadID:       "",
+		Message:        *msg.Message,
+		Value:          instagramValue{},
+	}
+}
+
+func createProcessedDetail(envelope instagramEnvelope) gin.H {
+	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
+	messageType := strings.TrimSpace(envelope.Message.Type)
+	if messageType == "" && len(envelope.Message.Attachments) > 0 {
+		messageType = envelope.Message.Attachments[0].Type
+	}
+	if messageType == "" {
+		messageType = "text"
+	}
+
+	log.Printf("InstagramWebhook: сообщение от %s (%s) тип=%s", envelope.SenderID, envelope.SenderUsername, messageType)
+
+	timestamp := envelope.Timestamp
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+
+	detail := gin.H{
+		"sender_id":       envelope.SenderID,
+		"sender_username": envelope.SenderUsername,
+		"recipient_id":    envelope.RecipientID,
+		"message_id":      messageID,
+		"message_type":    messageType,
+		"timestamp":       timestamp.Format(time.RFC3339),
+	}
+
+	if envelope.ThreadID != "" {
+		detail["thread_id"] = envelope.ThreadID
+	}
+
+	if preview := strings.TrimSpace(extractInstagramText(envelope.Message)); preview != "" {
+		if len(preview) > 160 {
+			preview = preview[:160] + "..."
+		}
+		detail["preview"] = preview
+	}
+
+	if len(envelope.Message.Attachments) > 0 {
+		detail["attachments"] = len(envelope.Message.Attachments)
+	}
+
+	return detail
 }
 
 func getActorID(actor *instagramActor) string {
