@@ -152,12 +152,43 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Запускаем сервер в отдельной горутине
+	// Запускаем HTTP сервер в отдельной горутине
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Ошибка запуска HTTP сервера: %v", err)
 		}
 	}()
+
+	var httpsServer *http.Server
+	tlsCertFile := os.Getenv("TLS_CERT_FILE")
+	tlsKeyFile := os.Getenv("TLS_KEY_FILE")
+	enableHTTPS := strings.EqualFold(os.Getenv("ENABLE_HTTPS"), "true") ||
+		(tlsCertFile != "" && tlsKeyFile != "")
+
+	if enableHTTPS {
+		if tlsCertFile == "" || tlsKeyFile == "" {
+			logWarning("HTTPS не запущен: TLS_CERT_FILE и TLS_KEY_FILE должны быть заданы")
+		} else {
+			httpsAddr := ":" + getEnv("HTTPS_PORT", "8443")
+			logInfo("HTTPS сервер запускается на " + httpsAddr)
+
+			httpsServer = &http.Server{
+				Addr:         httpsAddr,
+				Handler:      r,
+				ReadTimeout:  15 * time.Second,
+				WriteTimeout: 15 * time.Second,
+				IdleTimeout:  60 * time.Second,
+			}
+
+			go func() {
+				if err := httpsServer.ListenAndServeTLS(tlsCertFile, tlsKeyFile); err != nil && err != http.ErrServerClosed {
+					log.Fatalf("Ошибка запуска HTTPS сервера: %v", err)
+				}
+			}()
+		}
+	} else {
+		logInfo("HTTPS сервер отключен (ENABLE_HTTPS=false и путь к сертификату не указан)")
+	}
 
 	logInfo("✓ Сервер запущен успешно")
 
@@ -177,6 +208,12 @@ func main() {
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Ошибка при остановке сервера: %v", err)
+	}
+
+	if httpsServer != nil {
+		if err := httpsServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Ошибка при остановке HTTPS сервера: %v", err)
+		}
 	}
 
 	log.Println("✓ Сервер остановлен успешно")

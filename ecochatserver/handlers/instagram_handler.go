@@ -104,6 +104,7 @@ func InstagramWebhook(c *gin.Context) {
 	}
 
 	processed := 0
+	var processedDetails []gin.H
 	for _, entry := range payload.Entry {
 		for _, change := range entry.Changes {
 			if change.Field != "messages" {
@@ -116,13 +117,64 @@ func InstagramWebhook(c *gin.Context) {
 					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
 				} else {
 					processed++
+					messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
+					messageType := strings.TrimSpace(envelope.Message.Type)
+					if messageType == "" && len(envelope.Message.Attachments) > 0 {
+						messageType = envelope.Message.Attachments[0].Type
+					}
+					if messageType == "" {
+						messageType = "text"
+					}
+
+					log.Printf("InstagramWebhook: сообщение от %s (%s) тип=%s", envelope.SenderID, envelope.SenderUsername, messageType)
+
+					timestamp := envelope.Timestamp
+					if timestamp.IsZero() {
+						timestamp = time.Now()
+					}
+
+					detail := gin.H{
+						"sender_id":       envelope.SenderID,
+						"sender_username": envelope.SenderUsername,
+						"recipient_id":    envelope.RecipientID,
+						"message_id":      messageID,
+						"message_type":    messageType,
+						"timestamp":       timestamp.Format(time.RFC3339),
+					}
+
+					if envelope.ThreadID != "" {
+						detail["thread_id"] = envelope.ThreadID
+					}
+
+					if preview := strings.TrimSpace(extractInstagramText(envelope.Message)); preview != "" {
+						if len(preview) > 160 {
+							preview = preview[:160] + "..."
+						}
+						detail["preview"] = preview
+					}
+
+					if len(envelope.Message.Attachments) > 0 {
+						detail["attachments"] = len(envelope.Message.Attachments)
+					}
+
+					processedDetails = append(processedDetails, detail)
 				}
 			}
 		}
 	}
 
 	log.Printf("InstagramWebhook: обработано %d сообщений", processed)
-	c.JSON(http.StatusOK, gin.H{"status": "received", "processed": processed})
+
+	response := gin.H{
+		"status":    "received",
+		"processed": processed,
+	}
+
+	if len(processedDetails) > 0 {
+		response["messages"] = processedDetails
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func verifyInstagramSignature(payload []byte, signature string) bool {
