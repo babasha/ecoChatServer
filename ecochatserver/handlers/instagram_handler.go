@@ -41,6 +41,53 @@ var instagramHTTPClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
+// instagramMessageDetails содержит полную информацию о сообщении из Instagram API
+type instagramMessageDetails struct {
+	ID        string `json:"id"`
+	Message   string `json:"message,omitempty"`
+	From      struct {
+		ID       string `json:"id"`
+		Username string `json:"username,omitempty"`
+	} `json:"from"`
+	To struct {
+		Data []struct {
+			ID       string `json:"id"`
+			Username string `json:"username,omitempty"`
+		} `json:"data"`
+	} `json:"to"`
+	CreatedTime string `json:"created_time"`
+}
+
+// fetchInstagramMessageDetails получает детали сообщения через Instagram Graph API
+func fetchInstagramMessageDetails(messageID string) (*instagramMessageDetails, error) {
+	accessToken := database.GetSetting(instagramAccessTokenSetting, "")
+	if accessToken == "" {
+		return nil, fmt.Errorf("instagram access token not configured")
+	}
+
+	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=id,message,from,to,created_time&access_token=%s",
+		apiVersion, messageID, accessToken)
+
+	resp, err := instagramHTTPClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch message details: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("instagram API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var details instagramMessageDetails
+	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+		return nil, fmt.Errorf("failed to decode message details: %w", err)
+	}
+
+	return &details, nil
+}
+
 // InstagramWebhookVerify обрабатывает GET-запрос для подтверждения вебхука
 func InstagramWebhookVerify(c *gin.Context) {
 	mode := c.Query("hub.mode")
@@ -113,12 +160,7 @@ func InstagramWebhook(c *gin.Context) {
 		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d", entry.ID, len(entry.Changes), len(entry.Messaging))
 
 		// Обработка Direct Messages (формат messaging)
-		for i, msg := range entry.Messaging {
-			// DEBUG: логируем полный messaging объект
-			if msgJSON, err := json.Marshal(msg); err == nil {
-				log.Printf("InstagramWebhook: messaging[%d]=%s", i, string(msgJSON))
-			}
-
+		for _, msg := range entry.Messaging {
 			// ВРЕМЕННО: обрабатываем message_edit как обычное сообщение в dev режиме
 			// TODO: Удалить после публикации приложения
 			if msg.Message == nil && msg.MessageEdit != nil {
@@ -132,9 +174,37 @@ func InstagramWebhook(c *gin.Context) {
 				// Только num_edit=0 (новые сообщения), игнорируем реальные редактирования
 				if numEdit == 0 {
 					log.Printf("InstagramWebhook: [DEV MODE] обрабатываем message_edit как новое сообщение (num_edit=0)")
-					msg.Message = &instagramMessage{
-						MID:  msg.MessageEdit.MID,
-						Text: msg.MessageEdit.Text,
+
+					// Получаем полную информацию о сообщении через API
+					details, err := fetchInstagramMessageDetails(msg.MessageEdit.MID)
+					if err != nil {
+						log.Printf("InstagramWebhook: [DEV MODE] ошибка получения деталей сообщения: %v", err)
+						// Пытаемся обработать без API данных
+						msg.Message = &instagramMessage{
+							MID:  msg.MessageEdit.MID,
+							Text: msg.MessageEdit.Text,
+						}
+					} else {
+						log.Printf("InstagramWebhook: [DEV MODE] получены детали: from=%s, message=%s", details.From.ID, details.Message)
+
+						// Заполняем sender и recipient из API
+						msg.Sender = &instagramActor{
+							ID:       details.From.ID,
+							Username: details.From.Username,
+						}
+
+						if len(details.To.Data) > 0 {
+							msg.Recipient = &instagramActor{
+								ID:       details.To.Data[0].ID,
+								Username: details.To.Data[0].Username,
+							}
+						}
+
+						// Создаем message объект с текстом из API
+						msg.Message = &instagramMessage{
+							MID:  details.ID,
+							Text: details.Message,
+						}
 					}
 				}
 			}
