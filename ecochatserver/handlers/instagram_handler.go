@@ -113,7 +113,12 @@ func InstagramWebhook(c *gin.Context) {
 		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d", entry.ID, len(entry.Changes), len(entry.Messaging))
 
 		// Обработка Direct Messages (формат messaging)
-		for _, msg := range entry.Messaging {
+		for i, msg := range entry.Messaging {
+			// DEBUG: логируем полный messaging объект
+			if msgJSON, err := json.Marshal(msg); err == nil {
+				log.Printf("InstagramWebhook: messaging[%d]=%s", i, string(msgJSON))
+			}
+
 			// ВРЕМЕННО: обрабатываем message_edit как обычное сообщение в dev режиме
 			// TODO: Удалить после публикации приложения
 			if msg.Message == nil && msg.MessageEdit != nil {
