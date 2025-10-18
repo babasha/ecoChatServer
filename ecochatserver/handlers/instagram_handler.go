@@ -41,51 +41,77 @@ var instagramHTTPClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
-// instagramMessageDetails содержит полную информацию о сообщении из Instagram API
-type instagramMessageDetails struct {
-	ID        string `json:"id"`
-	Message   string `json:"message,omitempty"`
-	From      struct {
-		ID       string `json:"id"`
-		Username string `json:"username,omitempty"`
-	} `json:"from"`
-	To struct {
+// instagramConversation содержит информацию о диалоге
+type instagramConversation struct {
+	ID           string `json:"id"`
+	Participants struct {
 		Data []struct {
 			ID       string `json:"id"`
 			Username string `json:"username,omitempty"`
+			Name     string `json:"name,omitempty"`
 		} `json:"data"`
-	} `json:"to"`
-	CreatedTime string `json:"created_time"`
+	} `json:"participants"`
 }
 
-// fetchInstagramMessageDetails получает детали сообщения через Instagram Graph API
-func fetchInstagramMessageDetails(messageID string) (*instagramMessageDetails, error) {
+// instagramConversationsResponse содержит список диалогов
+type instagramConversationsResponse struct {
+	Data []instagramConversation `json:"data"`
+}
+
+// fetchInstagramConversations получает список conversations для бизнес-аккаунта
+func fetchInstagramConversations(businessAccountID string) ([]instagramConversation, error) {
 	accessToken := database.GetSetting(instagramAccessTokenSetting, "")
 	if accessToken == "" {
 		return nil, fmt.Errorf("instagram access token not configured")
 	}
 
 	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
-	url := fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=id,message,from,to,created_time&access_token=%s",
-		apiVersion, messageID, accessToken)
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/conversations?platform=instagram&fields=id,participants{id,username,name}&limit=10&access_token=%s",
+		apiVersion, businessAccountID, accessToken)
+
+	log.Printf("fetchInstagramConversations: fetching from %s", url)
 
 	resp, err := instagramHTTPClient.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch message details: %w", err)
+		return nil, fmt.Errorf("failed to fetch conversations: %w", err)
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	log.Printf("fetchInstagramConversations: status=%d, response=%s", resp.StatusCode, truncateForLog(string(bodyBytes), 800))
+
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("instagram API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("instagram API returned status %d", resp.StatusCode)
 	}
 
-	var details instagramMessageDetails
-	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
-		return nil, fmt.Errorf("failed to decode message details: %w", err)
+	var response instagramConversationsResponse
+	if err := json.Unmarshal(bodyBytes, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode conversations: %w", err)
 	}
 
-	return &details, nil
+	return response.Data, nil
+}
+
+// getSenderFromConversations пытается найти отправителя среди недавних conversations
+func getSenderFromConversations(businessAccountID string) (string, string, error) {
+	conversations, err := fetchInstagramConversations(businessAccountID)
+	if err != nil {
+		return "", "", err
+	}
+
+	log.Printf("getSenderFromConversations: found %d conversations", len(conversations))
+
+	// Берем первый conversation (самый свежий) и ищем участника, который не является business account
+	for _, conv := range conversations {
+		for _, participant := range conv.Participants.Data {
+			if participant.ID != businessAccountID {
+				log.Printf("getSenderFromConversations: found sender %s (username=%s)", participant.ID, participant.Username)
+				return participant.ID, participant.Username, nil
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("sender not found in recent conversations")
 }
 
 // InstagramWebhookVerify обрабатывает GET-запрос для подтверждения вебхука
@@ -175,36 +201,30 @@ func InstagramWebhook(c *gin.Context) {
 				if numEdit == 0 {
 					log.Printf("InstagramWebhook: [DEV MODE] обрабатываем message_edit как новое сообщение (num_edit=0)")
 
-					// Получаем полную информацию о сообщении через API
-					details, err := fetchInstagramMessageDetails(msg.MessageEdit.MID)
+					// Получаем sender через Conversations API
+					senderID, senderUsername, err := getSenderFromConversations(entry.ID)
 					if err != nil {
-						log.Printf("InstagramWebhook: [DEV MODE] ошибка получения деталей сообщения: %v", err)
-						// Пытаемся обработать без API данных
-						msg.Message = &instagramMessage{
-							MID:  msg.MessageEdit.MID,
-							Text: msg.MessageEdit.Text,
-						}
-					} else {
-						log.Printf("InstagramWebhook: [DEV MODE] получены детали: from=%s, message=%s", details.From.ID, details.Message)
+						log.Printf("InstagramWebhook: [DEV MODE] ошибка получения sender: %v", err)
+						// Не можем обработать без sender ID
+						continue
+					}
 
-						// Заполняем sender и recipient из API
-						msg.Sender = &instagramActor{
-							ID:       details.From.ID,
-							Username: details.From.Username,
-						}
+					log.Printf("InstagramWebhook: [DEV MODE] найден отправитель: id=%s, username=%s", senderID, senderUsername)
 
-						if len(details.To.Data) > 0 {
-							msg.Recipient = &instagramActor{
-								ID:       details.To.Data[0].ID,
-								Username: details.To.Data[0].Username,
-							}
-						}
+					// Заполняем sender и recipient
+					msg.Sender = &instagramActor{
+						ID:       senderID,
+						Username: senderUsername,
+					}
 
-						// Создаем message объект с текстом из API
-						msg.Message = &instagramMessage{
-							MID:  details.ID,
-							Text: details.Message,
-						}
+					msg.Recipient = &instagramActor{
+						ID: entry.ID, // Business account ID
+					}
+
+					// Создаем message объект
+					msg.Message = &instagramMessage{
+						MID:  msg.MessageEdit.MID,
+						Text: msg.MessageEdit.Text,
 					}
 				}
 			}
