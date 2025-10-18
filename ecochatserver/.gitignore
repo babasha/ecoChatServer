@@ -39,3 +39,8 @@ Thumbs.db
 
 # Server settings
 server_settings.json
+
+# Test files
+test_*.json
+test_*.sh
+generate_*.sh
