@@ -90,6 +90,8 @@ func InstagramWebhook(c *gin.Context) {
 		return
 	}
 
+	log.Printf("InstagramWebhook: raw payload=%s", truncateForLog(string(bodyBytes), 1000))
+
 	var payload instagramWebhookPayload
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
 		log.Printf("InstagramWebhook: ошибка парсинга JSON: %v", err)
@@ -103,9 +105,12 @@ func InstagramWebhook(c *gin.Context) {
 		return
 	}
 
+	log.Printf("InstagramWebhook: payload.Object=%s, entries=%d", payload.Object, len(payload.Entry))
+
 	processed := 0
 	var processedDetails []gin.H
 	for _, entry := range payload.Entry {
+		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d", entry.ID, len(entry.Changes))
 		for _, change := range entry.Changes {
 			if change.Field != "messages" {
 				log.Printf("InstagramWebhook: пропускаем change field=%s", change.Field)
