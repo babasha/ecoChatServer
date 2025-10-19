@@ -66,10 +66,38 @@ func fetchInstagramConversations(businessAccountID string) ([]instagramConversat
 	}
 
 	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
+
+	// Пробуем разные endpoints, т.к. в dev mode может быть ограничение
+	endpoints := []string{
+		fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=id,username,name&access_token=%s", apiVersion, businessAccountID, accessToken),
+		fmt.Sprintf("https://graph.facebook.com/%s/me?access_token=%s", apiVersion, accessToken),
+	}
+
+	for _, url := range endpoints {
+		log.Printf("fetchInstagramConversations: trying %s", truncateForLog(url, 120))
+
+		resp, err := instagramHTTPClient.Get(url)
+		if err != nil {
+			log.Printf("fetchInstagramConversations: HTTP error: %v", err)
+			continue
+		}
+
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		log.Printf("fetchInstagramConversations: status=%d, response=%s", resp.StatusCode, truncateForLog(string(bodyBytes), 500))
+
+		if resp.StatusCode == http.StatusOK {
+			log.Printf("fetchInstagramConversations: SUCCESS with endpoint %s", url)
+			break
+		}
+	}
+
+	// Основной запрос к conversations
 	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/conversations?platform=instagram&fields=id,participants{id,username,name}&limit=10&access_token=%s",
 		apiVersion, businessAccountID, accessToken)
 
-	log.Printf("fetchInstagramConversations: fetching from %s", url)
+	log.Printf("fetchInstagramConversations: fetching conversations from %s", truncateForLog(url, 120))
 
 	resp, err := instagramHTTPClient.Get(url)
 	if err != nil {
