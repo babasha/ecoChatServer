@@ -120,6 +120,42 @@ func fetchInstagramConversations(businessAccountID string) ([]instagramConversat
 	return response.Data, nil
 }
 
+// fetchMessageText получает текст сообщения по MID через Graph API
+func fetchMessageText(messageID string) (string, error) {
+	accessToken := database.GetSetting(instagramAccessTokenSetting, "")
+	if accessToken == "" {
+		return "", fmt.Errorf("instagram access token not configured")
+	}
+
+	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=message&access_token=%s",
+		apiVersion, messageID, accessToken)
+
+	log.Printf("fetchMessageText: fetching from %s", truncateForLog(url, 120))
+
+	resp, err := instagramHTTPClient.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	log.Printf("fetchMessageText: status=%d, response=%s", resp.StatusCode, truncateForLog(string(bodyBytes), 500))
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("instagram API returned status %d", resp.StatusCode)
+	}
+
+	var messageData struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(bodyBytes, &messageData); err != nil {
+		return "", fmt.Errorf("failed to decode message: %w", err)
+	}
+
+	return messageData.Message, nil
+}
+
 // getSenderFromConversations пытается найти отправителя среди недавних conversations
 func getSenderFromConversations(businessAccountID string) (string, string, error) {
 	conversations, err := fetchInstagramConversations(businessAccountID)
@@ -261,6 +297,20 @@ func InstagramWebhook(c *gin.Context) {
 					msg.Message = &instagramMessage{
 						MID:  msg.MessageEdit.MID,
 						Text: msg.MessageEdit.Text,
+					}
+
+					// Если текст пустой, пытаемся получить его через Graph API
+					if msg.Message.Text == nil || fmt.Sprintf("%v", msg.Message.Text) == "" {
+						if msg.MessageEdit.MID != "" {
+							log.Printf("InstagramWebhook: [DEV MODE] текст пустой, пытаемся получить через Graph API")
+							messageText, err := fetchMessageText(msg.MessageEdit.MID)
+							if err != nil {
+								log.Printf("InstagramWebhook: [DEV MODE] ошибка получения текста сообщения: %v", err)
+							} else if messageText != "" {
+								log.Printf("InstagramWebhook: [DEV MODE] текст получен через API: %s", truncateForLog(messageText, 50))
+								msg.Message.Text = messageText
+							}
+						}
 					}
 				}
 			}
