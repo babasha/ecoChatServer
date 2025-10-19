@@ -229,15 +229,23 @@ func InstagramWebhook(c *gin.Context) {
 				if numEdit == 0 {
 					log.Printf("InstagramWebhook: [DEV MODE] обрабатываем message_edit как новое сообщение (num_edit=0)")
 
-					// Получаем sender через Conversations API
+					// Пытаемся получить sender через Conversations API
 					senderID, senderUsername, err := getSenderFromConversations(entry.ID)
 					if err != nil {
-						log.Printf("InstagramWebhook: [DEV MODE] ошибка получения sender: %v", err)
-						// Не можем обработать без sender ID
-						continue
-					}
+						log.Printf("InstagramWebhook: [DEV MODE] ошибка получения sender через Conversations API: %v", err)
 
-					log.Printf("InstagramWebhook: [DEV MODE] найден отправитель: id=%s, username=%s", senderID, senderUsername)
+						// FALLBACK: используем generic sender ID
+						if msg.MessageEdit != nil && msg.MessageEdit.MID != "" {
+							senderID = "unknown_sender"
+							senderUsername = "Instagram User"
+							log.Printf("InstagramWebhook: [DEV MODE] используем fallback sender: id=%s, username=%s", senderID, senderUsername)
+						} else {
+							log.Printf("InstagramWebhook: [DEV MODE] не можем обработать сообщение без sender и MID")
+							continue
+						}
+					} else {
+						log.Printf("InstagramWebhook: [DEV MODE] найден отправитель через API: id=%s, username=%s", senderID, senderUsername)
+					}
 
 					// Заполняем sender и recipient
 					msg.Sender = &instagramActor{
