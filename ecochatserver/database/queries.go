@@ -77,8 +77,9 @@ func AddMessageWithID(
 	timestamp time.Time,
 	msgType string,
 	meta map[string]any,
+	source string,
 ) (*models.Message, error) {
-	return queries.AddMessageWithID(DB, messageID, chatID, content, sender, senderID, timestamp, msgType, meta)
+	return queries.AddMessageWithID(DB, messageID, chatID, content, sender, senderID, timestamp, msgType, meta, source)
 }
 
 func MarkSpecificMessagesAsRead(messageIDs []uuid.UUID) (int, error) {

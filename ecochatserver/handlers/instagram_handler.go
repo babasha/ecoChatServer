@@ -796,6 +796,7 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) err
 		timestamp,
 		messageType,
 		metadata,
+		instagramSource,
 	)
 	if err != nil {
 		return fmt.Errorf("AddMessageWithID: %w", err)

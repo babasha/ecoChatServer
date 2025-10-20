@@ -96,6 +96,7 @@ func AddMessageWithID(
 	timestamp time.Time,
 	msgType string,
 	meta map[string]any,
+	source string,
 ) (*models.Message, error) {
 	ctx, cancel := WithDBContext()
 	defer cancel()
@@ -125,8 +126,8 @@ func AddMessageWithID(
 	// Используем безопасную функцию вставки из миграции
 	var resultMessageID uuid.UUID
 	err = tx.QueryRowContext(ctx, `
-        SELECT insert_message_safe($1, $2, $3, $4, $5, $6, $7, $8)`,
-		messageID, chatID, content, sender, senderID, timestamp, msgType, metaJSON,
+        SELECT insert_message_safe($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		messageID, chatID, content, sender, senderID, timestamp, msgType, metaJSON, source,
 	).Scan(&resultMessageID)
 
 	if err != nil {
