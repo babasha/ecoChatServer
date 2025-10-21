@@ -322,11 +322,12 @@ func InstagramWebhook(c *gin.Context) {
 			}
 
 			envelope := buildInstagramEnvelopeFromMessaging(entry.ID, msg)
-			if err := handleInstagramMessage(c.Request.Context(), envelope); err != nil {
+			chatID, err := handleInstagramMessage(c.Request.Context(), envelope)
+			if err != nil {
 				log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
 			} else {
 				processed++
-				detail := createProcessedDetail(envelope)
+				detail := createProcessedDetail(envelope, chatID)
 				processedDetails = append(processedDetails, detail)
 			}
 		}
@@ -348,11 +349,12 @@ func InstagramWebhook(c *gin.Context) {
 				log.Printf("InstagramWebhook: не удалось извлечь сообщения (entry_id=%s)", entry.ID)
 			}
 			for _, envelope := range envelopes {
-				if err := handleInstagramMessage(c.Request.Context(), envelope); err != nil {
+				chatID, err := handleInstagramMessage(c.Request.Context(), envelope)
+				if err != nil {
 					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
 				} else {
 					processed++
-					detail := createProcessedDetail(envelope)
+					detail := createProcessedDetail(envelope, chatID)
 					processedDetails = append(processedDetails, detail)
 				}
 			}
@@ -584,7 +586,7 @@ func buildInstagramEnvelopeFromMessaging(entryID string, msg instagramMessaging)
 	}
 }
 
-func createProcessedDetail(envelope instagramEnvelope) gin.H {
+func createProcessedDetail(envelope instagramEnvelope, chatID string) gin.H {
 	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
 	messageType := strings.TrimSpace(envelope.Message.Type)
 	if messageType == "" && len(envelope.Message.Attachments) > 0 {
@@ -608,6 +610,7 @@ func createProcessedDetail(envelope instagramEnvelope) gin.H {
 		"message_id":      messageID,
 		"message_type":    messageType,
 		"timestamp":       timestamp.Format(time.RFC3339),
+		"chat_id":         chatID,
 	}
 
 	if envelope.ThreadID != "" {
@@ -698,27 +701,27 @@ func firstNotEmpty(values ...string) string {
 	return ""
 }
 
-func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) error {
+func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (string, error) {
 	if envelope.SenderID == "" {
-		return fmt.Errorf("sender id отсутствует")
+		return "", fmt.Errorf("sender id отсутствует")
 	}
 
 	// Пропускаем эхо-сообщения от собственного бота
 	if envelope.RecipientID != "" && envelope.SenderID == envelope.RecipientID {
 		log.Printf("handleInstagramMessage: пропускаем сообщение-эхо (sender=recipient=%s)", envelope.SenderID)
-		return nil
+		return "", nil
 	}
 
 	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
 	clientAPIKey := database.GetSetting(instagramClientKeySetting, defaultInstagramClientKey)
 	botID := firstNotEmpty(envelope.RecipientID, database.GetSetting(instagramBusinessIDSetting, ""))
 	if botID == "" {
-		return fmt.Errorf("bot id не найден для сообщения %s", messageID)
+		return "", fmt.Errorf("bot id не найден для сообщения %s", messageID)
 	}
 
 	if strings.TrimSpace(envelope.SenderID) == strings.TrimSpace(botID) {
 		log.Printf("handleInstagramMessage: пропускаем исходящее сообщение (sender=botID=%s)", botID)
-		return nil
+		return "", nil
 	}
 
 	userName := envelope.SenderUsername
@@ -736,13 +739,13 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) err
 		clientAPIKey,
 	)
 	if err != nil {
-		return fmt.Errorf("GetOrCreateChatMetadata: %w", err)
+		return "", fmt.Errorf("GetOrCreateChatMetadata: %w", err)
 	}
 
 	content := strings.TrimSpace(extractInstagramText(envelope.Message))
 	if content == "" && len(envelope.Message.Attachments) == 0 {
 		log.Printf("handleInstagramMessage: пустое сообщение, пропускаем (messageID=%s)", messageID)
-		return nil
+		return chat.ID.String(), nil
 	}
 
 	if content == "" {
@@ -810,7 +813,7 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) err
 		instagramSource,
 	)
 	if err != nil {
-		return fmt.Errorf("AddMessageWithID: %w", err)
+		return chat.ID.String(), fmt.Errorf("AddMessageWithID: %w", err)
 	}
 
 	log.Printf("handleInstagramMessage: сообщение сохранено (id=%s, chat=%s)", userMsg.ID, chat.ID)
@@ -880,7 +883,7 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) err
 		log.Printf("handleInstagramMessage: уведомление о сообщении бота отправлено %d клиентам", totalSent)
 	}
 
-	return nil
+	return chat.ID.String(), nil
 }
 
 func extractInstagramText(msg instagramMessage) string {
