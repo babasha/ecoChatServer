@@ -310,7 +310,7 @@ func setupCORS(r *gin.Engine) {
 		conf = cors.Config{
 			AllowAllOrigins:  true,
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key", "X-Hub-Signature-256"},
 			ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 			AllowCredentials: false, // Нельзя использовать credentials с AllowAllOrigins
 			MaxAge:           12 * time.Hour,
@@ -348,7 +348,7 @@ func setupCORS(r *gin.Engine) {
 				return false
 			},
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key", "Cookie"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key", "Cookie", "X-Hub-Signature-256"},
 			ExposeHeaders:    []string{"Content-Length", "X-Request-ID", "Set-Cookie"},
 			AllowCredentials: true,
 			MaxAge:           12 * time.Hour,
