@@ -376,17 +376,27 @@ func verifyInstagramSignature(payload []byte, signature string) bool {
 	appSecret := database.GetSetting(instagramAppSecretSetting, "")
 	if appSecret == "" || signature == "" {
 		// Если секрет не настроен или подпись отсутствует, пропускаем проверку
+		log.Printf("verifyInstagramSignature: SKIP (appSecret=%v, signature=%v)", appSecret != "", signature != "")
 		return true
 	}
 
 	const prefix = "sha256="
 	if !strings.HasPrefix(signature, prefix) {
+		log.Printf("verifyInstagramSignature: signature doesn't have sha256= prefix: %s", signature)
 		return false
 	}
 
 	mac := hmac.New(sha256.New, []byte(appSecret))
 	_, _ = mac.Write(payload)
 	expected := prefix + hex.EncodeToString(mac.Sum(nil))
+
+	log.Printf("verifyInstagramSignature: payload_len=%d", len(payload))
+	log.Printf("verifyInstagramSignature: payload_sample=%s", truncateForLog(string(payload), 200))
+	log.Printf("verifyInstagramSignature: appSecret=%s", truncateForLog(appSecret, 20))
+	log.Printf("verifyInstagramSignature: received=%s", signature)
+	log.Printf("verifyInstagramSignature: expected=%s", expected)
+	log.Printf("verifyInstagramSignature: match=%v", hmac.Equal([]byte(expected), []byte(signature)))
+
 	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
