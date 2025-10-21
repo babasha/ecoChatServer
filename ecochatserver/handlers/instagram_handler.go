@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -956,11 +957,18 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 		}
 	}
 
+	// DEV MODE: если включен режим разработки, не отправляем в реальный Instagram
+	if os.Getenv("INSTAGRAM_DEV_MODE") == "true" {
+		log.Printf("sendInstagramOutgoingMessage: [DEV MODE] режим разработки включен, пропускаем отправку в Instagram API")
+		log.Printf("sendInstagramOutgoingMessage: [DEV MODE] сообщение для отправки: userID=%s, text=%s", userID, text)
+		return nil
+	}
+
 	token := database.GetSetting(instagramAccessTokenSetting, "")
 	if token == "" {
-		// DEV MODE: если токен не настроен, только логируем (для демо/тестирования)
-		log.Printf("sendInstagramOutgoingMessage: [DEV MODE] токен не настроен, пропускаем отправку в Instagram API")
-		log.Printf("sendInstagramOutgoingMessage: [DEV MODE] сообщение, которое было бы отправлено: userID=%s, text=%s", userID, text)
+		// Если токен не настроен и не dev режим - это ошибка
+		log.Printf("sendInstagramOutgoingMessage: токен не настроен, пропускаем отправку")
+		log.Printf("sendInstagramOutgoingMessage: сообщение для отправки: userID=%s, text=%s", userID, text)
 		return nil
 	}
 
