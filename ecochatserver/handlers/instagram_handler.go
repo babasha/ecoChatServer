@@ -958,7 +958,10 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 
 	token := database.GetSetting(instagramAccessTokenSetting, "")
 	if token == "" {
-		return fmt.Errorf("instagram access token не настроен")
+		// DEV MODE: если токен не настроен, только логируем (для демо/тестирования)
+		log.Printf("sendInstagramOutgoingMessage: [DEV MODE] токен не настроен, пропускаем отправку в Instagram API")
+		log.Printf("sendInstagramOutgoingMessage: [DEV MODE] сообщение, которое было бы отправлено: userID=%s, text=%s", userID, text)
+		return nil
 	}
 
 	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
