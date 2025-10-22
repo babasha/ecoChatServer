@@ -560,7 +560,7 @@ func FindChatByUserSourceID(db *sql.DB, userSourceID, source string) (*models.Ch
 	defer cancel()
 
 	query := `
-		SELECT c.id, c.user_id, c.client_id, c.created_at, c.updated_at, c.status, c.bot_id,
+		SELECT c.id, c.client_id, c.created_at, c.updated_at, c.status, c.bot_id,
 		       c.assigned_to, c.is_archived, c.auto_responder_enabled,
 		       u.id, u.source_id, u.name, u.email, u.avatar, u.source
 		FROM chats c
@@ -576,7 +576,7 @@ func FindChatByUserSourceID(db *sql.DB, userSourceID, source string) (*models.Ch
 	var botID sql.NullString
 
 	err := db.QueryRowContext(ctx, query, userSourceID, source).Scan(
-		&chat.ID, &chat.UserID, &chat.ClientID, &chat.CreatedAt, &chat.UpdatedAt,
+		&chat.ID, &chat.ClientID, &chat.CreatedAt, &chat.UpdatedAt,
 		&chat.Status, &botID, &assignedTo, &chat.IsArchived, &chat.AutoResponderEnabled,
 		&user.ID, &user.SourceID, &user.Name, &user.Email, &user.Avatar, &user.Source,
 	)
