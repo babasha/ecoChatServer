@@ -437,6 +437,8 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 		api.GET("/instagram/webhook", handlers.InstagramWebhookVerify)
 		api.POST("/instagram/webhook", handlers.InstagramWebhook)
+		// Instagram demo endpoint - поиск существующего чата (ТОЛЬКО для demo страницы)
+		api.POST("/instagram/chat/find", handlers.FindInstagramChat)
 
 		// Виджетный API (публичный, для iframe/web widget + мягкий rate limit)
 		// Оставляем для обратной совместимости, но рекомендуем использовать WebSocket

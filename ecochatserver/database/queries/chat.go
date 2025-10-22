@@ -550,3 +550,60 @@ func UpdateAutoResponder(db *sql.DB, chatID uuid.UUID, enabled bool) error {
 	log.Printf("UpdateAutoResponder: успешно обновлен, chatID=%s, enabled=%t", chatID, enabled)
 	return nil
 }
+
+// FindChatByUserSourceID ищет чат по source_id пользователя и source
+// Используется ТОЛЬКО для Instagram demo, не затрагивает widget систему
+func FindChatByUserSourceID(db *sql.DB, userSourceID, source string) (*models.Chat, error) {
+	log.Printf("FindChatByUserSourceID: поиск чата для userSourceID=%s, source=%s", userSourceID, source)
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
+	query := `
+		SELECT c.id, c.user_id, c.client_id, c.created_at, c.updated_at, c.status, c.bot_id,
+		       c.assigned_to, c.is_archived, c.auto_responder_enabled,
+		       u.id, u.source_id, u.name, u.email, u.avatar, u.source
+		FROM chats c
+		JOIN users u ON c.user_id = u.id
+		WHERE u.source_id = $1 AND u.source = $2
+		ORDER BY c.updated_at DESC
+		LIMIT 1
+	`
+
+	var chat models.Chat
+	var user models.User
+	var assignedTo sql.NullString
+	var botID sql.NullString
+
+	err := db.QueryRowContext(ctx, query, userSourceID, source).Scan(
+		&chat.ID, &chat.UserID, &chat.ClientID, &chat.CreatedAt, &chat.UpdatedAt,
+		&chat.Status, &botID, &assignedTo, &chat.IsArchived, &chat.AutoResponderEnabled,
+		&user.ID, &user.SourceID, &user.Name, &user.Email, &user.Avatar, &user.Source,
+	)
+
+	if err == sql.ErrNoRows {
+		log.Printf("FindChatByUserSourceID: чат не найден для userSourceID=%s, source=%s", userSourceID, source)
+		return nil, fmt.Errorf("чат не найден")
+	}
+
+	if err != nil {
+		log.Printf("FindChatByUserSourceID: ошибка запроса: %v", err)
+		return nil, fmt.Errorf("ошибка поиска чата: %w", err)
+	}
+
+	if assignedTo.Valid {
+		assignedUUID, err := uuid.Parse(assignedTo.String)
+		if err == nil {
+			chat.AssignedTo = &assignedUUID
+		}
+	}
+
+	if botID.Valid {
+		chat.BotID = botID.String
+	}
+
+	chat.User = user
+
+	log.Printf("FindChatByUserSourceID: найден чат %s для userSourceID=%s", chat.ID, userSourceID)
+	return &chat, nil
+}

@@ -170,3 +170,9 @@ func ListPushSubscriptions(adminID uuid.UUID) ([]models.PushSubscription, error)
 func TouchPushSubscription(endpoint string) error {
 	return queries.TouchPushSubscription(UsersDB, endpoint)
 }
+
+// FindChatByUserSourceID ищет чат по source_id пользователя и source
+// Используется ТОЛЬКО для Instagram demo, не затрагивает widget систему
+func FindChatByUserSourceID(userSourceID, source string) (*models.Chat, error) {
+	return queries.FindChatByUserSourceID(DB, userSourceID, source)
+}

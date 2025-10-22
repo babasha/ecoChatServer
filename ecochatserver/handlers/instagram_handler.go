@@ -1025,3 +1025,45 @@ func truncateForLog(value string, maxLen int) string {
 	}
 	return value[:maxLen] + "...(truncated)"
 }
+
+// FindInstagramChat ищет существующий Instagram чат по sender_id
+// Используется ТОЛЬКО для Instagram demo страницы, не влияет на widget систему
+func FindInstagramChat(c *gin.Context) {
+	var req struct {
+		SenderID string `json:"sender_id"`
+		Source   string `json:"source"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	// Проверяем что source = instagram
+	if req.Source != instagramSource {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only instagram source supported"})
+		return
+	}
+
+	if req.SenderID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sender_id required"})
+		return
+	}
+
+	log.Printf("FindInstagramChat: поиск чата для sender_id=%s, source=%s", req.SenderID, req.Source)
+
+	// Используем существующую функцию из database/queries
+	chat, err := database.FindChatByUserSourceID(req.SenderID, instagramSource)
+	if err != nil {
+		log.Printf("FindInstagramChat: чат не найден: %v", err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
+		return
+	}
+
+	log.Printf("FindInstagramChat: найден чат %s для sender_id=%s", chat.ID, req.SenderID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"chat_id": chat.ID.String(),
+		"status":  "found",
+	})
+}
