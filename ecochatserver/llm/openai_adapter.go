@@ -334,11 +334,8 @@ Text: %s`, targetLang, text),
 		Messages:    messages,
 		Temperature: 0.3,
 		MaxTokens:   500,
-		ResponseFormat: &struct {
-			Type string `json:"type"`
-		}{
-			Type: "json_object",
-		},
+		// LM Studio не поддерживает json_object, используем text
+		// ResponseFormat убран для совместимости с LM Studio
 	}
 
 	chatResp, err := a.sendRequest(ctx, req)
