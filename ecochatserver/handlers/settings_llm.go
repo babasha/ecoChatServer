@@ -121,7 +121,8 @@ type LLMSettingsResponse struct {
 		BaseURL string `json:"baseUrl"`
 		Model   string `json:"model"`
 	} `json:"ollama"`
-	Timeout int `json:"timeout"`
+	Timeout              int  `json:"timeout"`
+	EnableAutoResponder  bool `json:"enableAutoResponder"`
 }
 
 // GetLLMSettingsSimple получает LLM настройки в формате для фронтенда
@@ -156,6 +157,9 @@ func GetLLMSettingsSimple(c *gin.Context) {
 	// Timeout
 	response.Timeout = database.GetSettingInt("LLM_API_TIMEOUT", 30)
 
+	// Auto Responder
+	response.EnableAutoResponder = database.GetSettingBool("ENABLE_AUTO_RESPONDER", true)
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -185,8 +189,9 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 			BaseURL string `json:"baseUrl"`
 			Model   string `json:"model"`
 		} `json:"ollama"`
-		Timeout int  `json:"timeout"`
-		HotSwap bool `json:"hotSwap"`
+		Timeout             int  `json:"timeout"`
+		EnableAutoResponder bool `json:"enableAutoResponder"`
+		HotSwap             bool `json:"hotSwap"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -290,6 +295,16 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save LLM_API_TIMEOUT: %v", err)})
 			return
 		}
+	}
+
+	// Сохраняем настройку автоответчика
+	enableAutoResponderValue := "false"
+	if request.EnableAutoResponder {
+		enableAutoResponderValue = "true"
+	}
+	if err := database.SetSetting("ENABLE_AUTO_RESPONDER", enableAutoResponderValue, "Enable Auto Responder"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save ENABLE_AUTO_RESPONDER: %v", err)})
+		return
 	}
 
 	// Инвалидируем кеш
