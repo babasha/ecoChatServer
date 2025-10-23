@@ -153,10 +153,7 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 		hist = []Message{{Role: "system", Content: selectedPrompt}}
 	}
 
-	// Добавляем сообщение пользователя с префиксом-напоминанием про язык
-	userMessageWithReminder := fmt.Sprintf("[Respond in customer's language] %s", msg.Content)
-	hist = append(hist, Message{Role: "user", Content: userMessageWithReminder})
-
+	// ВАЖНО: НЕ добавляем сообщение в hist здесь - buildMessages сделает это
 	// Обрезаем историю до разумного размера
 	hist = ar.historyMgr.TrimHistory(hist)
 
@@ -179,7 +176,10 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	tools := GetUniversalStoreFunctionTools()
 	log.Printf("[AUTORESPONDER] Отправляем запрос в провайдер %s с %d tools", ar.provider.GetName(), len(tools))
 
-	response, err := ar.provider.GenerateWithTools(genCtx, msg.Content, hist, tools, &GenerateOptions{
+	// Добавляем префикс-напоминание про язык клиента к сообщению
+	userMessageWithReminder := fmt.Sprintf("[Respond in customer's language] %s", msg.Content)
+
+	response, err := ar.provider.GenerateWithTools(genCtx, userMessageWithReminder, hist, tools, &GenerateOptions{
 		Temperature: 0.7,
 		MaxTokens:   1000,
 	})
@@ -280,6 +280,9 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	// сохраняем в локальную историю
 	ar.mu.Lock()
 	histForSave := ar.history[chatKey]
+	// Добавляем сообщение пользователя (оригинальное, без префикса)
+	histForSave = append(histForSave, Message{Role: "user", Content: msg.Content})
+	// Добавляем ответ assistant
 	histForSave = append(histForSave, Message{Role: "assistant", Content: clean})
 
 	// Обрезаем историю после добавления ответа
