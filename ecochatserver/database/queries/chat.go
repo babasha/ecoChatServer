@@ -55,7 +55,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	// Основной запрос для получения чатов
 	const q = `
       SELECT
-        c.id,c.created_at,c.updated_at,c.status,c.client_id,c.auto_responder_enabled,
+        c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,
         u.id,u.name,u.email,u.avatar,
         COUNT(CASE WHEN m.sender='user' AND m.read=false THEN 1 END) AS unread,
         l.id,l.content,l.sender,l.timestamp
@@ -70,7 +70,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
          LIMIT 1
       ) l ON TRUE
       WHERE %s
-      GROUP BY c.id,c.client_id,u.id,l.id,l.content,l.sender,l.timestamp
+      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,l.id,l.content,l.sender,l.timestamp
       ORDER BY c.updated_at DESC
       LIMIT $%d OFFSET $%d
     `
@@ -111,7 +111,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 			lastTime   sql.NullTime
 		)
 		if err := rows.Scan(
-			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &chat.ClientID, &chat.AutoResponderEnabled,
+			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &chat.Source, &chat.ClientID, &chat.AutoResponderEnabled,
 			&user.ID, &user.Name, &user.Email, &avatarNull,
 			&unread, &lastID, &lastCont, &lastSender, &lastTime,
 		); err != nil {
