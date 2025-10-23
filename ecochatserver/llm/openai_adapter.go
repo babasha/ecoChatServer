@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -305,6 +306,28 @@ func (a *OpenAIAdapter) TranslateText(
 	return resp.Text, nil
 }
 
+// cleanJSONResponse очищает ответ LLM от markdown и лишних символов
+func cleanJSONResponse(text string) string {
+	// Убираем markdown код блоки (```json ... ``` или ``` ... ```)
+	text = strings.TrimSpace(text)
+
+	// Ищем JSON в markdown блоке
+	if strings.HasPrefix(text, "```") {
+		// Убираем открывающий ```json или ```
+		lines := strings.Split(text, "\n")
+		if len(lines) > 0 {
+			lines = lines[1:] // Убираем первую строку с ```
+		}
+		// Убираем закрывающий ```
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "```" {
+			lines = lines[:len(lines)-1]
+		}
+		text = strings.Join(lines, "\n")
+	}
+
+	return strings.TrimSpace(text)
+}
+
 // DetectAndTranslate определяет язык и переводит за один запрос
 func (a *OpenAIAdapter) DetectAndTranslate(
 	ctx context.Context,
@@ -314,16 +337,13 @@ func (a *OpenAIAdapter) DetectAndTranslate(
 	messages := []openAIMessage{
 		{
 			Role:    "system",
-			Content: "You are a translator. Always respond with valid JSON only, no markdown.",
+			Content: "You are a translator. CRITICAL: Respond ONLY with raw JSON, no markdown blocks, no explanations, no extra text. Just the JSON object.",
 		},
 		{
 			Role: "user",
 			Content: fmt.Sprintf(`Detect the language of the text and translate it to %s.
-Return a JSON response in this format:
-{
-  "detected_language": "language_code",
-  "translated_text": "translated text here"
-}
+Return ONLY this JSON (no markdown, no code blocks):
+{"detected_language":"language_code","translated_text":"translated text here"}
 
 Text: %s`, targetLang, text),
 		},
@@ -338,10 +358,26 @@ Text: %s`, targetLang, text),
 		// ResponseFormat убран для совместимости с LM Studio
 	}
 
-	chatResp, err := a.sendRequest(ctx, req)
+	// Retry logic: до 2 попыток
+	var chatResp *openAIChatResponse
+	var err error
+	maxRetries := 2
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		chatResp, err = a.sendRequest(ctx, req)
+		if err == nil {
+			break // Успешно
+		}
+
+		if attempt < maxRetries {
+			log.Printf("[OPENAI_ADAPTER] DetectAndTranslate attempt %d failed: %v, retrying...", attempt, err)
+			time.Sleep(time.Second * time.Duration(attempt)) // Exponential backoff
+		}
+	}
 
 	if err != nil {
-		return nil, err
+		log.Printf("[OPENAI_ADAPTER] DetectAndTranslate failed after %d attempts: %v", maxRetries, err)
+		return nil, fmt.Errorf("translation service unavailable after %d attempts: %w", maxRetries, err)
 	}
 
 	// Парсим ответ
@@ -359,19 +395,31 @@ Text: %s`, targetLang, text),
 		})
 	}
 
+	// Очищаем ответ от markdown
+	cleanedText := cleanJSONResponse(resp.Text)
+	log.Printf("[OPENAI_ADAPTER] Raw response: %s", resp.Text)
+	log.Printf("[OPENAI_ADAPTER] Cleaned response: %s", cleanedText)
+
 	// Парсим JSON ответ
 	var result struct {
 		DetectedLanguage string `json:"detected_language"`
 		TranslatedText   string `json:"translated_text"`
 	}
 
-	if err := json.Unmarshal([]byte(resp.Text), &result); err != nil {
-		// Если не получилось распарсить - возвращаем как есть
-		log.Printf("[OPENAI_ADAPTER] Failed to parse DetectAndTranslate JSON: %v, raw text: %s", err, resp.Text)
-		return &TranslationResult{
-			DetectedLang: "unknown",
-			Translation:  resp.Text,
-		}, nil
+	if err := json.Unmarshal([]byte(cleanedText), &result); err != nil {
+		// КРИТИЧНО: Если парсинг провалился, это серьёзная ошибка
+		log.Printf("[OPENAI_ADAPTER] CRITICAL: Failed to parse DetectAndTranslate JSON after cleaning: %v", err)
+		log.Printf("[OPENAI_ADAPTER] Raw text: %s", resp.Text)
+		log.Printf("[OPENAI_ADAPTER] Cleaned text: %s", cleanedText)
+
+		// Возвращаем ошибку вместо "unknown" - это позволит fallback логике работать
+		return nil, fmt.Errorf("failed to parse LLM response as JSON: %w", err)
+	}
+
+	// Валидация результата
+	if result.DetectedLanguage == "" {
+		log.Printf("[OPENAI_ADAPTER] WARNING: Empty detected_language in response")
+		result.DetectedLanguage = "unknown"
 	}
 
 	return &TranslationResult{

@@ -55,11 +55,17 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 	log.Printf("TranslateUserMessage: определение языка И перевод за один запрос")
 	result, err := ts.provider.DetectAndTranslate(ctx, content, targetLang)
 	if err != nil {
-		log.Printf("TranslateUserMessage: ошибка DetectAndTranslate: %v", err)
-		// Если не удалось, возвращаем оригинал
+		log.Printf("⚠️ TranslateUserMessage: КРИТИЧЕСКАЯ ОШИБКА DetectAndTranslate: %v", err)
+		log.Printf("⚠️ Язык клиента НЕ ОПРЕДЕЛЁН - последующие ответы админа не будут переводиться!")
+
+		// ВАЖНО: Возвращаем оригинал, НО отмечаем что перевод провалился
+		// Это критично для работы системы - если язык unknown, админ не сможет отправлять переводы
 		return &TranslationResult{
-			Content:          content,
-			Metadata:         map[string]interface{}{},
+			Content: content,
+			Metadata: map[string]interface{}{
+				"translationError": err.Error(),
+				"detectedLanguage": "unknown",
+			},
 			DetectedLanguage: "unknown",
 			WasTranslated:    false,
 		}, nil
@@ -156,17 +162,35 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 		}, nil
 	}
 
-	// Переводим текст
+	// Переводим текст с retry логикой
 	log.Printf("TranslateAdminMessage: перевод с %s на %s", sourceLang, clientLang)
-	translated, err := ts.provider.TranslateText(ctx, content, sourceLang, clientLang)
-	if err != nil {
-		log.Printf("TranslateAdminMessage: ошибка перевода: %v", err)
+
+	var translated string
+	var translateErr error
+	maxRetries := 2
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		translated, translateErr = ts.provider.TranslateText(ctx, content, sourceLang, clientLang)
+		if translateErr == nil {
+			break // Успешно
+		}
+
+		if attempt < maxRetries {
+			log.Printf("⚠️ TranslateAdminMessage: попытка %d провалилась: %v, повтор...", attempt, translateErr)
+		}
+	}
+
+	if translateErr != nil {
+		log.Printf("🔴 TranslateAdminMessage: КРИТИЧЕСКАЯ ОШИБКА перевода после %d попыток: %v", maxRetries, translateErr)
+		log.Printf("🔴 Сообщение админа НЕ ПЕРЕВЕДЕНО - клиент получит текст на языке админа!")
+
 		return &TranslationResult{
 			Content: content,
 			Metadata: map[string]interface{}{
 				"detectedLanguage":  sourceLang,
-				"targetLanguage":    clientLang, // Добавляем целевой язык для fallback
+				"targetLanguage":    clientLang,
 				"translationFailed": true,
+				"translationError":  translateErr.Error(),
 			},
 			DetectedLanguage: sourceLang,
 			WasTranslated:    false,
