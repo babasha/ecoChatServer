@@ -212,6 +212,7 @@ func TelegramWebhook(c *gin.Context) {
 
 	// Генерируем автоответ, если включено
 	var botMsg *models.Message
+	log.Printf("TelegramWebhook: проверка автоответчика - AutoResponder != nil: %v, chat.AutoResponderEnabled: %v", AutoResponder != nil, chat.AutoResponderEnabled)
 	if AutoResponder != nil && chat.AutoResponderEnabled {
 		log.Printf("TelegramWebhook: генерируем автоответ")
 

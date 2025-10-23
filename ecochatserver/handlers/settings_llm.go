@@ -307,7 +307,12 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 			})
 			return
 		}
-		log.Printf("[LLM_SETTINGS] ✅ Hot-swap успешно применён")
+		log.Printf("[LLM_SETTINGS] ✅ Hot-swap провайдера успешно применён")
+
+		// ВАЖНО: Переинициализируем AutoResponder с новым провайдером
+		log.Printf("[LLM_SETTINGS] Переинициализация AutoResponder с новым провайдером...")
+		InitAutoResponder()
+		log.Printf("[LLM_SETTINGS] ✅ AutoResponder переинициализирован")
 	}
 
 	c.JSON(http.StatusOK, gin.H{
