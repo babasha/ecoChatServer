@@ -332,10 +332,9 @@ func AutoArchiveInactiveChats() {
 		}
 		msgRows.Close()
 
-		// Пропускаем чаты без сообщений
+		// Архивируем даже пустые чаты (удалено условие пропуска)
 		if len(messages) == 0 {
-			log.Printf("Skipping chat %s - no messages to archive", chatID)
-			continue
+			log.Printf("Archiving empty chat %s (no messages)", chatID)
 		}
 
 		// Начинаем транзакцию

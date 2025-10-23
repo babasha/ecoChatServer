@@ -137,8 +137,8 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 			log.Printf("GetChats: чат %d не имеет сообщений", rowNum)
 		}
 
-		log.Printf("GetChats: чат %d: ID=%s, userID=%s, userName='%s', email='%s', status=%s, unread=%d, created=%v, updated=%v",
-			rowNum, chat.ID, user.ID, user.Name, user.Email, chat.Status, unread, chat.CreatedAt, chat.UpdatedAt)
+		log.Printf("GetChats: чат %d: ID=%s, userID=%s, userName='%s', email='%s', status=%s, source='%s', unread=%d, created=%v, updated=%v",
+			rowNum, chat.ID, user.ID, user.Name, user.Email, chat.Status, chat.Source, unread, chat.CreatedAt, chat.UpdatedAt)
 
 		list = append(list, chat)
 		rowNum++
