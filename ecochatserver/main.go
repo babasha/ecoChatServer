@@ -440,6 +440,10 @@ func setupAPIRoutes(r *gin.Engine) {
 		// Instagram demo endpoint - поиск существующего чата (ТОЛЬКО для demo страницы)
 		api.POST("/instagram/chat/find", handlers.FindInstagramChat)
 
+		// Instagram OAuth flow (публичный доступ для callback от Facebook)
+		api.GET("/instagram/oauth/init", handlers.InstagramOAuthInitiate)
+		api.GET("/instagram/oauth/callback", handlers.InstagramOAuthCallback)
+
 		// Виджетный API (публичный, для iframe/web widget + мягкий rate limit)
 		// Оставляем для обратной совместимости, но рекомендуем использовать WebSocket
 		widget := api.Group("/widget")
@@ -502,6 +506,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/archived-chats", handlers.GetArchivedChats)
 			admin.GET("/archived-chats/:id/messages", handlers.GetArchivedChatMessages)
 			admin.POST("/archived-chats/:id/toggle-timer", handlers.ToggleArchiveTimer)
+
+			// Instagram OAuth management (требует авторизации)
+			admin.GET("/instagram/status", handlers.GetInstagramAccountStatus)
+			admin.POST("/instagram/disconnect", handlers.DisconnectInstagramAccount)
 
 			// Статистика для администраторов
 			admin.GET("/admin/stats", func(c *gin.Context) {
