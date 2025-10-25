@@ -455,7 +455,18 @@ func GetInstagramAccountStatus(c *gin.Context) {
 		LIMIT 1
 	`
 
-	err := db.Get(&account, query)
+	row := db.QueryRow(query)
+	err := row.Scan(
+		&account.InstagramAccountID,
+		&account.Username,
+		&account.Name,
+		&account.ProfilePictureURL,
+		&account.PageName,
+		&account.Status,
+		&account.TokenExpiresAt,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+	)
 	if err != nil {
 		// Аккаунт не найден
 		c.JSON(http.StatusOK, gin.H{
