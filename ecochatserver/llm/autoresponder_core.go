@@ -160,6 +160,19 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	ar.history[chatKey] = hist
 	ar.mu.Unlock()
 
+	// Определяем язык клиента по метаданным последнего сообщения или БД
+	customerLang := ""
+	if msg.Metadata != nil {
+		if detected, ok := msg.Metadata["detectedLanguage"].(string); ok {
+			customerLang = strings.ToLower(strings.TrimSpace(detected))
+		}
+	}
+	if customerLang == "" || customerLang == "unknown" {
+		if lang, err := database.GetClientLanguageFromChat(chat.ID); err == nil {
+			customerLang = strings.ToLower(strings.TrimSpace(lang))
+		}
+	}
+
 	// имитация «печатает…»
 	if ar.config.DelaySeconds > 0 {
 		select {
@@ -177,7 +190,11 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	log.Printf("[AUTORESPONDER] Отправляем запрос в провайдер %s с %d tools", ar.provider.GetName(), len(tools))
 
 	// Добавляем префикс-напоминание про язык клиента к сообщению
-	userMessageWithReminder := fmt.Sprintf("[Respond in customer's language] %s", msg.Content)
+	instruction := "[Respond in customer's language]"
+	if customerLang != "" && customerLang != "unknown" {
+		instruction = fmt.Sprintf("[Customer language code: %s. Respond STRICTLY in this language. Translate your final answer to %s if needed.]", customerLang, customerLang)
+	}
+	userMessageWithReminder := fmt.Sprintf("%s %s", instruction, msg.Content)
 
 	response, err := ar.provider.GenerateWithTools(genCtx, userMessageWithReminder, hist, tools, &GenerateOptions{
 		Temperature: 0.7,
@@ -232,6 +249,40 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	// ── фильтр самоидентификации и проверка тегов эскалации ──
 	clean, escalate := sanitize(rawResp)
 
+	// Проверяем язык ответа и при необходимости переводим на язык клиента
+	var translationMeta map[string]interface{}
+	if customerLang != "" && customerLang != "unknown" && strings.TrimSpace(clean) != "" {
+		if result, err := ar.provider.DetectAndTranslate(genCtx, clean, customerLang); err == nil && result != nil {
+			detected := strings.ToLower(strings.TrimSpace(result.DetectedLang))
+			if detected == "" {
+				detected = customerLang
+			}
+
+			translated := result.Translation
+			if translated == "" {
+				translated = clean
+			}
+
+			translationMeta = map[string]interface{}{
+				"translations":     map[string]interface{}{customerLang: translated},
+				"targetLanguage":   customerLang,
+				"translatedText":   translated,
+				"detectedLanguage": detected,
+			}
+
+			if !strings.EqualFold(detected, customerLang) {
+				translationMeta["originalText"] = clean
+				translationMeta["isTranslated"] = true
+				clean = translated
+			} else {
+				translationMeta["isTranslated"] = false
+				clean = translated
+			}
+		} else if err != nil {
+			log.Printf("[AUTORESPONDER] Не удалось выполнить DetectAndTranslate: %v", err)
+		}
+	}
+
 	// Дополнительная проверка: ищем теги эскалации в тексте
 	if !escalate && strings.Contains(clean, "#эскалация") {
 		escalate = true
@@ -262,6 +313,26 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 	// ── формируем сообщение ──────────────────────────────────
 	now := time.Now()
+	botMetadata := map[string]interface{}{
+		"isAutoResponse": true,
+		"botName":        ar.config.BotName,
+		"needEscalation": escalate,
+	}
+
+	if translationMeta != nil {
+		for k, v := range translationMeta {
+			botMetadata[k] = v
+		}
+	} else if customerLang != "" && customerLang != "unknown" {
+		botMetadata["detectedLanguage"] = customerLang
+		botMetadata["targetLanguage"] = customerLang
+		botMetadata["translatedText"] = clean
+		botMetadata["isTranslated"] = false
+		botMetadata["translations"] = map[string]interface{}{
+			customerLang: clean,
+		}
+	}
+
 	botMsg := &models.Message{
 		ChatID:    chat.ID,
 		Content:   clean,
@@ -270,11 +341,7 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 		Timestamp: now,
 		Read:      true,
 		Type:      "text",
-		Metadata: map[string]interface{}{
-			"isAutoResponse": true,
-			"botName":        ar.config.BotName,
-			"needEscalation": escalate,
-		},
+		Metadata:  botMetadata,
 	}
 
 	// сохраняем в локальную историю
