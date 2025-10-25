@@ -370,7 +370,7 @@ func fetchInstagramBusinessAccount(pageAccessToken, pageID string) (*InstagramAc
 
 // saveInstagramAccount сохраняет информацию об Instagram аккаунте в БД
 func saveInstagramAccount(account InstagramAccountInfo) error {
-	db := database.GetDB()
+	db := database.DB
 	if db == nil {
 		return fmt.Errorf("database not initialized")
 	}
@@ -416,9 +416,9 @@ func saveInstagramAccount(account InstagramAccountInfo) error {
 	}
 
 	// Обновляем переменные окружения в настройках
-	database.SetSetting("INSTAGRAM_BUSINESS_ACCOUNT_ID", account.ID)
-	database.SetSetting("INSTAGRAM_ACCESS_TOKEN", account.PageAccessToken)
-	database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", expiresAt.UTC().Format(time.RFC3339))
+	_ = database.SetSetting("INSTAGRAM_BUSINESS_ACCOUNT_ID", account.ID, "Instagram Business account ID")
+	_ = database.SetSetting("INSTAGRAM_ACCESS_TOKEN", account.PageAccessToken, "Instagram access token")
+	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", expiresAt.UTC().Format(time.RFC3339), "Instagram token expiration timestamp")
 
 	return nil
 }
@@ -426,7 +426,7 @@ func saveInstagramAccount(account InstagramAccountInfo) error {
 // GetInstagramAccountStatus возвращает статус подключенного Instagram аккаунта
 // GET /api/instagram/status
 func GetInstagramAccountStatus(c *gin.Context) {
-	db := database.GetDB()
+	db := database.DB
 	if db == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "database not initialized",
@@ -489,7 +489,7 @@ func GetInstagramAccountStatus(c *gin.Context) {
 // DisconnectInstagramAccount отключает Instagram аккаунт
 // POST /api/instagram/disconnect
 func DisconnectInstagramAccount(c *gin.Context) {
-	db := database.GetDB()
+	db := database.DB
 	if db == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "database not initialized",
