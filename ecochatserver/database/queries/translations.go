@@ -34,6 +34,30 @@ func SaveTranslation(db *sql.DB, messageID uuid.UUID, language string, translati
 	return nil
 }
 
+// SaveDetectedLanguage сохраняет определённый язык сообщения в metadata.detectedLanguage
+func SaveDetectedLanguage(db *sql.DB, messageID uuid.UUID, language string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
+	query := `
+		UPDATE messages
+		SET metadata = jsonb_set(
+			COALESCE(metadata, '{}'::jsonb),
+			'{detectedLanguage}',
+			to_jsonb($2::text),
+			true
+		)
+		WHERE id = $1
+	`
+
+	_, err := db.ExecContext(ctx, query, messageID, language)
+	if err != nil {
+		return fmt.Errorf("SaveDetectedLanguage: %w", err)
+	}
+
+	return nil
+}
+
 // SaveTranslationsBatch сохраняет несколько переводов за один вызов
 func SaveTranslationsBatch(db *sql.DB, translations map[uuid.UUID]map[string]string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout*2) // Увеличенный таймаут для batch

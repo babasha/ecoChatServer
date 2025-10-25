@@ -137,9 +137,17 @@ func GetClientLanguageFromChat(chatID uuid.UUID) (string, error) {
 	return queries.GetClientLanguageFromChat(DB, chatID)
 }
 
+func GetLastUserMessage(chatID uuid.UUID) (*models.Message, error) {
+	return queries.GetLastUserMessage(DB, chatID)
+}
+
 // Функции для работы с переводами
 func SaveTranslation(messageID uuid.UUID, language string, translation string) error {
 	return queries.SaveTranslation(DB, messageID, language, translation)
+}
+
+func SaveDetectedLanguage(messageID uuid.UUID, language string) error {
+	return queries.SaveDetectedLanguage(DB, messageID, language)
 }
 
 func SaveTranslationsBatch(translations map[uuid.UUID]map[string]string) error {

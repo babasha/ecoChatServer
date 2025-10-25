@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
@@ -123,19 +125,7 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 			WasTranslated:    false,
 		}, nil
 	}
-
-	// Если язык клиента не найден, возвращаем оригинал
-	if clientLang == "" {
-		log.Printf("TranslateAdminMessage: язык клиента не определен, перевод не выполняется")
-		return &TranslationResult{
-			Content:          content,
-			Metadata:         map[string]interface{}{},
-			DetectedLanguage: "unknown",
-			WasTranslated:    false,
-		}, nil
-	}
-
-	log.Printf("TranslateAdminMessage: найден язык клиента: %s", clientLang)
+	clientLang = strings.TrimSpace(clientLang)
 
 	// Получаем язык админа
 	adminSettings, err := queries.GetAdminSettings(ts.db, adminID)
@@ -146,8 +136,38 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 		}
 	}
 
-	sourceLang := adminSettings.PreferredLanguage
-	log.Printf("TranslateAdminMessage: язык админа: %s, язык клиента: %s", sourceLang, clientLang)
+	sourceLang := strings.TrimSpace(adminSettings.PreferredLanguage)
+	log.Printf("TranslateAdminMessage: язык админа: %s, исходный язык клиента: %s", sourceLang, clientLang)
+
+	// Повторное определение языка клиента, если он не найден или неизвестен
+	if clientLang == "" || strings.EqualFold(clientLang, "unknown") {
+		log.Printf("TranslateAdminMessage: язык клиента неизвестен, пробуем повторно определить его по последнему сообщению")
+		if detected, detectErr := ts.retryDetectClientLanguage(ctx, chatID, sourceLang); detectErr != nil {
+			log.Printf("TranslateAdminMessage: повторное определение языка клиента не удалось: %v", detectErr)
+		} else if detected != "" && !strings.EqualFold(detected, "unknown") {
+			clientLang = detected
+			log.Printf("TranslateAdminMessage: язык клиента обновлен после повторного определения: %s", clientLang)
+		}
+	}
+
+	// Если язык по-прежнему неизвестен, возвращаем оригинал без перевода
+	if clientLang == "" || strings.EqualFold(clientLang, "unknown") {
+		log.Printf("TranslateAdminMessage: язык клиента по-прежнему неизвестен, пропускаем перевод")
+		return &TranslationResult{
+			Content: content,
+			Metadata: map[string]interface{}{
+				"detectedLanguage":  sourceLang,
+				"targetLanguage":    clientLang,
+				"translationFailed": true,
+				"translationError":  "client language unknown",
+				"originalText":      content,
+			},
+			DetectedLanguage: sourceLang,
+			WasTranslated:    false,
+		}, nil
+	}
+
+	log.Printf("TranslateAdminMessage: финальный язык клиента: %s", clientLang)
 
 	// Если языки совпадают, возвращаем оригинал
 	if sourceLang == clientLang {
@@ -214,4 +234,43 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 		DetectedLanguage: sourceLang,
 		WasTranslated:    true,
 	}, nil
+}
+
+// retryDetectClientLanguage пытается повторно определить язык клиента по последнему пользовательскому сообщению
+func (ts *TranslationService) retryDetectClientLanguage(ctx context.Context, chatID uuid.UUID, adminLang string) (string, error) {
+	lastMessage, err := database.GetLastUserMessage(chatID)
+	if err != nil {
+		return "", fmt.Errorf("GetLastUserMessage: %w", err)
+	}
+	if lastMessage == nil {
+		return "", fmt.Errorf("no user messages found for chat %s", chatID)
+	}
+	if strings.TrimSpace(lastMessage.Content) == "" {
+		return "", fmt.Errorf("last user message is empty")
+	}
+
+	result, err := ts.provider.DetectAndTranslate(ctx, lastMessage.Content, adminLang)
+	if err != nil {
+		return "", fmt.Errorf("DetectAndTranslate: %w", err)
+	}
+	if result == nil {
+		return "", fmt.Errorf("DetectAndTranslate returned nil result")
+	}
+
+	detected := strings.ToLower(strings.TrimSpace(result.DetectedLang))
+	if detected == "" {
+		return "", fmt.Errorf("detected language is empty")
+	}
+
+	if err := database.SaveDetectedLanguage(lastMessage.ID, detected); err != nil {
+		log.Printf("retryDetectClientLanguage: не удалось сохранить detectedLanguage для сообщения %s: %v", lastMessage.ID, err)
+	}
+
+	if result.Translation != "" {
+		if err := database.SaveTranslation(lastMessage.ID, adminLang, result.Translation); err != nil {
+			log.Printf("retryDetectClientLanguage: не удалось сохранить перевод для сообщения %s: %v", lastMessage.ID, err)
+		}
+	}
+
+	return detected, nil
 }

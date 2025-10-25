@@ -98,3 +98,47 @@ func GetClientLanguageFromChat(db *sql.DB, chatID uuid.UUID) (string, error) {
 
 	return "", nil
 }
+
+// GetLastUserMessage возвращает последнее сообщение пользователя в чате
+func GetLastUserMessage(db *sql.DB, chatID uuid.UUID) (*models.Message, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
+	var (
+		messageID uuid.UUID
+		content   string
+		timestamp time.Time
+		metaJSON  []byte
+	)
+
+	err := db.QueryRowContext(ctx, `
+		SELECT id, content, timestamp, metadata
+		FROM messages
+		WHERE chat_id = $1 AND sender = 'user'
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`, chatID).Scan(&messageID, &content, &timestamp, &metaJSON)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var metadata map[string]interface{}
+	if len(metaJSON) > 0 {
+		if err := json.Unmarshal(metaJSON, &metadata); err != nil {
+			metadata = nil
+		}
+	}
+
+	return &models.Message{
+		ID:        messageID,
+		ChatID:    chatID,
+		Content:   content,
+		Sender:    "user",
+		Timestamp: timestamp,
+		Metadata:  metadata,
+	}, nil
+}
