@@ -15,11 +15,12 @@ const (
 
 // Hub отвечает за регистрацию  клиентов и  вещание сообщений.
 type Hub struct {
-	clients         map[*Client]bool
-	adminsByID      map[string]*Client
-	widgetsByID     map[string]map[*Client]bool
-	chatClients     map[string]map[*Client]bool
-	widgetsByUserID map[string]*Client // Виджеты по userID для обновления chat_id
+	clients              map[*Client]bool
+	adminsByID           map[string]*Client
+	widgetsByID          map[string]map[*Client]bool
+	chatClients          map[string]map[*Client]bool
+	widgetsByUserID      map[string]*Client // Виджеты по userID для обновления chat_id
+	pendingWidgetChatIDs map[string]pendingWidgetChat
 
 	Broadcast  chan []byte
 	Register   chan *Client
@@ -32,6 +33,11 @@ type Hub struct {
 
 	// Дедупликация сообщений
 	sentMessages sync.Map // key: messageHash, value: time.Time
+}
+
+type pendingWidgetChat struct {
+	chatID       uuid.UUID
+	userSourceID string
 }
 
 // HubStats содержит статистику работы хаба (для чтения, без мьютекса)
@@ -54,14 +60,15 @@ type hubStatsInternal struct {
 // NewHub создаёт и инициализирует Hub.
 func NewHub() *Hub {
 	hub := &Hub{
-		clients:         make(map[*Client]bool),
-		adminsByID:      make(map[string]*Client),
-		widgetsByID:     make(map[string]map[*Client]bool),
-		chatClients:     make(map[string]map[*Client]bool),
-		widgetsByUserID: make(map[string]*Client),
-		Broadcast:       make(chan []byte),
-		Register:        make(chan *Client),
-		Unregister:      make(chan *Client),
+		clients:              make(map[*Client]bool),
+		adminsByID:           make(map[string]*Client),
+		widgetsByID:          make(map[string]map[*Client]bool),
+		chatClients:          make(map[string]map[*Client]bool),
+		widgetsByUserID:      make(map[string]*Client),
+		pendingWidgetChatIDs: make(map[string]pendingWidgetChat),
+		Broadcast:            make(chan []byte),
+		Register:             make(chan *Client),
+		Unregister:           make(chan *Client),
 	}
 
 	// Запускаем очистку старых сообщений
@@ -110,7 +117,9 @@ func (h *Hub) Run() {
 // registerClient регистрирует нового клиента
 func (h *Hub) registerClient(c *Client) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+
+	notifyChatCreated := false
+	var notifyChatID uuid.UUID
 
 	h.clients[c] = true
 
@@ -133,6 +142,25 @@ func (h *Hub) registerClient(c *Client) {
 			h.widgetsByUserID[c.ID] = c
 			log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
 		}
+
+		// Проверяем, есть ли отложенное обновление chat_id для этого виджета
+		if c.UserIDString != "" {
+			if pending, ok := h.pendingWidgetChatIDs[c.UserIDString]; ok {
+				if pending.userSourceID != "" && pending.userSourceID != c.UserIDString {
+					log.Printf("UpdateWidgetChatID: SECURITY WARNING - отложенное обновление chat_id не применено: widgetUserID=%s, chatUserSourceID=%s",
+						c.UserIDString, pending.userSourceID)
+				} else {
+					h.applyWidgetChatIDUpdateLocked(c, pending.chatID)
+					notifyChatCreated = true
+					notifyChatID = pending.chatID
+					log.Printf("registerClient: применено отложенное обновление chat_id для виджета %s -> %s",
+						c.UserIDString, pending.chatID)
+					// После успешного обновления убираем виджет из мапы обновлений по userID
+					delete(h.widgetsByUserID, c.UserIDString)
+				}
+				delete(h.pendingWidgetChatIDs, c.UserIDString)
+			}
+		}
 	}
 
 	// Добавляем в карту клиентов чата
@@ -152,6 +180,16 @@ func (h *Hub) registerClient(c *Client) {
 
 	log.Printf("Клиент зарегистрирован: type=%s, id=%s, chatID=%s",
 		c.ClientType, c.ID, c.ChatID)
+
+	h.mu.Unlock()
+
+	if notifyChatCreated {
+		if h.emitChatCreated(c, notifyChatID) {
+			log.Printf("registerClient: отправлено уведомление виджету о новом chat_id %s", notifyChatID)
+		} else {
+			log.Printf("registerClient: WARNING - не удалось отправить уведомление виджету (канал занят)")
+		}
+	}
 }
 
 // unregisterClient отменяет регистрацию клиента
@@ -390,6 +428,56 @@ func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
 	return chatSent + adminSent
 }
 
+func (h *Hub) applyWidgetChatIDUpdateLocked(client *Client, newChatID uuid.UUID) {
+	oldChatIDStr := client.ChatID.String()
+	if oldChatIDStr != "" {
+		if widgets, ok := h.widgetsByID[oldChatIDStr]; ok {
+			delete(widgets, client)
+			if len(widgets) == 0 {
+				delete(h.widgetsByID, oldChatIDStr)
+			}
+		}
+		if clients, ok := h.chatClients[oldChatIDStr]; ok {
+			delete(clients, client)
+			if len(clients) == 0 {
+				delete(h.chatClients, oldChatIDStr)
+			}
+		}
+	}
+
+	client.ChatID = newChatID
+
+	newChatIDStr := newChatID.String()
+	if _, ok := h.widgetsByID[newChatIDStr]; !ok {
+		h.widgetsByID[newChatIDStr] = make(map[*Client]bool)
+	}
+	h.widgetsByID[newChatIDStr][client] = true
+
+	if _, ok := h.chatClients[newChatIDStr]; !ok {
+		h.chatClients[newChatIDStr] = make(map[*Client]bool)
+	}
+	h.chatClients[newChatIDStr][client] = true
+}
+
+func (h *Hub) emitChatCreated(client *Client, newChatID uuid.UUID) bool {
+	payload := struct {
+		ChatID string `json:"chatId"`
+	}{
+		ChatID: newChatID.String(),
+	}
+	msg, err := NewMessage("chat_created", payload)
+	if err != nil {
+		return false
+	}
+
+	select {
+	case client.Send <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
 // UpdateWidgetChatID обновляет chat_id для виджета после создания чата
 // БЕЗОПАСНОСТЬ: проверяет что виджет принадлежит этому userID
 func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSourceID string) bool {
@@ -398,8 +486,31 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 	// Находим виджет по userID
 	client, exists := h.widgetsByUserID[userID]
 	if !exists {
+		// Возможно, виджет уже привязан к этому чату (например, после отложенного обновления)
+		if clients, ok := h.chatClients[newChatID.String()]; ok {
+			for existing := range clients {
+				if existing.ClientType == ClientTypeWidget && existing.UserIDString == userID {
+					h.mu.Unlock()
+					log.Printf("UpdateWidgetChatID: виджет %s уже привязан к чату %s", userID, newChatID)
+					return true
+				}
+			}
+		}
+
+		// Проверяем безопасность перед сохранением отложенного обновления
+		if chatUserSourceID != "" && chatUserSourceID != userID {
+			h.mu.Unlock()
+			log.Printf("UpdateWidgetChatID: SECURITY WARNING - попытка обновить чужой чат без активной сессии! widgetUserID=%s, chatUserSourceID=%s",
+				userID, chatUserSourceID)
+			return false
+		}
+
+		h.pendingWidgetChatIDs[userID] = pendingWidgetChat{
+			chatID:       newChatID,
+			userSourceID: chatUserSourceID,
+		}
 		h.mu.Unlock()
-		log.Printf("UpdateWidgetChatID: виджет с userID %s не найден", userID)
+		log.Printf("UpdateWidgetChatID: виджет с userID %s не найден, откладываем обновление до подключения", userID)
 		return false
 	}
 
@@ -415,59 +526,19 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 	log.Printf("UpdateWidgetChatID: [SAFE] обновление chat_id для виджета %s: %s -> %s",
 		userID, oldChatID, newChatID)
 
-	// Удаляем из старых маппингов (только если был chat_id)
-	oldChatIDStr := oldChatID.String()
-	if oldChatIDStr != "" && oldChatIDStr != "00000000-0000-0000-0000-000000000000" {
-		if widgets, ok := h.widgetsByID[oldChatIDStr]; ok {
-			delete(widgets, client)
-			if len(widgets) == 0 {
-				delete(h.widgetsByID, oldChatIDStr)
-			}
-		}
-		if clients, ok := h.chatClients[oldChatIDStr]; ok {
-			delete(clients, client)
-			if len(clients) == 0 {
-				delete(h.chatClients, oldChatIDStr)
-			}
-		}
-	}
-
-	// Обновляем chat_id у клиента
-	client.ChatID = newChatID
-
-	// Добавляем в новые маппинги
-	newChatIDStr := newChatID.String()
-	if _, ok := h.widgetsByID[newChatIDStr]; !ok {
-		h.widgetsByID[newChatIDStr] = make(map[*Client]bool)
-	}
-	h.widgetsByID[newChatIDStr][client] = true
-
-	if _, ok := h.chatClients[newChatIDStr]; !ok {
-		h.chatClients[newChatIDStr] = make(map[*Client]bool)
-	}
-	h.chatClients[newChatIDStr][client] = true
-
-	// Удаляем из widgetsByUserID, так как chat_id теперь известен
+	h.applyWidgetChatIDUpdateLocked(client, newChatID)
 	delete(h.widgetsByUserID, userID)
+	delete(h.pendingWidgetChatIDs, userID)
 
 	log.Printf("UpdateWidgetChatID: виджет успешно перерегистрирован с новым chat_id %s", newChatID)
 
 	// ВАЖНО: Разблокируем мьютекс ПЕРЕД отправкой в канал, чтобы избежать deadlock
 	h.mu.Unlock()
 
-	// Отправляем виджету уведомление о новом chat_id
-	payload := struct {
-		ChatID string `json:"chatId"`
-	}{
-		ChatID: newChatIDStr,
-	}
-	if msg, err := NewMessage("chat_created", payload); err == nil {
-		select {
-		case client.Send <- msg:
-			log.Printf("UpdateWidgetChatID: отправлено уведомление виджету о новом chat_id %s", newChatID)
-		default:
-			log.Printf("UpdateWidgetChatID: WARNING - не удалось отправить уведомление виджету (канал занят)")
-		}
+	if h.emitChatCreated(client, newChatID) {
+		log.Printf("UpdateWidgetChatID: отправлено уведомление виджету о новом chat_id %s", newChatID)
+	} else {
+		log.Printf("UpdateWidgetChatID: WARNING - не удалось отправить уведомление виджету (канал занят)")
 	}
 
 	return true
