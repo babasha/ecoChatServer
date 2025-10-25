@@ -152,57 +152,22 @@ func (c *Client) WritePump() {
 	for {
 		select {
 		case message, ok := <-c.Send:
-			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				// канал закрыт Hub'ом
+				c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			// Конвертируем message в JSON если это map или struct
-			var msgBytes []byte
-			switch v := message.(type) {
-			case []byte:
-				msgBytes = v
-			case string:
-				msgBytes = []byte(v)
-			default:
-				var err error
-				msgBytes, err = json.Marshal(message)
-				if err != nil {
-					log.Printf("WritePump: ошибка маршалинга сообщения: %v", err)
-					continue
-				}
-			}
-
-			// Логируем что отправляем
-			log.Printf("WS send to %s %s: %s", c.ClientType, c.ID, string(msgBytes))
-
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			if err := c.writeMessage(message); err != nil {
 				return
 			}
-			w.Write(msgBytes)
 
-			// сбрасываем накопленные сообщения
-			n := len(c.Send)
-			for i := 0; i < n; i++ {
-				w.Write(newline)
-				msg := <-c.Send
-				switch v := msg.(type) {
-				case []byte:
-					w.Write(v)
-				case string:
-					w.Write([]byte(v))
-				default:
-					if b, err := json.Marshal(msg); err == nil {
-						w.Write(b)
-					}
+			// отправляем дополнительные сообщения, если они накопились в очереди
+			for i := 0; i < len(c.Send); i++ {
+				next := <-c.Send
+				if err := c.writeMessage(next); err != nil {
+					return
 				}
-			}
-
-			if err := w.Close(); err != nil {
-				return
 			}
 
 		case <-ticker.C:
@@ -212,4 +177,31 @@ func (c *Client) WritePump() {
 			}
 		}
 	}
+}
+
+func (c *Client) writeMessage(message interface{}) error {
+	c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+
+	var msgBytes []byte
+	switch v := message.(type) {
+	case []byte:
+		msgBytes = v
+	case string:
+		msgBytes = []byte(v)
+	default:
+		var err error
+		msgBytes, err = json.Marshal(v)
+		if err != nil {
+			log.Printf("WritePump: ошибка маршалинга сообщения: %v", err)
+			return nil // не разрываем соединение, просто пропускаем сообщение
+		}
+	}
+
+	log.Printf("WS send to %s %s: %s", c.ClientType, c.ID, string(msgBytes))
+
+	if err := c.Conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+		return err
+	}
+
+	return nil
 }
