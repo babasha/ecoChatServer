@@ -106,9 +106,15 @@ func GetSettingFromDB(key string) (string, error) {
 }
 
 // SetSetting сохраняет значение настройки в БД
-func SetSetting(key string, value string, description string) error {
+// description параметр необязательный (для обратной совместимости можно передавать 2 аргумента).
+func SetSetting(key string, value string, description ...string) error {
 	if DB == nil {
 		return fmt.Errorf("database connection is nil")
+	}
+
+	desc := ""
+	if len(description) > 0 {
+		desc = description[0]
 	}
 
 	// Оборачиваем значение в JSONB (добавляем кавычки для строки)
@@ -121,7 +127,7 @@ func SetSetting(key string, value string, description string) error {
 			updated_at = CURRENT_TIMESTAMP
 	`
 
-	_, err := DB.Exec(query, key, value, description)
+	_, err := DB.Exec(query, key, value, desc)
 	if err != nil {
 		return fmt.Errorf("failed to set setting: %w", err)
 	}
@@ -160,7 +166,6 @@ func GetAllSettings() (map[string]string, error) {
 
 	return settings, nil
 }
-
 
 // InvalidateSettingsCache очищает кеш настроек
 func InvalidateSettingsCache() {
