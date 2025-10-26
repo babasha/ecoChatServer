@@ -253,50 +253,59 @@ func SendMessageToChat(c *gin.Context) {
 	// Отправляем сообщение во внешние каналы (например, Instagram)
 	go dispatchExternalMessage(chatID, message)
 
-	// Для WebSocket нужно отправить переведенное сообщение клиенту
-	// Создаем копию сообщения для виджета с переводом
+	// Создаём копию сообщения для виджета с переводом на язык клиента
 	widgetMessage := *message
-
-	// Если есть перевод - используем его для виджета
 	if message.Metadata != nil {
-		log.Printf("SendMessageToChat: metadata != nil, содержимое: %+v", message.Metadata)
-		log.Printf("SendMessageToChat: тип translations: %T", message.Metadata["translations"])
 		if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
-			log.Printf("SendMessageToChat: найдены translations: %+v", translations)
-			// Определяем язык клиента из чата
 			clientLang, err := database.GetClientLanguageFromChat(chatID)
-			log.Printf("SendMessageToChat: GetClientLanguageFromChat вернул lang=%s, err=%v", clientLang, err)
 			if err == nil && clientLang != "" {
 				if translation, exists := translations[clientLang]; exists {
 					if translatedText, ok := translation.(string); ok && translatedText != "" {
 						widgetMessage.Content = translatedText
-						log.Printf("SendMessageToChat: для WebSocket используется перевод на %s", clientLang)
+						log.Printf("SendMessageToChat: для виджета используется перевод на %s", clientLang)
 					}
-				} else {
-					log.Printf("SendMessageToChat: перевод для языка %s не найден в translations", clientLang)
 				}
 			}
-		} else {
-			log.Printf("SendMessageToChat: translations не найдены в metadata")
 		}
-	} else {
-		log.Printf("SendMessageToChat: metadata == nil")
 	}
 
-	// Отправляем WebSocket уведомление в формате совместимом с виджетом и админкой
-	messagePayload := createMessagePayload(&widgetMessage, chatID)
+	// Создаём копию сообщения для админов
+	// Для сообщений от USER - применяем перевод на язык админа (он уже в message.Content из TranslateUserMessage)
+	// Для сообщений от ADMIN - оставляем оригинал (админ видит что написал)
+	adminMessage := *message
+	if message.Sender == "user" {
+		// Для сообщений пользователя - используем переведённый content
+		// (он уже переведён в TranslateUserMessage и сохранён в БД)
+		log.Printf("SendMessageToChat: для админов используется переведённое сообщение пользователя")
+	} else {
+		// Для сообщений админа - используем оригинальный текст
+		adminMessage.Content = message.Content
+		log.Printf("SendMessageToChat: для админов используется оригинальное сообщение админа")
+	}
 
-	payload := map[string]interface{}{
-		"chatId":  chatID.String(), // для админки
-		"message": messagePayload,
-		"chat": map[string]interface{}{ // для виджета
+	// Отправляем в виджет
+	widgetPayload := map[string]interface{}{
+		"chatId":  chatID.String(),
+		"message": createMessagePayload(&widgetMessage, chatID),
+		"chat": map[string]interface{}{
 			"id": chatID.String(),
 		},
 	}
+	widgetWsMessage, _ := websocket.NewMessage("new_message", widgetPayload)
+	WebSocketHub.SendToChat(chatID.String(), widgetWsMessage)
+	log.Printf("SendMessageToChat: отправлено в виджет")
 
-	wsMessage, _ := websocket.NewMessage("new_message", payload)
-	totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), wsMessage)
-	log.Printf("SendMessageToChat: WebSocket уведомление отправлено %d клиентам", totalSent)
+	// Отправляем админам
+	adminPayload := map[string]interface{}{
+		"chatId":  chatID.String(),
+		"message": createMessagePayload(&adminMessage, chatID),
+		"chat": map[string]interface{}{
+			"id": chatID.String(),
+		},
+	}
+	adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
+	totalAdmins := WebSocketHub.SendToAllAdmins(adminWsMessage)
+	log.Printf("SendMessageToChat: отправлено %d админам", totalAdmins)
 
 	// Возвращаем только статус успеха
 	c.JSON(http.StatusOK, gin.H{
