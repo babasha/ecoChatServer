@@ -457,10 +457,17 @@ Texts to translate:
 		return nil, err
 	}
 
+	// Очищаем ответ от markdown (как в DetectAndTranslate)
+	cleanedText := cleanJSONResponse(resp.Text)
+	log.Printf("[OPENAI_ADAPTER] TranslateBatch raw response: %s", resp.Text)
+	log.Printf("[OPENAI_ADAPTER] TranslateBatch cleaned response: %s", cleanedText)
+
 	// Парсим JSON ответ
 	var translations []string
-	if err := json.Unmarshal([]byte(resp.Text), &translations); err != nil {
+	if err := json.Unmarshal([]byte(cleanedText), &translations); err != nil {
 		log.Printf("[OPENAI_ADAPTER] Failed to parse TranslateBatch JSON: %v", err)
+		log.Printf("[OPENAI_ADAPTER] Raw text: %s", resp.Text)
+		log.Printf("[OPENAI_ADAPTER] Cleaned text: %s", cleanedText)
 		return nil, fmt.Errorf("failed to parse translations: %w", err)
 	}
 

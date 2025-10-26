@@ -136,13 +136,3 @@ func (c *LLMClient) GenerateResponse(
 
 	return completion.Choices[0].Message.Content, nil
 }
-
-// TranslateText - заглушка, не используется (используем Gemini)
-func (c *LLMClient) TranslateText(ctx context.Context, text, fromLang, toLang string) (string, error) {
-	return "", fmt.Errorf("TranslateText not implemented for LLMClient, use GeminiClient")
-}
-
-// DetectAndTranslate - заглушка, не используется (используем Gemini)
-func (c *LLMClient) DetectAndTranslate(ctx context.Context, text, targetLang string) (*DetectAndTranslateResult, error) {
-	return nil, fmt.Errorf("DetectAndTranslate not implemented for LLMClient, use GeminiClient")
-}

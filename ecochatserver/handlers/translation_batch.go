@@ -7,6 +7,7 @@ import (
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/models"
+	"github.com/google/uuid"
 )
 
 // TranslateBatchRequest содержит информацию для batch перевода
@@ -18,7 +19,7 @@ type TranslateBatchRequest struct {
 }
 
 // TranslateBatch переводит несколько текстов за один API вызов
-// Использует оптимизированный метод GeminiClient.TranslateBatch
+// Использует универсальный Provider.TranslateBatch (работает с любым провайдером)
 func (ts *TranslationService) TranslateBatch(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error) {
 	if len(texts) == 0 {
 		return []string{}, nil
@@ -80,57 +81,72 @@ func (ts *TranslationService) TranslateMessagesForAdmin(ctx context.Context, mes
 
 	log.Printf("TranslateMessagesForAdmin: нужно перевести %d сообщений", len(toTranslate))
 
-	// Собираем тексты для batch перевода
-	texts := make([]string, len(toTranslate))
-	fromLang := ""
-
-	for i, msg := range toTranslate {
-		texts[i] = msg.Content
-
-		// Определяем язык из metadata
-		if fromLang == "" && msg.Metadata != nil {
-			if detected, ok := msg.Metadata["detectedLanguage"].(string); ok {
-				fromLang = detected
+	// ОПТИМИЗАЦИЯ: Группируем сообщения по языку для корректного batch перевода
+	// Избегаем проблемы когда сообщения на разных языках переводятся как один язык
+	byLang := make(map[string][]models.Message)
+	for _, msg := range toTranslate {
+		if msg.Metadata != nil {
+			if detected, ok := msg.Metadata["detectedLanguage"].(string); ok && detected != "" && detected != adminLang {
+				byLang[detected] = append(byLang[detected], msg)
 			}
 		}
 	}
 
-	// Если не удалось определить язык - пропускаем перевод
-	if fromLang == "" || fromLang == adminLang {
-		log.Printf("TranslateMessagesForAdmin: язык не определен или совпадает с целевым")
+	if len(byLang) == 0 {
+		log.Printf("TranslateMessagesForAdmin: нет сообщений для перевода")
 		return nil
 	}
 
-	// Batch перевод
-	translations, err := ts.TranslateBatch(ctx, texts, fromLang, adminLang)
-	if err != nil {
-		return fmt.Errorf("TranslateMessagesForAdmin: %w", err)
-	}
+	// Переводим каждую языковую группу отдельно
+	allTranslationsMap := make(map[uuid.UUID]map[string]string)
 
-	// Сохраняем переводы в БД и обновляем в памяти
-	for i, msg := range toTranslate {
-		if i >= len(translations) {
-			break
+	for fromLang, msgs := range byLang {
+		log.Printf("TranslateMessagesForAdmin: перевод %d сообщений с %s на %s", len(msgs), fromLang, adminLang)
+
+		// Собираем тексты для batch
+		texts := make([]string, len(msgs))
+		for i, msg := range msgs {
+			texts[i] = msg.Content
 		}
 
-		translation := translations[i]
-
-		// Сохраняем в БД
-		err := database.SaveTranslation(msg.ID, adminLang, translation)
+		// Batch перевод для этой группы
+		translations, err := ts.TranslateBatch(ctx, texts, fromLang, adminLang)
 		if err != nil {
-			log.Printf("TranslateMessagesForAdmin: ошибка сохранения перевода для %s: %v", msg.ID, err)
+			log.Printf("TranslateMessagesForAdmin: ошибка перевода с %s: %v", fromLang, err)
 			continue
 		}
 
-		// Обновляем content в исходном массиве
-		for j := range messages {
-			if messages[j].ID == msg.ID {
-				messages[j].Content = translation
+		// Собираем переводы в общий map
+		for i, msg := range msgs {
+			if i >= len(translations) {
 				break
+			}
+			allTranslationsMap[msg.ID] = map[string]string{
+				adminLang: translations[i],
+			}
+		}
+	}
+
+	// Сохраняем ВСЕ переводы в 1 транзакции
+	if len(allTranslationsMap) > 0 {
+		err := database.SaveTranslationsBatch(allTranslationsMap)
+		if err != nil {
+			return fmt.Errorf("TranslateMessagesForAdmin: SaveTranslationsBatch: %w", err)
+		}
+
+		// Обновляем content в исходном массиве
+		for msgID, translations := range allTranslationsMap {
+			if translation, ok := translations[adminLang]; ok {
+				for j := range messages {
+					if messages[j].ID == msgID {
+						messages[j].Content = translation
+						break
+					}
+				}
 			}
 		}
 
-		log.Printf("TranslateMessagesForAdmin: переведено и сохранено msg %s", msg.ID)
+		log.Printf("TranslateMessagesForAdmin: переведено и сохранено %d сообщений в 1 транзакции", len(allTranslationsMap))
 	}
 
 	return nil
@@ -200,26 +216,37 @@ func (ts *TranslationService) TranslateMessagesForWidget(ctx context.Context, me
 		return fmt.Errorf("TranslateMessagesForWidget: %w", err)
 	}
 
+	// ОПТИМИЗАЦИЯ: Batch save вместо N UPDATE запросов
+	translationsMap := make(map[uuid.UUID]map[string]string)
+	for i, msg := range toTranslate {
+		if i >= len(translations) {
+			break
+		}
+		translationsMap[msg.ID] = map[string]string{
+			clientLang: translations[i],
+		}
+	}
+
+	// Сохраняем ВСЕ переводы в 1 транзакции
+	err = database.SaveTranslationsBatch(translationsMap)
+	if err != nil {
+		return fmt.Errorf("TranslateMessagesForWidget: SaveTranslationsBatch: %w", err)
+	}
+
+	// Обновляем content в исходном массиве
 	for i, msg := range toTranslate {
 		if i >= len(translations) {
 			break
 		}
 
-		translation := translations[i]
-
-		err := database.SaveTranslation(msg.ID, clientLang, translation)
-		if err != nil {
-			log.Printf("TranslateMessagesForWidget: ошибка сохранения: %v", err)
-			continue
-		}
-
 		for j := range messages {
 			if messages[j].ID == msg.ID {
-				messages[j].Content = translation
+				messages[j].Content = translations[i]
 				break
 			}
 		}
 	}
 
+	log.Printf("TranslateMessagesForWidget: переведено и сохранено %d сообщений в 1 транзакции", len(translationsMap))
 	return nil
 }

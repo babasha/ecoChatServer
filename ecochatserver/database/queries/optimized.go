@@ -65,19 +65,22 @@ func UpdateChatTimestamp(db *sql.DB, chatID uuid.UUID) error {
 }
 
 // GetClientLanguageFromChat - получает язык клиента из последних сообщений
+// ОПТИМИЗАЦИЯ: Извлекаем только detectedLanguage из JSONB вместо всего metadata
 func GetClientLanguageFromChat(db *sql.DB, chatID uuid.UUID) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
 
 	// Ищем последнее сообщение от пользователя с detectedLanguage в metadata
-	var metadata []byte
+	// ОПТИМИЗАЦИЯ: Используем metadata->>'detectedLanguage' вместо SELECT metadata
+	// Это уменьшает трафик из БД на ~95% (5 байт вместо ~500-2000 байт)
+	var detectedLang sql.NullString
 	err := db.QueryRowContext(ctx, `
-		SELECT metadata
+		SELECT metadata->>'detectedLanguage'
 		FROM messages
 		WHERE chat_id = $1 AND sender = 'user' AND metadata ? 'detectedLanguage'
 		ORDER BY timestamp DESC
 		LIMIT 1
-	`, chatID).Scan(&metadata)
+	`, chatID).Scan(&detectedLang)
 
 	if err == sql.ErrNoRows {
 		return "", nil // Язык не найден
@@ -86,17 +89,11 @@ func GetClientLanguageFromChat(db *sql.DB, chatID uuid.UUID) (string, error) {
 		return "", err
 	}
 
-	// Парсим JSON для извлечения detectedLanguage
-	var metadataMap map[string]interface{}
-	if err := json.Unmarshal(metadata, &metadataMap); err != nil {
-		return "", err
+	if !detectedLang.Valid || detectedLang.String == "" {
+		return "", nil
 	}
 
-	if lang, ok := metadataMap["detectedLanguage"].(string); ok {
-		return lang, nil
-	}
-
-	return "", nil
+	return detectedLang.String, nil
 }
 
 // GetLastUserMessage возвращает последнее сообщение пользователя в чате

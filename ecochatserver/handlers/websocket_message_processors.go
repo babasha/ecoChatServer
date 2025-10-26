@@ -84,22 +84,15 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 			if err != nil {
 				log.Printf("processSendMessage: ошибка перевода: %v", err)
 			} else if result != nil && result.WasTranslated {
-				// Сохраняем перевод в metadata.translations
+				// Копируем metadata из результата (уже содержит detectedLanguage + translations)
 				if p.Metadata == nil {
 					p.Metadata = make(map[string]interface{})
 				}
-				// Копируем metadata из результата
 				for k, v := range result.Metadata {
 					p.Metadata[k] = v
 				}
-				// Добавляем перевод
-				translations := make(map[string]string)
-				if targetLang, ok := result.Metadata["targetLanguage"].(string); ok {
-					translations[targetLang] = result.Content
-				}
-				p.Metadata["translations"] = translations
-				log.Printf("processSendMessage: сообщение админа переведено с %s на %s",
-					result.Metadata["sourceLanguage"], result.Metadata["targetLanguage"])
+				log.Printf("processSendMessage: сообщение админа переведено, detectedLang=%s",
+					result.DetectedLanguage)
 			}
 		}
 	} else {
