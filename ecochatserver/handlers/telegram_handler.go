@@ -133,8 +133,8 @@ func TelegramWebhook(c *gin.Context) {
 		return
 	}
 
-	log.Printf("TelegramWebhook: получен чат: ID=%s, ClientID=%s, UserID=%s",
-		chat.ID, chat.ClientID, chat.User.ID)
+	log.Printf("TelegramWebhook: получен чат: ID=%s, ClientID=%s, UserID=%s, AutoResponderEnabled=%v, IsNewChat=%v",
+		chat.ID, chat.ClientID, chat.User.ID, chat.AutoResponderEnabled, chat.IsNewChat)
 
 	// ВАЖНО: Обновляем chat_id для виджета, если он подключен с временным ID
 	// Передаем chat.User.SourceID для проверки безопасности

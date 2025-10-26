@@ -516,8 +516,8 @@ func GetOrCreateChatMetadata(
 		IsNewChat:            info.IsNewChat, // Сохраняем флаг
 	}
 
-	log.Printf("GetOrCreateChatMetadata: успешно, возвращаем чат ID=%s БЕЗ сообщений, isNewChat=%v",
-		chat.ID, info.IsNewChat)
+	log.Printf("GetOrCreateChatMetadata: успешно, возвращаем чат ID=%s БЕЗ сообщений, isNewChat=%v, autoResponderEnabled=%v",
+		chat.ID, info.IsNewChat, chat.AutoResponderEnabled)
 	return chat, nil
 }
 
