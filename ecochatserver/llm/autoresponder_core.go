@@ -247,11 +247,23 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	// Получаем финальную копию истории для работы
 	ar.mu.RLock()
 	hist = ar.history[chatKey]
+	log.Printf("[AUTORESPONDER] История ДО обрезки: %d сообщений", len(hist))
 	hist = ar.historyMgr.TrimHistory(hist)
+	log.Printf("[AUTORESPONDER] История ПОСЛЕ обрезки: %d сообщений", len(hist))
 	// Создаем независимую копию для работы (защита от race conditions)
 	histForLLM := make([]Message, len(hist))
 	copy(histForLLM, hist)
 	ar.mu.RUnlock()
+
+	// 🐛 DEBUG: Выводим содержимое истории
+	log.Printf("[AUTORESPONDER] Передаём в LLM %d сообщений:", len(histForLLM))
+	for i, msg := range histForLLM {
+		preview := msg.Content
+		if len(preview) > 100 {
+			preview = preview[:100] + "..."
+		}
+		log.Printf("  [%d] %s: %s", i, msg.Role, preview)
+	}
 
 	// Определяем язык клиента по метаданным последнего сообщения или БД
 	customerLang := ""
