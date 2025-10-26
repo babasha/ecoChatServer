@@ -379,12 +379,13 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	}
 
 	if escalate {
-		// Проверяем, не эскалирован ли уже этот чат
-		ar.mu.Lock()
+		// Проверяем, не эскалирован ли уже этот чат (thread-safe)
+		ar.mu.RLock()
 		existingEscalation := ar.escalations[chatKey]
-		ar.mu.Unlock()
+		alreadyEscalated := existingEscalation != nil && existingEscalation.ReturnedAt == nil
+		ar.mu.RUnlock()
 
-		if existingEscalation != nil && existingEscalation.ReturnedAt == nil {
+		if alreadyEscalated {
 			// Чат уже эскалирован и LLM еще не вернулся
 			log.Printf("ProcessMessage: чат %s уже эскалирован, пропускаем повторную эскалацию", chatKey)
 			escalate = false // Не эскалируем повторно

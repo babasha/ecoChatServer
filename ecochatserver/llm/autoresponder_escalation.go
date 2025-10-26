@@ -13,16 +13,25 @@ import (
 
 // handleEscalatedChat обрабатывает сообщения в эскалированном чате
 func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.Chat, msg *models.Message, escalation *EscalationState) (*models.Message, error) {
+	// Безопасно читаем состояние эскалации под RLock
+	ar.mu.RLock()
+	escalatedAt := escalation.EscalatedAt
+	returnedAt := escalation.ReturnedAt
+	ar.mu.RUnlock()
+
 	// Проверяем, прошло ли EscalationTimeout с момента эскалации
-	if time.Since(escalation.EscalatedAt) > EscalationTimeout && escalation.ReturnedAt == nil {
+	if time.Since(escalatedAt) > EscalationTimeout && returnedAt == nil {
 		// Проверяем, отвечал ли админ после эскалации
-		adminAnswered := ar.checkAdminResponse(chat, escalation.EscalatedAt)
+		adminAnswered := ar.checkAdminResponse(chat, escalatedAt)
 
 		if !adminAnswered {
 			// Админ не ответил, возвращаем LLM с извинением
 			now := time.Now()
 			ar.mu.Lock()
-			escalation.ReturnedAt = &now
+			// Double-check: другой поток мог уже установить ReturnedAt
+			if escalation.ReturnedAt == nil {
+				escalation.ReturnedAt = &now
+			}
 			ar.mu.Unlock()
 
 			apologeticMsg := &models.Message{
