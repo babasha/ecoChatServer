@@ -455,6 +455,42 @@ func (h *Hub) SendToAllAdminsWithCallback(callback func(*Client) []byte) int {
 	return sent
 }
 
+// SendToAllAdminsExcept отправляет сообщение всем админам КРОМЕ указанного
+// Используется чтобы не отправлять админу его собственное сообщение (оптимистичный UI)
+func (h *Hub) SendToAllAdminsExcept(message []byte, excludeAdminID uuid.UUID) int {
+	h.mu.RLock()
+	admins := make([]*Client, 0, len(h.adminsByID))
+	for _, admin := range h.adminsByID {
+		// Пропускаем админа-отправителя
+		if admin.UserID == excludeAdminID {
+			log.Printf("SendToAllAdminsExcept: пропускаем админа-отправителя %s", excludeAdminID)
+			continue
+		}
+		admins = append(admins, admin)
+	}
+	h.mu.RUnlock()
+
+	if len(admins) == 0 {
+		log.Printf("SendToAllAdminsExcept: нет других админов (кроме %s)", excludeAdminID)
+		return 0
+	}
+
+	sent := 0
+	for _, admin := range admins {
+		select {
+		case admin.Send <- message:
+			sent++
+			log.Printf("SendToAllAdminsExcept: сообщение отправлено админу %s", admin.ID)
+		default:
+			log.Printf("SendToAllAdminsExcept: не удалось отправить админу %s (канал занят)", admin.ID)
+			go h.cleanupClient(admin)
+		}
+	}
+
+	log.Printf("SendToAllAdminsExcept: отправлено %d админам (исключен %s)", sent, excludeAdminID)
+	return sent
+}
+
 // SendToChatAndAdmins отправляет сообщение как в чат, так и всем админам
 func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
 	chatSent := h.SendToChat(chatID, message)

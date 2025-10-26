@@ -338,15 +338,18 @@ func SendMessageToChat(c *gin.Context) {
 		})
 		log.Printf("SendMessageToChat: отправлено %d админам (персонализировано)", totalAdmins)
 	} else {
-		// Сообщение от админа - отправляем оригинал всем
+		// Сообщение от админа - отправляем оригинал всем КРОМЕ отправителя
+		// (отправитель уже видит своё сообщение через оптимистичный UI)
 		adminPayload := map[string]interface{}{
 			"chatId":  chatID.String(),
 			"message": createMessagePayload(&adminMessage, chatID),
 			"chat":    map[string]interface{}{"id": chatID.String()},
 		}
 		adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
-		totalAdmins := WebSocketHub.SendToAllAdmins(adminWsMessage)
-		log.Printf("SendMessageToChat: отправлено %d админам (оригинал)", totalAdmins)
+
+		// Отправляем только другим админам (исключаем отправителя)
+		totalAdmins := WebSocketHub.SendToAllAdminsExcept(adminWsMessage, adminID)
+		log.Printf("SendMessageToChat: отправлено %d админам (оригинал, исключая отправителя %s)", totalAdmins, adminID)
 	}
 
 	// Возвращаем только статус успеха
