@@ -13,9 +13,8 @@ import (
 
 // handleEscalatedChat обрабатывает сообщения в эскалированном чате
 func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.Chat, msg *models.Message, escalation *EscalationState) (*models.Message, error) {
-	// Проверяем, прошло ли 5 минут с момента эскалации
-	const escalationTimeout = 5 * time.Minute
-	if time.Since(escalation.EscalatedAt) > escalationTimeout && escalation.ReturnedAt == nil {
+	// Проверяем, прошло ли EscalationTimeout с момента эскалации
+	if time.Since(escalation.EscalatedAt) > EscalationTimeout && escalation.ReturnedAt == nil {
 		// Проверяем, отвечал ли админ после эскалации
 		adminAnswered := ar.checkAdminResponse(chat, escalation.EscalatedAt)
 
@@ -53,7 +52,7 @@ func (ar *AutoResponder) handleEscalatedChat(ctx context.Context, chat *models.C
 // checkAdminResponse проверяет, отвечал ли админ после указанного времени
 func (ar *AutoResponder) checkAdminResponse(chat *models.Chat, after time.Time) bool {
 	// Загружаем последние сообщения из базы данных
-	chatWithMessages, _, err := database.GetChatByID(chat.ID, 20, "") // Последние 20 сообщений
+	chatWithMessages, _, err := database.GetChatByID(chat.ID, MaxMessagesLoad, "") // Последние сообщения
 	if err != nil {
 		log.Printf("checkAdminResponse: ошибка загрузки сообщений: %v", err)
 		return false
@@ -75,7 +74,7 @@ func (ar *AutoResponder) checkAdminResponse(chat *models.Chat, after time.Time) 
 
 // escalationWatcher периодически проверяет эскалированные чаты и возвращает LLM при необходимости
 func (ar *AutoResponder) escalationWatcher() {
-	ticker := time.NewTicker(1 * time.Minute) // Проверяем каждую минуту
+	ticker := time.NewTicker(EscalationCheckInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -92,14 +91,21 @@ func (ar *AutoResponder) checkEscalations() {
 	}
 	ar.mu.RUnlock()
 
-	const escalationTimeout = 5 * time.Minute
+	now := time.Now()
+	escalationsToCleanup := make([]string, 0)
 
 	for chatID, escalation := range escalationsToCheck {
+		// Очищаем старые завершенные эскалации (старше EscalationTTL после возврата)
 		if escalation.ReturnedAt != nil {
-			continue // Уже вернулся
+			if now.Sub(*escalation.ReturnedAt) > EscalationTTL {
+				escalationsToCleanup = append(escalationsToCleanup, chatID)
+				continue
+			}
+			// Эскалация уже завершена, пропускаем
+			continue
 		}
 
-		if time.Since(escalation.EscalatedAt) > escalationTimeout {
+		if time.Since(escalation.EscalatedAt) > EscalationTimeout {
 			// Загружаем чат из базы
 			chatUUID, err := uuid.Parse(chatID)
 			if err != nil {
@@ -120,6 +126,16 @@ func (ar *AutoResponder) checkEscalations() {
 				ar.sendApologyMessage(lightChat)
 			}
 		}
+	}
+
+	// Очищаем завершенные эскалации
+	if len(escalationsToCleanup) > 0 {
+		ar.mu.Lock()
+		for _, chatID := range escalationsToCleanup {
+			delete(ar.escalations, chatID)
+			log.Printf("[AUTORESPONDER] [ESCALATION] Очищена завершенная эскалация для чата %s", chatID)
+		}
+		ar.mu.Unlock()
 	}
 }
 

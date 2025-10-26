@@ -16,6 +16,33 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const (
+	// Максимальное количество сообщений для загрузки из БД
+	MaxMessagesLoad = 20
+	// Таймаут эскалации (время ожидания ответа админа)
+	EscalationTimeout = 5 * time.Minute
+	// Максимальный возраст завершенной эскалации перед очисткой
+	EscalationTTL = 1 * time.Hour
+	// Максимальное количество попыток неавторизованного доступа
+	MaxUnauthorizedAttempts = 3
+	// Время блокировки после превышения лимита попыток
+	UnauthorizedBlockDuration = 5 * time.Minute
+	// Период очистки старых записей попыток доступа
+	UnauthorizedCleanupInterval = 10 * time.Minute
+	// Максимальный возраст записи попытки доступа
+	UnauthorizedAttemptTTL = 1 * time.Hour
+	// Период проверки эскалаций
+	EscalationCheckInterval = 1 * time.Minute
+	// Значения конфигурации по умолчанию
+	DefaultBotName         = "Автоответчик"
+	DefaultDelaySeconds    = 1
+	DefaultIdleTimeMinutes = 5
+)
+
+// ---------------------------------------------------------------------------
 // Types and Config
 // ---------------------------------------------------------------------------
 
@@ -29,9 +56,9 @@ type AutoResponderConfig struct {
 func GetDefaultConfig() AutoResponderConfig {
 	return AutoResponderConfig{
 		Enabled:         true,
-		BotName:         "Автоответчик",
-		DelaySeconds:    1,
-		IdleTimeMinutes: 5,
+		BotName:         DefaultBotName,
+		DelaySeconds:    DefaultDelaySeconds,
+		IdleTimeMinutes: DefaultIdleTimeMinutes,
 	}
 }
 
@@ -76,7 +103,7 @@ func NewAutoResponder(provider Provider, cfg AutoResponderConfig) *AutoResponder
 
 	log.Printf("[AUTORESPONDER] [SECURITY] Инициализирован с провайдером: %s", provider.GetName())
 	log.Println("[AUTORESPONDER] [SECURITY] Усиленная защита доступа к заказам активна")
-	log.Println("[AUTORESPONDER] История будет автоматически обрезаться до 20 сообщений (~4000 токенов)")
+	log.Printf("[AUTORESPONDER] История будет автоматически обрезаться до %d сообщений (~4000 токенов)", MaxMessagesLoad)
 
 	return ar
 }
@@ -127,19 +154,22 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 		return ar.handleEscalatedChat(ctx, chat, msg, escalation)
 	}
 
-	// ── проверка запросов о заказах ──────────────────────────
-	if orderQuery := DetectOrderQuery(msg.Content); orderQuery != nil {
-		return ar.handleSecurityCheck(ctx, chat, msg, orderQuery, chatKey)
+	// ── ПОЛУЧАЕМ USER_ID ОДИН РАЗ ───────────────────────────────
+	// Это оптимизация: получаем userID в начале для использования во всех проверках
+	userID := ar.getUserIDWithCache(ctx, chat)
+	if userID > 0 {
+		log.Printf("[AUTORESPONDER] Определен user_id магазина: %d для чата %s", userID, chat.ID)
 	}
 
-	// ── история ───────────────────────────────────────────────
-	ar.mu.Lock()
+	// ── ИНИЦИАЛИЗАЦИЯ ИСТОРИИ (ДО проверки заказов!) ──────────
+	// Проверяем нужна ли инициализация (без lock для быстрой проверки)
+	ar.mu.RLock()
 	hist := ar.history[chatKey]
+	needsInit := len(hist) == 0
+	ar.mu.RUnlock()
 
-	// 🔒 ВЫБОР ПРОМПТА: Используем разные промпты для авторизованных и неавторизованных
-	if len(hist) == 0 {
-		// Проверяем авторизацию для выбора правильного системного промпта
-		userID := ExtractUserIDFromChat(ctx, ar.storeClient, chat)
+	// Если история пуста, инициализируем с правильным промптом
+	if needsInit {
 		var selectedPrompt string
 
 		if userID > 0 {
@@ -150,15 +180,30 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 			log.Printf("[AUTORESPONDER] [SECURITY] Инициализация истории с НЕАВТОРИЗОВАННЫМ промптом (нет доступа к заказам)")
 		}
 
-		hist = []Message{{Role: "system", Content: selectedPrompt}}
+		// Сохраняем с lock
+		ar.mu.Lock()
+		// Проверяем еще раз - мог другой поток инициализировать
+		if len(ar.history[chatKey]) == 0 {
+			ar.history[chatKey] = []Message{{Role: "system", Content: selectedPrompt}}
+		}
+		hist = ar.history[chatKey]
+		ar.mu.Unlock()
 	}
 
-	// ВАЖНО: НЕ добавляем сообщение в hist здесь - buildMessages сделает это
-	// Обрезаем историю до разумного размера
-	hist = ar.historyMgr.TrimHistory(hist)
+	// ── проверка запросов о заказах ──────────────────────────
+	// Теперь передаем уже известный userID, избегая повторных HTTP запросов
+	if orderQuery := DetectOrderQuery(msg.Content); orderQuery != nil {
+		return ar.handleSecurityCheck(ctx, chat, msg, orderQuery, chatKey, userID)
+	}
 
-	ar.history[chatKey] = hist
-	ar.mu.Unlock()
+	// Получаем финальную копию истории для работы
+	ar.mu.RLock()
+	hist = ar.history[chatKey]
+	hist = ar.historyMgr.TrimHistory(hist)
+	// Создаем независимую копию для работы (защита от race conditions)
+	histForLLM := make([]Message, len(hist))
+	copy(histForLLM, hist)
+	ar.mu.RUnlock()
 
 	// Определяем язык клиента по метаданным последнего сообщения или БД
 	customerLang := ""
@@ -170,6 +215,9 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	if customerLang == "" || customerLang == "unknown" {
 		if lang, err := database.GetClientLanguageFromChat(chat.ID); err == nil {
 			customerLang = strings.ToLower(strings.TrimSpace(lang))
+		} else if err != sql.ErrNoRows {
+			// Логируем только реальные ошибки, игнорируем отсутствие записи
+			log.Printf("[AUTORESPONDER] Ошибка получения языка клиента из БД для чата %s: %v", chat.ID, err)
 		}
 	}
 
@@ -189,14 +237,18 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	tools := GetUniversalStoreFunctionTools()
 	log.Printf("[AUTORESPONDER] Отправляем запрос в провайдер %s с %d tools", ar.provider.GetName(), len(tools))
 
-	// Добавляем префикс-напоминание про язык клиента к сообщению
-	instruction := "[Respond in customer's language]"
+	// Оптимизация: добавляем языковой контекст в историю только если язык определён
+	histWithLang := histForLLM
 	if customerLang != "" && customerLang != "unknown" {
-		instruction = fmt.Sprintf("[Customer language code: %s. Respond STRICTLY in this language. Translate your final answer to %s if needed.]", customerLang, customerLang)
+		// Обновляем только system prompt (первое сообщение)
+		// histForLLM уже является копией, можем модифицировать напрямую
+		if len(histWithLang) > 0 && histWithLang[0].Role == "system" {
+			langInstruction := fmt.Sprintf("\n\n🌍 CRITICAL: Customer's language is '%s'. You MUST respond in %s.", customerLang, customerLang)
+			histWithLang[0].Content = histWithLang[0].Content + langInstruction
+		}
 	}
-	userMessageWithReminder := fmt.Sprintf("%s %s", instruction, msg.Content)
 
-	response, err := ar.provider.GenerateWithTools(genCtx, userMessageWithReminder, hist, tools, &GenerateOptions{
+	response, err := ar.provider.GenerateWithTools(genCtx, msg.Content, histWithLang, tools, &GenerateOptions{
 		Temperature: 0.7,
 		MaxTokens:   1000,
 	})
@@ -228,9 +280,10 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 		log.Printf("[FUNCTION_CALLING] Результат функции %s: %s", response.FunctionCall.Name, funcResult)
 
 		// Отправляем результат обратно провайдеру для финального ответа
+		// Используем histWithLang чтобы сохранить языковой контекст
 		finalResponse, err := ar.provider.ContinueWithFunctionResult(
 			genCtx,
-			hist,
+			histWithLang,
 			response.FunctionCall,
 			funcResult,
 			&GenerateOptions{Temperature: 0.7, MaxTokens: 1000},
@@ -345,17 +398,18 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	}
 
 	// сохраняем в локальную историю
+	// Используем одну критическую секцию для атомарного обновления
 	ar.mu.Lock()
-	histForSave := ar.history[chatKey]
+	currentHist := ar.history[chatKey]
 	// Добавляем сообщение пользователя (оригинальное, без префикса)
-	histForSave = append(histForSave, Message{Role: "user", Content: msg.Content})
+	currentHist = append(currentHist, Message{Role: "user", Content: msg.Content})
 	// Добавляем ответ assistant
-	histForSave = append(histForSave, Message{Role: "assistant", Content: clean})
+	currentHist = append(currentHist, Message{Role: "assistant", Content: clean})
 
 	// Обрезаем историю после добавления ответа
-	histForSave = ar.historyMgr.TrimHistory(histForSave)
+	currentHist = ar.historyMgr.TrimHistory(currentHist)
 
-	ar.history[chatKey] = histForSave
+	ar.history[chatKey] = currentHist
 	ar.mu.Unlock()
 
 	return botMsg, nil
@@ -428,4 +482,58 @@ func (ar *AutoResponder) ClearEscalation(chatID string) {
 // SetApologyCallback устанавливает callback для отправки сообщений извинения
 func (ar *AutoResponder) SetApologyCallback(callback func(chatID uuid.UUID, message *models.Message)) {
 	ar.onApologyMessage = callback
+}
+
+// ---------------------------------------------------------------------------
+// Helper Methods
+// ---------------------------------------------------------------------------
+
+// getUserIDWithCache получает userID с кешированием в метаданных чата
+// Это избегает повторных HTTP запросов к API магазина
+func (ar *AutoResponder) getUserIDWithCache(ctx context.Context, chat *models.Chat) int {
+	// 1. Проверяем кеш в метаданных чата
+	if chat.Metadata != nil {
+		if userID, ok := chat.Metadata["store_user_id"].(int); ok && userID > 0 {
+			return userID
+		}
+		if userID, ok := chat.Metadata["store_user_id"].(float64); ok && userID > 0 {
+			return int(userID)
+		}
+	}
+
+	// 2. Кеша нет - делаем HTTP запрос
+	userID := ExtractUserIDFromChat(ctx, ar.storeClient, chat)
+
+	// 3. Если нашли - сохраняем в кеш (в память)
+	if userID > 0 {
+		if chat.Metadata == nil {
+			chat.Metadata = make(map[string]interface{})
+		}
+		chat.Metadata["store_user_id"] = userID
+
+		// 4. Асинхронно сохраняем в БД для персистентности
+		go ar.saveUserIDToDatabase(ctx, chat.ID, userID)
+	}
+
+	return userID
+}
+
+// saveUserIDToDatabase сохраняет userID в метаданных чата в БД
+func (ar *AutoResponder) saveUserIDToDatabase(ctx context.Context, chatID uuid.UUID, userID int) {
+	query := `
+		UPDATE chats
+		SET metadata = jsonb_set(
+			COALESCE(metadata, '{}'::jsonb),
+			'{store_user_id}',
+			$1::text::jsonb
+		)
+		WHERE id = $2
+	`
+
+	_, err := database.DB.ExecContext(ctx, query, userID, chatID)
+	if err != nil {
+		log.Printf("[AUTORESPONDER] Ошибка сохранения store_user_id в БД для чата %s: %v", chatID, err)
+	} else {
+		log.Printf("[AUTORESPONDER] store_user_id=%d сохранен в БД для чата %s", userID, chatID)
+	}
 }

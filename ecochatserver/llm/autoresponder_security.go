@@ -20,11 +20,11 @@ type UnauthorizedAttemptTracker struct {
 }
 
 // handleSecurityCheck обрабатывает проверку безопасности для запросов о заказах
-func (ar *AutoResponder) handleSecurityCheck(ctx context.Context, chat *models.Chat, msg *models.Message, orderQuery *OrderQuery, chatKey string) (*models.Message, error) {
+// userID передается как параметр, чтобы избежать повторных HTTP запросов
+func (ar *AutoResponder) handleSecurityCheck(ctx context.Context, chat *models.Chat, msg *models.Message, orderQuery *OrderQuery, chatKey string, userID int) (*models.Message, error) {
 	log.Printf("[AUTORESPONDER] [SECURITY] Обнаружен запрос о заказе в чате %s", chatKey)
 
 	// 🔒 КРИТИЧЕСКАЯ ПРОВЕРКА: проверяем авторизацию ДО обработки
-	userID := ExtractUserIDFromChat(ctx, ar.storeClient, chat)
 	if userID == 0 {
 		return ar.handleUnauthorizedAccess(chat, orderQuery, chatKey)
 	}
@@ -35,7 +35,7 @@ func (ar *AutoResponder) handleSecurityCheck(ctx context.Context, chat *models.C
 	ar.mu.Unlock()
 
 	log.Printf("[AUTORESPONDER] [SECURITY] ✓ Авторизованный запрос о заказе: user_id=%d, chat=%s", userID, chatKey)
-	return ar.handleOrderQueryMessage(ctx, chat, msg, orderQuery)
+	return ar.handleOrderQueryMessage(ctx, chat, msg, orderQuery, userID)
 }
 
 // handleUnauthorizedAccess обрабатывает неавторизованные попытки доступа к заказам
@@ -78,21 +78,21 @@ func (ar *AutoResponder) handleUnauthorizedAccess(chat *models.Chat, orderQuery 
 		}, nil
 	}
 
-	// После 3 попыток - блокируем на 5 минут
-	if tracker.Count >= 3 {
-		blockUntil := time.Now().Add(5 * time.Minute)
+	// После MaxUnauthorizedAttempts попыток - блокируем
+	if tracker.Count >= MaxUnauthorizedAttempts {
+		blockUntil := time.Now().Add(UnauthorizedBlockDuration)
 		tracker.Blocked = true
 		tracker.BlockedUntil = &blockUntil
 
 		LogSuspiciousActivity(chat.ID, 0, chat.User.Email, fmt.Sprintf("Множественные попытки доступа к заказам без авторизации (%d попыток)", tracker.Count))
 		ar.mu.Unlock()
 
-		log.Printf("[AUTORESPONDER] [SECURITY] 🚨 Чат %s ЗАБЛОКИРОВАН на 5 минут (попытки: %d)", chatKey, tracker.Count)
+		log.Printf("[AUTORESPONDER] [SECURITY] 🚨 Чат %s ЗАБЛОКИРОВАН на %v (попытки: %d)", chatKey, UnauthorizedBlockDuration, tracker.Count)
 
 		now := time.Now()
 		return &models.Message{
 			ChatID:    chat.ID,
-			Content:   "🚫 Обнаружено слишком много попыток доступа к заказам без авторизации.\n\nВаш чат временно заблокирован на 5 минут. Пожалуйста, укажите корректный email для идентификации или обратитесь к оператору.",
+			Content:   fmt.Sprintf("🚫 Обнаружено слишком много попыток доступа к заказам без авторизации.\n\nВаш чат временно заблокирован на %v. Пожалуйста, укажите корректный email для идентификации или обратитесь к оператору.", UnauthorizedBlockDuration),
 			Sender:    "admin",
 			SenderID:  uuid.Nil,
 			Timestamp: now,
@@ -118,7 +118,7 @@ func (ar *AutoResponder) handleUnauthorizedAccess(chat *models.Chat, orderQuery 
 	now := time.Now()
 	blockedMsg := &models.Message{
 		ChatID:    chat.ID,
-		Content:   fmt.Sprintf("🔒 Для просмотра информации о заказах необходимо авторизоваться.\n\nПожалуйста, укажите ваш email, который вы использовали при регистрации в магазине.\n\n⚠️ Попытка %d/3", tracker.Count),
+		Content:   fmt.Sprintf("🔒 Для просмотра информации о заказах необходимо авторизоваться.\n\nПожалуйста, укажите ваш email, который вы использовали при регистрации в магазине.\n\n⚠️ Попытка %d/%d", tracker.Count, MaxUnauthorizedAttempts),
 		Sender:    "admin",
 		SenderID:  uuid.Nil,
 		Timestamp: now,
@@ -133,21 +133,21 @@ func (ar *AutoResponder) handleUnauthorizedAccess(chat *models.Chat, orderQuery 
 		},
 	}
 
-	log.Printf("[AUTORESPONDER] [SECURITY] ✓ Отправлен автоматический отказ в доступе (попытка %d/3)", tracker.Count)
+	log.Printf("[AUTORESPONDER] [SECURITY] ✓ Отправлен автоматический отказ в доступе (попытка %d/%d)", tracker.Count, MaxUnauthorizedAttempts)
 	return blockedMsg, nil
 }
 
 // cleanupUnauthorizedAttempts периодически очищает старые записи попыток доступа
 func (ar *AutoResponder) cleanupUnauthorizedAttempts() {
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(UnauthorizedCleanupInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		ar.mu.Lock()
 		now := time.Now()
 		for chatKey, tracker := range ar.unauthorizedAttempts {
-			// Удаляем записи старше 1 часа
-			if now.Sub(tracker.LastAttempt) > 1*time.Hour {
+			// Удаляем записи старше UnauthorizedAttemptTTL
+			if now.Sub(tracker.LastAttempt) > UnauthorizedAttemptTTL {
 				delete(ar.unauthorizedAttempts, chatKey)
 				log.Printf("[AUTORESPONDER] [SECURITY] Очищена запись о попытках доступа для чата %s", chatKey)
 			}

@@ -10,25 +10,10 @@ import (
 )
 
 // handleOrderQueryMessage обрабатывает запросы о заказах
-func (ar *AutoResponder) handleOrderQueryMessage(ctx context.Context, chat *models.Chat, msg *models.Message, query *OrderQuery) (*models.Message, error) {
-	// Извлекаем user_id из магазина
-	userID := ExtractUserIDFromChat(ctx, ar.storeClient, chat)
-
-	if userID == 0 {
-		log.Printf("[AUTORESPONDER] Не удалось определить user_id магазина для чата %s (user email: %s)",
-			chat.ID, chat.User.Email)
-
-		// Если пользователь не найден, LLM все равно может попробовать помочь
-		// Но запросы о заказах будут ограничены
-	} else {
-		log.Printf("[AUTORESPONDER] Определен user_id магазина: %d для чата %s", userID, chat.ID)
-
-		// Сохраняем найденный user_id в метаданных чата для будущих запросов
-		if chat.Metadata == nil {
-			chat.Metadata = make(map[string]interface{})
-		}
-		chat.Metadata["store_user_id"] = userID
-	}
+// userID передается как параметр, чтобы избежать повторных HTTP запросов
+func (ar *AutoResponder) handleOrderQueryMessage(ctx context.Context, chat *models.Chat, msg *models.Message, query *OrderQuery, userID int) (*models.Message, error) {
+	// userID уже получен в ProcessMessage, не делаем повторный запрос
+	log.Printf("[AUTORESPONDER] Обработка запроса о заказе: user_id=%d, chat=%s", userID, chat.ID)
 
 	// Обрабатываем запрос через HandleOrderQuery
 	orderInfo, err := HandleOrderQuery(ctx, ar.storeClient, query, userID)
