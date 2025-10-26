@@ -295,17 +295,59 @@ func SendMessageToChat(c *gin.Context) {
 	WebSocketHub.SendToChat(chatID.String(), widgetWsMessage)
 	log.Printf("SendMessageToChat: отправлено в виджет")
 
-	// Отправляем админам
-	adminPayload := map[string]interface{}{
-		"chatId":  chatID.String(),
-		"message": createMessagePayload(&adminMessage, chatID),
-		"chat": map[string]interface{}{
-			"id": chatID.String(),
-		},
+	// Отправляем админам - нужно персонализировать для каждого админа
+	// Для сообщений пользователя - каждый админ видит перевод на СВОЙ язык
+	// Для сообщений админа - каждый видит в оригинале (пока упрощаем)
+	if message.Sender == "user" {
+		// Сообщение от пользователя - нужно перевести для каждого админа
+		log.Printf("SendMessageToChat: отправка сообщения пользователя админам с персонализацией")
+		totalAdmins := WebSocketHub.SendToAllAdminsWithCallback(func(adminClient *websocket.Client) []byte {
+			// Получаем язык конкретного админа
+			adminSettings, err := settingsCache.getAdminSettings(adminClient.UserID)
+			if err != nil || adminSettings.PreferredLanguage == "" {
+				// Если не удалось получить язык - используем оригинал
+				adminPayload := map[string]interface{}{
+					"chatId":  chatID.String(),
+					"message": createMessagePayload(message, chatID),
+					"chat":    map[string]interface{}{"id": chatID.String()},
+				}
+				adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
+				return adminWsMessage
+			}
+
+			// Применяем перевод на язык этого админа
+			personalizedMessage := *message
+			if message.Metadata != nil {
+				if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
+					if translation, exists := translations[adminSettings.PreferredLanguage]; exists {
+						if translatedText, ok := translation.(string); ok && translatedText != "" {
+							personalizedMessage.Content = translatedText
+							log.Printf("SendMessageToChat: для админа %s используется перевод на %s", adminClient.UserID, adminSettings.PreferredLanguage)
+						}
+					}
+				}
+			}
+
+			adminPayload := map[string]interface{}{
+				"chatId":  chatID.String(),
+				"message": createMessagePayload(&personalizedMessage, chatID),
+				"chat":    map[string]interface{}{"id": chatID.String()},
+			}
+			adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
+			return adminWsMessage
+		})
+		log.Printf("SendMessageToChat: отправлено %d админам (персонализировано)", totalAdmins)
+	} else {
+		// Сообщение от админа - отправляем оригинал всем
+		adminPayload := map[string]interface{}{
+			"chatId":  chatID.String(),
+			"message": createMessagePayload(&adminMessage, chatID),
+			"chat":    map[string]interface{}{"id": chatID.String()},
+		}
+		adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
+		totalAdmins := WebSocketHub.SendToAllAdmins(adminWsMessage)
+		log.Printf("SendMessageToChat: отправлено %d админам (оригинал)", totalAdmins)
 	}
-	adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
-	totalAdmins := WebSocketHub.SendToAllAdmins(adminWsMessage)
-	log.Printf("SendMessageToChat: отправлено %d админам", totalAdmins)
 
 	// Возвращаем только статус успеха
 	c.JSON(http.StatusOK, gin.H{

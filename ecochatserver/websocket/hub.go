@@ -421,6 +421,40 @@ func (h *Hub) SendToAllAdmins(message []byte) int {
 	return sent
 }
 
+// SendToAllAdminsWithCallback отправляет персонализированное сообщение каждому админу
+// callback вызывается для каждого админа и должен вернуть сообщение для этого админа
+func (h *Hub) SendToAllAdminsWithCallback(callback func(*Client) []byte) int {
+	h.mu.RLock()
+	admins := make([]*Client, 0, len(h.adminsByID))
+	for _, admin := range h.adminsByID {
+		admins = append(admins, admin)
+	}
+	h.mu.RUnlock()
+
+	if len(admins) == 0 {
+		log.Printf("SendToAllAdminsWithCallback: нет подключенных админов")
+		return 0
+	}
+
+	sent := 0
+	for _, admin := range admins {
+		// Генерируем персонализированное сообщение для этого админа
+		personalizedMessage := callback(admin)
+
+		select {
+		case admin.Send <- personalizedMessage:
+			sent++
+			log.Printf("SendToAllAdminsWithCallback: персонализированное сообщение отправлено админу %s", admin.ID)
+		default:
+			log.Printf("SendToAllAdminsWithCallback: не удалось отправить админу %s (канал занят)", admin.ID)
+			go h.cleanupClient(admin)
+		}
+	}
+
+	log.Printf("SendToAllAdminsWithCallback: отправлено %d персонализированных сообщений (всего админов: %d)", sent, len(admins))
+	return sent
+}
+
 // SendToChatAndAdmins отправляет сообщение как в чат, так и всем админам
 func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
 	chatSent := h.SendToChat(chatID, message)
