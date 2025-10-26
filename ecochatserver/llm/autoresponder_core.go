@@ -168,7 +168,46 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	needsInit := len(hist) == 0
 	ar.mu.RUnlock()
 
-	// Если история пуста, инициализируем с правильным промптом
+	// Если история пуста в памяти, пытаемся загрузить из БД
+	if needsInit {
+		log.Printf("[AUTORESPONDER] История пуста в памяти для чата %s, загружаем из БД", chatKey)
+		if err := ar.LoadChatHistory(ctx, chatKey); err != nil {
+			log.Printf("[AUTORESPONDER] Ошибка загрузки истории из БД для чата %s: %v", chatKey, err)
+			// Продолжаем с пустой историей - будет инициализирована ниже
+		} else {
+			// Проверяем еще раз - могла загрузиться история из БД
+			ar.mu.RLock()
+			hist = ar.history[chatKey]
+			needsInit = len(hist) == 0
+			ar.mu.RUnlock()
+
+			if !needsInit {
+				log.Printf("[AUTORESPONDER] История успешно загружена из БД: %d сообщений", len(hist))
+
+				// 🔒 SECURITY: Проверяем соответствие system prompt уровню авторизации
+				// Если пользователь добавил email после создания истории, нужно обновить промпт
+				if len(hist) > 0 && hist[0].Role == "system" {
+					expectedPrompt := systemPromptUnauthorized
+					if userID > 0 {
+						expectedPrompt = systemPromptAuthorized
+					}
+
+					// Если промпт не соответствует текущему статусу авторизации - обновляем
+					if hist[0].Content != expectedPrompt {
+						ar.mu.Lock()
+						if len(ar.history[chatKey]) > 0 {
+							ar.history[chatKey][0].Content = expectedPrompt
+							hist = ar.history[chatKey]
+							log.Printf("[AUTORESPONDER] [SECURITY] System prompt обновлен в соответствии с авторизацией (userID=%d)", userID)
+						}
+						ar.mu.Unlock()
+					}
+				}
+			}
+		}
+	}
+
+	// Если история все еще пуста, инициализируем с правильным промптом
 	if needsInit {
 		var selectedPrompt string
 
@@ -411,6 +450,15 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 
 	ar.history[chatKey] = currentHist
 	ar.mu.Unlock()
+
+	// Асинхронно сохраняем историю в БД для персистентности
+	go func() {
+		if err := ar.SaveChatHistory(context.Background(), chatKey, nil); err != nil {
+			log.Printf("[AUTORESPONDER] Ошибка сохранения истории в БД для чата %s: %v", chatKey, err)
+		} else {
+			log.Printf("[AUTORESPONDER] История сохранена в БД для чата %s (%d сообщений)", chatKey, len(currentHist))
+		}
+	}()
 
 	return botMsg, nil
 }
