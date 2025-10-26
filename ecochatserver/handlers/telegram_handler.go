@@ -295,9 +295,37 @@ func TelegramWebhook(c *gin.Context) {
 		chatInfo := createChatInfo(chat)
 
 		// Отправляем уведомление о сообщении пользователя
-		userNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
-		totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), userNotification)
-		log.Printf("TelegramWebhook: уведомление о сообщении пользователя отправлено %d клиентам", totalSent)
+		// Виджет получает оригинал (клиент пишет на своём языке)
+		widgetNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
+		widgetSent := WebSocketHub.SendToChat(chat.ID.String(), widgetNotification)
+		log.Printf("TelegramWebhook: уведомление виджету отправлено (%d клиентов)", widgetSent)
+
+		// Админы получают персонализированный перевод (каждый на своём языке)
+		adminsSent := WebSocketHub.SendToAllAdminsWithCallback(func(adminClient *websocket.Client) []byte {
+			// Получаем язык конкретного админа
+			adminSettings, err := settingsCache.getAdminSettings(adminClient.UserID)
+			if err != nil || adminSettings.PreferredLanguage == "" {
+				// Если не удалось получить язык - используем оригинал
+				log.Printf("TelegramWebhook: для админа %s используется оригинал (язык не найден)", adminClient.UserID)
+				return widgetNotification
+			}
+
+			// Применяем перевод на язык этого админа
+			personalizedMsg := *userMsg
+			if userMsg.Metadata != nil {
+				if translations, ok := userMsg.Metadata["translations"].(map[string]interface{}); ok {
+					if translation, exists := translations[adminSettings.PreferredLanguage]; exists {
+						if translatedText, ok := translation.(string); ok && translatedText != "" {
+							personalizedMsg.Content = translatedText
+							log.Printf("TelegramWebhook: для админа %s используется перевод на %s: '%s'", adminClient.UserID, adminSettings.PreferredLanguage, translatedText)
+						}
+					}
+				}
+			}
+
+			return createMessageNotification(chat.ID, &personalizedMsg, chatInfo)
+		})
+		log.Printf("TelegramWebhook: уведомление отправлено %d админам (персонализировано)", adminsSent)
 
 		// Если есть автоответ бота, отправляем его отдельно
 		if botMsg != nil {
