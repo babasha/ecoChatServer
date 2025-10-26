@@ -145,9 +145,9 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	chatKey := chat.ID.String()
 
 	// Проверяем состояние эскалации
-	ar.mu.Lock()
+	ar.mu.RLock() // Используем RLock для чтения (не блокируем параллельные запросы)
 	escalation := ar.escalations[chatKey]
-	ar.mu.Unlock()
+	ar.mu.RUnlock()
 
 	// Если чат эскалирован, проверяем нужно ли вернуть LLM
 	if escalation != nil {
@@ -201,6 +201,15 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 							log.Printf("[AUTORESPONDER] [SECURITY] System prompt обновлен в соответствии с авторизацией (userID=%d)", userID)
 						}
 						ar.mu.Unlock()
+
+						// Асинхронно сохраняем обновленный промпт в БД
+						go func() {
+							if err := ar.SaveChatHistory(context.Background(), chatKey, nil); err != nil {
+								log.Printf("[AUTORESPONDER] [SECURITY] Ошибка сохранения обновленного промпта в БД: %v", err)
+							} else {
+								log.Printf("[AUTORESPONDER] [SECURITY] Обновленный промпт сохранен в БД для чата %s", chatKey)
+							}
+						}()
 					}
 				}
 			}
@@ -341,37 +350,26 @@ func (ar *AutoResponder) ProcessMessage(ctx context.Context, chat *models.Chat, 
 	// ── фильтр самоидентификации и проверка тегов эскалации ──
 	clean, escalate := sanitize(rawResp)
 
-	// Проверяем язык ответа и при необходимости переводим на язык клиента
+	// 🌍 ОПТИМИЗАЦИЯ: Убран автоматический DetectAndTranslate
+	// LLM уже получил инструкцию "You MUST respond in {customerLang}" в system prompt (строка 294)
+	// DetectAndTranslate = второй LLM call (2x стоимость, 2x латентность)
+	//
+	// Если LLM не ответил на нужном языке:
+	// 1. Это означает что промпт недостаточно строгий
+	// 2. Или модель игнорирует инструкции
+	// 3. В обоих случаях нужно улучшать промпт, а не добавлять костыль
+	//
+	// Для compatibility оставляем метаданные без перевода:
 	var translationMeta map[string]interface{}
-	if customerLang != "" && customerLang != "unknown" && strings.TrimSpace(clean) != "" {
-		if result, err := ar.provider.DetectAndTranslate(genCtx, clean, customerLang); err == nil && result != nil {
-			detected := strings.ToLower(strings.TrimSpace(result.DetectedLang))
-			if detected == "" {
-				detected = customerLang
-			}
-
-			translated := result.Translation
-			if translated == "" {
-				translated = clean
-			}
-
-			translationMeta = map[string]interface{}{
-				"translations":     map[string]interface{}{customerLang: translated},
-				"targetLanguage":   customerLang,
-				"translatedText":   translated,
-				"detectedLanguage": detected,
-			}
-
-			if !strings.EqualFold(detected, customerLang) {
-				translationMeta["originalText"] = clean
-				translationMeta["isTranslated"] = true
-				clean = translated
-			} else {
-				translationMeta["isTranslated"] = false
-				clean = translated
-			}
-		} else if err != nil {
-			log.Printf("[AUTORESPONDER] Не удалось выполнить DetectAndTranslate: %v", err)
+	if customerLang != "" && customerLang != "unknown" {
+		translationMeta = map[string]interface{}{
+			"detectedLanguage": customerLang, // Предполагаем что LLM ответил правильно
+			"targetLanguage":   customerLang,
+			"translatedText":   clean,
+			"isTranslated":     false, // LLM уже ответил на нужном языке
+			"translations": map[string]interface{}{
+				customerLang: clean,
+			},
 		}
 	}
 
