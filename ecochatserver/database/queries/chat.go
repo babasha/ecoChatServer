@@ -470,7 +470,7 @@ func GetOrCreateChatMetadata(
 		updatedAt = info.UpdatedAt
 		status = "active"
 		assignedTo = nil
-		autoResponderEnabled = false
+		autoResponderEnabled = true // DEFAULT в БД тоже true
 		isArchived = false
 		log.Printf("GetOrCreateChatMetadata: новый чат, используем значения по умолчанию")
 	} else {
