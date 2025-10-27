@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
@@ -239,4 +240,122 @@ func RemoveManager(c *gin.Context) {
 
 	log.Printf("RemoveManager: успешно удален manager %s для клиента %s", managerID, clientID)
 	c.JSON(http.StatusOK, gin.H{"message": "Manager успешно удален"})
+}
+
+// PendingUser представляет пользователя ожидающего подтверждения
+type PendingUser struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// GetPendingUsers возвращает список пользователей ожидающих подтверждения
+// GET /api/admin/users/pending
+// Только для super_admin
+func GetPendingUsers(c *gin.Context) {
+	// Проверка роли - только super_admin
+	adminRole, exists := c.Get("admin_role")
+	if !exists || adminRole != "super_admin" {
+		log.Printf("GetPendingUsers: доступ запрещен, роль: %v", adminRole)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
+		return
+	}
+
+	// Получаем всех пользователей со статусом pending или без роли
+	query := `
+		SELECT u.id, u.email, u.display_name, u.status, u.created_at
+		FROM users u
+		WHERE (u.status = 'pending' OR u.role_id IS NULL)
+		AND u.deleted_at IS NULL
+		ORDER BY u.created_at DESC
+	`
+
+	rows, err := database.DB.Query(query)
+	if err != nil {
+		log.Printf("GetPendingUsers: ошибка запроса: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения пользователей"})
+		return
+	}
+	defer rows.Close()
+
+	var users []PendingUser
+	for rows.Next() {
+		var user PendingUser
+		var createdAt time.Time
+		if err := rows.Scan(&user.ID, &user.Email, &user.DisplayName, &user.Status, &createdAt); err != nil {
+			log.Printf("GetPendingUsers: ошибка сканирования: %v", err)
+			continue
+		}
+		user.CreatedAt = createdAt.Format(time.RFC3339)
+		users = append(users, user)
+	}
+
+	log.Printf("GetPendingUsers: найдено %d ожидающих пользователей", len(users))
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
+// UpdateUserRoleRequest запрос для обновления роли пользователя
+type UpdateUserRoleRequest struct {
+	UserID uuid.UUID `json:"userId" binding:"required"`
+	Role   string    `json:"role" binding:"required"` // supervisor, manager, admin
+}
+
+// UpdateUserRole назначает роль пользователю
+// PUT /api/admin/users/role
+// Только для super_admin
+func UpdateUserRole(c *gin.Context) {
+	// Проверка роли - только super_admin
+	adminRole, exists := c.Get("admin_role")
+	if !exists || adminRole != "super_admin" {
+		log.Printf("UpdateUserRole: доступ запрещен, роль: %v", adminRole)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
+		return
+	}
+
+	var req UpdateUserRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("UpdateUserRole: ошибка валидации: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Валидация роли
+	validRoles := map[string]bool{
+		"supervisor": true,
+		"manager":    true,
+		"admin":      true,
+	}
+	if !validRoles[req.Role] {
+		log.Printf("UpdateUserRole: неверная роль: %s", req.Role)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверная роль"})
+		return
+	}
+
+	// Обновляем роль и активируем пользователя
+	query := `
+		UPDATE users
+		SET role_id = (SELECT id FROM roles WHERE name = $1),
+		    status = 'active',
+		    updated_at = NOW()
+		WHERE id = $2
+	`
+
+	result, err := database.DB.Exec(query, req.Role, req.UserID)
+	if err != nil {
+		log.Printf("UpdateUserRole: ошибка обновления: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления роли"})
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		log.Printf("UpdateUserRole: пользователь не найден: %s", req.UserID)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+
+	log.Printf("UpdateUserRole: роль %s назначена пользователю %s", req.Role, req.UserID)
+	c.JSON(http.StatusOK, gin.H{"message": "Роль успешно назначена"})
 }

@@ -426,6 +426,7 @@ func setupAPIRoutes(r *gin.Engine) {
 		})
 
 		// Session cookie authentication для Next.js admin panel
+		api.POST("/auth/register", middleware.StrictRateLimitMiddleware(), handlers.RegisterHandler)
 		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.LoginHandler)
 		api.GET("/auth/me", middleware.SessionMiddleware(), handlers.MeHandler)
 		api.POST("/auth/logout", handlers.LogoutHandler)
@@ -503,6 +504,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/admin/supervisors/:id/sources", handlers.GetSupervisorSources)
 			admin.POST("/admin/managers", handlers.AddManager)
 			admin.DELETE("/admin/managers/:id", handlers.RemoveManager)
+
+			// Управление пользователями (регистрация и подтверждение)
+			admin.GET("/admin/users/pending", handlers.GetPendingUsers)
+			admin.PUT("/admin/users/role", handlers.UpdateUserRole)
 
 			// LLM Usage Analytics (защищённые эндпоинты для админки)
 			admin.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
