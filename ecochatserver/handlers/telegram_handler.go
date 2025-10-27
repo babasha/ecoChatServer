@@ -107,6 +107,13 @@ func TelegramWebhook(c *gin.Context) {
 
 	log.Printf("TelegramWebhook: получено сообщение: %+v", in)
 
+	// Логируем widgetBusinessID для отладки
+	if in.WidgetBusinessID != nil {
+		log.Printf("TelegramWebhook: widgetBusinessID = '%s'", *in.WidgetBusinessID)
+	} else {
+		log.Printf("TelegramWebhook: widgetBusinessID = nil")
+	}
+
 	if in.UserID == "" {
 		log.Printf("TelegramWebhook: отсутствует UserID")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "UserID обязателен"})
