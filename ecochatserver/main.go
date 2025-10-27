@@ -497,6 +497,13 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/admin/settings", handlers.GetAdminSettings)
 			admin.PUT("/admin/settings", handlers.UpdateAdminSettings)
 
+			// Управление командой (supervisors и managers)
+			admin.POST("/admin/supervisors/sources", handlers.AddSupervisorSourceAccess)
+			admin.DELETE("/admin/supervisors/sources", handlers.RemoveSupervisorSourceAccess)
+			admin.GET("/admin/supervisors/:id/sources", handlers.GetSupervisorSources)
+			admin.POST("/admin/managers", handlers.AddManager)
+			admin.DELETE("/admin/managers/:id", handlers.RemoveManager)
+
 			// LLM Usage Analytics (защищённые эндпоинты для админки)
 			admin.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
 			admin.GET("/llm-usage/summary", handlers.GetLLMUsageSummary)

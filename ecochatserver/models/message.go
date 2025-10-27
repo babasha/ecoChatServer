@@ -65,15 +65,16 @@ func (um *UniversalMessage) ToMessage() *Message {
 // IncomingMessage представляет собой входящее сообщение от API Telegram
 // Deprecated: используйте UniversalMessage
 type IncomingMessage struct {
-	UserID      string                 `json:"userId"`
-	UserName    string                 `json:"userName"`
-	UserEmail   string                 `json:"userEmail,omitempty"`
-	Content     string                 `json:"content"`
-	Source      string                 `json:"source"` // "telegram", "whatsapp", etc.
-	BotID       string                 `json:"botId"`
-	ClientID    string                 `json:"clientId"`
-	MessageType string                 `json:"messageType,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	UserID           string                 `json:"userId"`
+	UserName         string                 `json:"userName"`
+	UserEmail        string                 `json:"userEmail,omitempty"`
+	Content          string                 `json:"content"`
+	Source           string                 `json:"source"` // "telegram", "whatsapp", etc.
+	BotID            string                 `json:"botId"`
+	ClientID         string                 `json:"clientId"`
+	MessageType      string                 `json:"messageType,omitempty"`
+	WidgetBusinessID *string                `json:"widgetBusinessId,omitempty"` // ID бизнеса/виджета (для web_widget)
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // OutgoingMessage представляет собой исходящее сообщение в WebSocket

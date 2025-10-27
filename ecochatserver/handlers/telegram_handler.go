@@ -126,6 +126,7 @@ func TelegramWebhook(c *gin.Context) {
 	chat, err := database.GetOrCreateChatMetadata(
 		in.UserID, in.UserName, in.UserEmail,
 		in.Source, in.UserID, in.BotID, in.ClientID,
+		in.WidgetBusinessID, // передаем widgetBusinessID из запроса
 	)
 	if err != nil {
 		log.Printf("TelegramWebhook: GetOrCreateChatMetadata error: %v", err)

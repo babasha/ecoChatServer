@@ -737,6 +737,7 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 		envelope.SenderID,
 		botID,
 		clientAPIKey,
+		nil, // widgetBusinessID - not applicable for Instagram
 	)
 	if err != nil {
 		return "", fmt.Errorf("GetOrCreateChatMetadata: %w", err)

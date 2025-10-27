@@ -88,8 +88,9 @@ func MarkSpecificMessagesAsRead(messageIDs []uuid.UUID) (int, error) {
 
 func GetOrCreateChat(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+	widgetBusinessID *string,
 ) (*models.Chat, error) {
-	chat, err := queries.GetOrCreateChat(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	chat, err := queries.GetOrCreateChat(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey, widgetBusinessID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +106,9 @@ func GetOrCreateChat(
 
 func GetOrCreateChatMetadata(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+	widgetBusinessID *string,
 ) (*models.Chat, error) {
-	chat, err := queries.GetOrCreateChatMetadata(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	chat, err := queries.GetOrCreateChatMetadata(DB, userID, userName, userEmail, source, sourceID, botID, clientAPIKey, widgetBusinessID)
 	if err != nil {
 		return nil, err
 	}

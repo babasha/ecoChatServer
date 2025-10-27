@@ -17,6 +17,7 @@ type Chat struct {
 	Source               string                 `json:"source"`                  // Источник (например, "telegram", "whatsapp")
 	BotID                string                 `json:"botId"`                   // ID бота, через который пришло сообщение
 	ClientID             uuid.UUID              `json:"clientId"`                // ID клиента, которому принадлежит бот
+	WidgetBusinessID     *string                `json:"widgetBusinessId,omitempty"` // ID бизнеса/виджета (например, "enddel")
 	AssignedTo           *uuid.UUID             `json:"assignedTo,omitempty"`    // ID сотрудника, которому назначен чат
 	AutoResponderEnabled bool                   `json:"autoResponderEnabled"`    // Включен ли автоответчик для этого чата
 	ResolvedAt           *time.Time             `json:"resolvedAt,omitempty"`    // Время решения вопроса
@@ -37,6 +38,7 @@ type ChatResponse struct {
 	Status               string                 `json:"status"`
 	Source               string                 `json:"source"`                  // Источник чата (например, "widget", "telegram", "instagram")
 	ClientID             uuid.UUID              `json:"clientId"`
+	WidgetBusinessID     *string                `json:"widgetBusinessId,omitempty"` // ID бизнеса/виджета
 	UnreadCount          int                    `json:"unreadCount"`
 	AutoResponderEnabled bool                   `json:"autoResponderEnabled"`
 	Metadata             map[string]interface{} `json:"metadata,omitempty"`

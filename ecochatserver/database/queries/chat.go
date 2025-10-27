@@ -314,14 +314,15 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 
 // chatCoreInfo содержит базовую информацию о чате после создания/поиска
 type chatCoreInfo struct {
-	ChatID    uuid.UUID
-	User      *models.User
-	ClientID  uuid.UUID
-	Source    string
-	BotID     string
-	IsNewChat bool      // true если чат только что создан
-	CreatedAt time.Time // только для новых чатов
-	UpdatedAt time.Time // только для новых чатов
+	ChatID           uuid.UUID
+	User             *models.User
+	ClientID         uuid.UUID
+	Source           string
+	BotID            string
+	WidgetBusinessID *string   // ID бизнеса/виджета (опционально)
+	IsNewChat        bool      // true если чат только что создан
+	CreatedAt        time.Time // только для новых чатов
+	UpdatedAt        time.Time // только для новых чатов
 }
 
 // getOrCreateChatCore - внутренняя функция для создания/поиска чата
@@ -329,9 +330,10 @@ type chatCoreInfo struct {
 func getOrCreateChatCore(
 	db *sql.DB,
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+	widgetBusinessID *string,
 ) (*chatCoreInfo, error) {
-	log.Printf("getOrCreateChatCore: начало, userID=%s, source=%s, botID=%s",
-		userID, source, botID)
+	log.Printf("getOrCreateChatCore: начало, userID=%s, source=%s, botID=%s, widgetBusinessID=%v",
+		userID, source, botID, widgetBusinessID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
@@ -378,11 +380,11 @@ func getOrCreateChatCore(
 		log.Printf("getOrCreateChatCore: создаем новый чат ID=%s", chatID)
 
 		insertQuery := `
-            INSERT INTO chats(id,user_id,created_at,updated_at,status,source,bot_id,client_id)
-            VALUES($1,$2,$3,$4,'active',$5,$6,$7)`
+            INSERT INTO chats(id,user_id,created_at,updated_at,status,source,bot_id,client_id,widget_business_id)
+            VALUES($1,$2,$3,$4,'active',$5,$6,$7,$8)`
 
 		if _, err := tx.ExecContext(ctx, insertQuery,
-			chatID, user.ID, createdAt, updatedAt, source, botID, clientUUID,
+			chatID, user.ID, createdAt, updatedAt, source, botID, clientUUID, widgetBusinessID,
 		); err != nil {
 			return nil, fmt.Errorf("ошибка создания чата: %w", err)
 		}
@@ -402,14 +404,15 @@ func getOrCreateChatCore(
 		chatID, clientUUID, user.ID, isNewChat)
 
 	return &chatCoreInfo{
-		ChatID:    chatID,
-		User:      user,
-		ClientID:  clientUUID,
-		Source:    source,
-		BotID:     botID,
-		IsNewChat: isNewChat,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
+		ChatID:           chatID,
+		User:             user,
+		ClientID:         clientUUID,
+		Source:           source,
+		BotID:            botID,
+		WidgetBusinessID: widgetBusinessID,
+		IsNewChat:        isNewChat,
+		CreatedAt:        createdAt,
+		UpdatedAt:        updatedAt,
 	}, nil
 }
 
@@ -417,12 +420,13 @@ func getOrCreateChatCore(
 func GetOrCreateChat(
 	db *sql.DB,
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+	widgetBusinessID *string,
 ) (*models.Chat, error) {
 	log.Printf("GetOrCreateChat: начало, userID=%s, userName='%s', userEmail='%s', source=%s, sourceID=%s, botID=%s, clientAPIKey=%s",
 		userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
 
 	// Получаем базовую информацию о чате
-	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey, widgetBusinessID)
 	if err != nil {
 		log.Printf("GetOrCreateChat: ошибка getOrCreateChatCore: %v", err)
 		return nil, err
@@ -448,12 +452,13 @@ func GetOrCreateChat(
 func GetOrCreateChatMetadata(
 	db *sql.DB,
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
+	widgetBusinessID *string,
 ) (*models.Chat, error) {
 	log.Printf("GetOrCreateChatMetadata: начало, userID=%s, source=%s, botID=%s",
 		userID, source, botID)
 
 	// Получаем базовую информацию о чате
-	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey, widgetBusinessID)
 	if err != nil {
 		log.Printf("GetOrCreateChatMetadata: ошибка getOrCreateChatCore: %v", err)
 		return nil, err
@@ -510,6 +515,7 @@ func GetOrCreateChatMetadata(
 		Source:               info.Source,
 		BotID:                info.BotID,
 		ClientID:             info.ClientID,
+		WidgetBusinessID:     info.WidgetBusinessID,
 		AssignedTo:           assignedTo,
 		AutoResponderEnabled: autoResponderEnabled,
 		IsArchived:           isArchived,
