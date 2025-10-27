@@ -55,38 +55,53 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 
 	log.Printf("TranslateUserMessage: нужно перевести на %d уникальных языков: %v", len(uniqueLangs), uniqueLangs)
 
-	// Определяем язык оригинала
-	detectedLang, err := ts.provider.DetectLanguage(ctx, content)
-	if err != nil {
-		log.Printf("⚠️ TranslateUserMessage: ошибка определения языка: %v", err)
-		detectedLang = "unknown"
-	}
-
-	log.Printf("TranslateUserMessage: определен язык: %s", detectedLang)
-
-	// Создаем карту переводов
+	// Определяем язык оригинала с помощью первого перевода
+	var detectedLang string
 	translations := make(map[string]interface{})
+	firstLang := true
 
-	// Переводим на каждый уникальный язык
 	for targetLang := range uniqueLangs {
-		// Если язык совпадает с оригиналом - перевод не нужен
+		if firstLang {
+			// Первый запрос: определяем язык И переводим
+			log.Printf("TranslateUserMessage: определение языка И перевод на %s", targetLang)
+			result, err := ts.provider.DetectAndTranslate(ctx, content, targetLang)
+			if err != nil {
+				log.Printf("⚠️ TranslateUserMessage: ошибка DetectAndTranslate: %v", err)
+				detectedLang = "unknown"
+				translations[targetLang] = content
+				firstLang = false
+				continue
+			}
+
+			detectedLang = result.DetectedLang
+			log.Printf("TranslateUserMessage: определен язык: %s", detectedLang)
+
+			// Если язык совпадает - используем оригинал
+			if detectedLang == targetLang {
+				translations[targetLang] = content
+			} else {
+				translations[targetLang] = result.Translation
+			}
+			firstLang = false
+			continue
+		}
+
+		// Остальные языки: переводим напрямую
 		if detectedLang == targetLang {
 			log.Printf("TranslateUserMessage: язык %s совпадает с оригиналом, пропускаем", targetLang)
 			translations[targetLang] = content
 			continue
 		}
 
-		// Переводим
 		log.Printf("TranslateUserMessage: перевод на %s", targetLang)
-		result, err := ts.provider.Translate(ctx, content, detectedLang, targetLang)
+		translatedText, err := ts.provider.TranslateText(ctx, content, detectedLang, targetLang)
 		if err != nil {
 			log.Printf("⚠️ TranslateUserMessage: ошибка перевода на %s: %v", targetLang, err)
-			// В случае ошибки используем оригинал
 			translations[targetLang] = content
 			continue
 		}
 
-		translations[targetLang] = result.Translation
+		translations[targetLang] = translatedText
 		log.Printf("TranslateUserMessage: перевод на %s успешен", targetLang)
 	}
 
