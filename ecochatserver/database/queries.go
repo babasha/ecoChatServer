@@ -141,6 +141,19 @@ func GetLastUserMessage(chatID uuid.UUID) (*models.Message, error) {
 	return queries.GetLastUserMessage(DB, chatID)
 }
 
+// Функции для системы контроля доступа админов
+func GetAdminLanguagesForChat(chatID uuid.UUID) ([]queries.AdminLanguageInfo, error) {
+	return queries.GetAdminLanguagesForChat(DB, chatID)
+}
+
+func CheckAdminAccessToChat(adminID uuid.UUID, adminRole string, chatID uuid.UUID) (bool, error) {
+	return queries.CheckAdminAccessToChat(DB, adminID, adminRole, chatID)
+}
+
+func AddSupervisorSourceAccess(supervisorID, clientID uuid.UUID, sourceType string, sourceID *string) error {
+	return queries.AddSupervisorSourceAccess(DB, supervisorID, clientID, sourceType, sourceID)
+}
+
 // Функции для работы с переводами
 func SaveTranslation(messageID uuid.UUID, language string, translation string) error {
 	return queries.SaveTranslation(DB, messageID, language, translation)

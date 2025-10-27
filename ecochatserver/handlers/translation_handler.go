@@ -35,69 +35,70 @@ type TranslationResult struct {
 	WasTranslated    bool                   // Был ли текст переведен
 }
 
-// TranslateUserMessage переводит сообщение от пользователя на язык админа
+// TranslateUserMessage переводит сообщение от пользователя на языки всех админов с доступом
 func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content string, chatID uuid.UUID) (*TranslationResult, error) {
-	// Получаем настройки админа (предпочитаемый язык)
-	// TODO: В будущем нужно определить конкретного админа, работающего с чатом
-	// Пока используем реального админа из БД
-	defaultAdminID := uuid.MustParse("05605c9d-c50f-4515-8949-9b61ae73b3aa")
-	adminSettings, err := queries.GetAdminSettings(ts.db, defaultAdminID)
+	// Получаем уникальные языки всех админов с доступом к чату
+	adminLanguages, err := queries.GetAdminLanguagesForChat(ts.db, chatID)
 	if err != nil {
-		log.Printf("TranslateUserMessage: ошибка получения настроек админа: %v", err)
-		// Используем русский по умолчанию
-		adminSettings = &queries.AdminSettings{
-			PreferredLanguage: "ru",
+		log.Printf("TranslateUserMessage: ошибка получения языков админов: %v", err)
+		// Fallback: используем один язык по умолчанию
+		adminLanguages = []queries.AdminLanguageInfo{
+			{PreferredLanguage: "es"},
 		}
 	}
 
-	targetLang := adminSettings.PreferredLanguage
-	log.Printf("TranslateUserMessage: целевой язык админа: %s", targetLang)
+	// Получаем уникальные языки (один админ может быть под несколькими ролями)
+	uniqueLangs := make(map[string]bool)
+	for _, al := range adminLanguages {
+		uniqueLangs[al.PreferredLanguage] = true
+	}
 
-	// 🚀 ОПТИМИЗАЦИЯ: Используем DetectAndTranslate - один запрос вместо двух!
-	log.Printf("TranslateUserMessage: определение языка И перевод за один запрос")
-	result, err := ts.provider.DetectAndTranslate(ctx, content, targetLang)
+	log.Printf("TranslateUserMessage: нужно перевести на %d уникальных языков: %v", len(uniqueLangs), uniqueLangs)
+
+	// Определяем язык оригинала
+	detectedLang, err := ts.provider.DetectLanguage(ctx, content)
 	if err != nil {
-		log.Printf("⚠️ TranslateUserMessage: КРИТИЧЕСКАЯ ОШИБКА DetectAndTranslate: %v", err)
-		log.Printf("⚠️ Язык клиента НЕ ОПРЕДЕЛЁН - последующие ответы админа не будут переводиться!")
-
-		// ВАЖНО: Возвращаем метаданные с ошибкой
-		// Это критично для работы системы - если язык unknown, админ не сможет отправлять переводы
-		return &TranslationResult{
-			Metadata: map[string]interface{}{
-				"detectedLanguage": "unknown",
-			},
-			DetectedLanguage: "unknown",
-			WasTranslated:    false,
-		}, nil
+		log.Printf("⚠️ TranslateUserMessage: ошибка определения языка: %v", err)
+		detectedLang = "unknown"
 	}
 
-	log.Printf("TranslateUserMessage: определен язык: %s", result.DetectedLang)
+	log.Printf("TranslateUserMessage: определен язык: %s", detectedLang)
 
-	// Если языки совпадают (перевод не требуется)
-	if result.DetectedLang == targetLang {
-		log.Printf("TranslateUserMessage: языки совпадают, перевод не требуется")
-		return &TranslationResult{
-			Metadata: map[string]interface{}{
-				"detectedLanguage": result.DetectedLang,
-			},
-			DetectedLanguage: result.DetectedLang,
-			WasTranslated:    false,
-		}, nil
+	// Создаем карту переводов
+	translations := make(map[string]interface{})
+
+	// Переводим на каждый уникальный язык
+	for targetLang := range uniqueLangs {
+		// Если язык совпадает с оригиналом - перевод не нужен
+		if detectedLang == targetLang {
+			log.Printf("TranslateUserMessage: язык %s совпадает с оригиналом, пропускаем", targetLang)
+			translations[targetLang] = content
+			continue
+		}
+
+		// Переводим
+		log.Printf("TranslateUserMessage: перевод на %s", targetLang)
+		result, err := ts.provider.Translate(ctx, content, detectedLang, targetLang)
+		if err != nil {
+			log.Printf("⚠️ TranslateUserMessage: ошибка перевода на %s: %v", targetLang, err)
+			// В случае ошибки используем оригинал
+			translations[targetLang] = content
+			continue
+		}
+
+		translations[targetLang] = result.Translation
+		log.Printf("TranslateUserMessage: перевод на %s успешен", targetLang)
 	}
 
-	log.Printf("TranslateUserMessage: перевод выполнен успешно")
+	log.Printf("TranslateUserMessage: создано %d переводов", len(translations))
 
-	// ОПТИМИЗАЦИЯ: Минимальные метаданные - только detectedLanguage + translations
-	// Убраны избыточные поля: originalText, translatedText, targetLanguage, isTranslated
 	return &TranslationResult{
 		Metadata: map[string]interface{}{
-			"detectedLanguage": result.DetectedLang,
-			"translations": map[string]interface{}{
-				targetLang: result.Translation,
-			},
+			"detectedLanguage": detectedLang,
+			"translations":     translations,
 		},
-		DetectedLanguage: result.DetectedLang,
-		WasTranslated:    true,
+		DetectedLanguage: detectedLang,
+		WasTranslated:    len(translations) > 0,
 	}, nil
 }
 
