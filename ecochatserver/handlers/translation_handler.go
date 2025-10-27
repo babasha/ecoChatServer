@@ -39,8 +39,8 @@ type TranslationResult struct {
 func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content string, chatID uuid.UUID) (*TranslationResult, error) {
 	// Получаем настройки админа (предпочитаемый язык)
 	// TODO: В будущем нужно определить конкретного админа, работающего с чатом
-	// Пока используем дефолтного админа
-	defaultAdminID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	// Пока используем реального админа из БД
+	defaultAdminID := uuid.MustParse("05605c9d-c50f-4515-8949-9b61ae73b3aa")
 	adminSettings, err := queries.GetAdminSettings(ts.db, defaultAdminID)
 	if err != nil {
 		log.Printf("TranslateUserMessage: ошибка получения настроек админа: %v", err)
