@@ -359,3 +359,49 @@ func UpdateUserRole(c *gin.Context) {
 	log.Printf("UpdateUserRole: роль %s назначена пользователю %s", req.Role, req.UserID)
 	c.JSON(http.StatusOK, gin.H{"message": "Роль успешно назначена"})
 }
+
+// DeleteUser удаляет пользователя (soft delete)
+// DELETE /api/admin/users/:id
+// Только для super_admin
+func DeleteUser(c *gin.Context) {
+	// Проверка роли - только super_admin
+	adminRole, exists := c.Get("admin_role")
+	if !exists || adminRole != "super_admin" {
+		log.Printf("DeleteUser: доступ запрещен, роль: %v", adminRole)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
+		return
+	}
+
+	userIDParam := c.Param("id")
+	userID, err := uuid.Parse(userIDParam)
+	if err != nil {
+		log.Printf("DeleteUser: неверный ID пользователя: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID пользователя"})
+		return
+	}
+
+	// Soft delete - устанавливаем deleted_at
+	query := `
+		UPDATE users
+		SET deleted_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+
+	result, err := database.DB.Exec(query, userID)
+	if err != nil {
+		log.Printf("DeleteUser: ошибка удаления: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления пользователя"})
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		log.Printf("DeleteUser: пользователь не найден или уже удален: %s", userID)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+
+	log.Printf("DeleteUser: пользователь %s успешно удален", userID)
+	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно удален"})
+}

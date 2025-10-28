@@ -508,6 +508,7 @@ func setupAPIRoutes(r *gin.Engine) {
 			// Управление пользователями (регистрация и подтверждение)
 			admin.GET("/admin/users/pending", handlers.GetPendingUsers)
 			admin.PUT("/admin/users/role", handlers.UpdateUserRole)
+			admin.DELETE("/admin/users/:id", handlers.DeleteUser)
 
 			// LLM Usage Analytics (защищённые эндпоинты для админки)
 			admin.GET("/llm-usage/stats", handlers.GetLLMUsageStats)
