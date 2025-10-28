@@ -158,6 +158,69 @@ func GetSupervisorSources(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sources": response})
 }
 
+// SupervisorInfo представляет информацию о supervisor
+type SupervisorInfo struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// GetAllSupervisors возвращает список всех supervisors
+// GET /api/admin/supervisors
+// Для super_admin и supervisor
+func GetAllSupervisors(c *gin.Context) {
+	// Проверка прав: super_admin или supervisor
+	adminRole, _ := c.Get("admin_role")
+	if adminRole != "super_admin" && adminRole != "supervisor" {
+		log.Printf("GetAllSupervisors: доступ запрещен, роль: %v", adminRole)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
+		return
+	}
+
+	// Получаем всех пользователей с ролью supervisor
+	query := `
+		SELECT u.id, u.email, u.display_name, u.status, u.created_at
+		FROM users u
+		JOIN roles r ON r.id = u.role_id
+		WHERE r.name = 'supervisor' AND u.deleted_at IS NULL
+		ORDER BY u.created_at DESC
+	`
+
+	rows, err := database.DB.Query(query)
+	if err != nil {
+		log.Printf("GetAllSupervisors: ошибка запроса: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения списка supervisors"})
+		return
+	}
+	defer rows.Close()
+
+	var supervisors []SupervisorInfo
+	for rows.Next() {
+		var supervisor SupervisorInfo
+		var email, displayName *string
+		var createdAt time.Time
+
+		if err := rows.Scan(&supervisor.ID, &email, &displayName, &supervisor.Status, &createdAt); err != nil {
+			log.Printf("GetAllSupervisors: ошибка сканирования: %v", err)
+			continue
+		}
+
+		if email != nil {
+			supervisor.Email = *email
+		}
+		if displayName != nil {
+			supervisor.DisplayName = *displayName
+		}
+		supervisor.CreatedAt = createdAt.Format(time.RFC3339)
+		supervisors = append(supervisors, supervisor)
+	}
+
+	log.Printf("GetAllSupervisors: найдено %d supervisors", len(supervisors))
+	c.JSON(http.StatusOK, gin.H{"supervisors": supervisors})
+}
+
 // AddManager добавляет manager под supervisor
 // POST /api/admin/managers
 // Для super_admin и supervisor

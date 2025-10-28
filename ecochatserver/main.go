@@ -499,6 +499,7 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.PUT("/admin/settings", handlers.UpdateAdminSettings)
 
 			// Управление командой (supervisors и managers)
+			admin.GET("/admin/supervisors", handlers.GetAllSupervisors)
 			admin.POST("/admin/supervisors/sources", handlers.AddSupervisorSourceAccess)
 			admin.DELETE("/admin/supervisors/sources", handlers.RemoveSupervisorSourceAccess)
 			admin.GET("/admin/supervisors/:id/sources", handlers.GetSupervisorSources)
