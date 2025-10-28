@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"database/sql"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,7 +29,7 @@ func RegisterHandler(c *gin.Context) {
 		return
 	}
 
-	db := c.MustGet("db").(*sql.DB)
+	db := database.DB
 
 	// Проверяем существует ли пользователь с таким email
 	existingAdmin, err := queries.GetAdmin(db, req.Email)
