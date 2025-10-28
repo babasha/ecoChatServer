@@ -11,20 +11,22 @@ import (
 	"github.com/google/uuid"
 )
 
-// AddSupervisorSourceAccessRequest запрос для добавления supervisor доступа к источнику
-type AddSupervisorSourceAccessRequest struct {
+// AddSupervisorAccessRequest запрос для добавления supervisor доступа к бизнесу (всем источникам)
+type AddSupervisorAccessRequest struct {
 	SupervisorID uuid.UUID `json:"supervisorId" binding:"required"`
-	ClientID     uuid.UUID `json:"clientId" binding:"required"`
-	SourceType   string    `json:"sourceType" binding:"required"` // web_widget, instagram, telegram
-	SourceID     *string   `json:"sourceId"`                      // optional, null = все источники этого типа
+	ClientID     uuid.UUID `json:"clientId" binding:"required"` // business_id
 }
 
-// RemoveSupervisorSourceAccessRequest запрос для удаления supervisor доступа
-type RemoveSupervisorSourceAccessRequest struct {
+// RemoveSupervisorAccessRequest запрос для удаления supervisor доступа к бизнесу
+type RemoveSupervisorAccessRequest struct {
 	SupervisorID uuid.UUID `json:"supervisorId" binding:"required"`
 	ClientID     uuid.UUID `json:"clientId" binding:"required"`
-	SourceType   string    `json:"sourceType" binding:"required"`
-	SourceID     *string   `json:"sourceId"`
+}
+
+// ClientInfo информация о клиенте/компании
+type ClientInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // AddManagerRequest запрос для добавления manager под supervisor
@@ -41,88 +43,84 @@ type SupervisorSourceResponse struct {
 	SourceID   *string   `json:"sourceId,omitempty"`
 }
 
-// AddSupervisorSourceAccess добавляет supervisor доступ к источнику
-// POST /api/admin/supervisors/sources
+// AddSupervisorAccess добавляет supervisor доступ ко ВСЕМ источникам бизнеса
+// POST /api/admin/supervisors/access
 // Только для super_admin
-func AddSupervisorSourceAccess(c *gin.Context) {
+func AddSupervisorAccess(c *gin.Context) {
 	// Проверка роли - только super_admin
 	adminRole, exists := c.Get("admin_role")
 	if !exists || adminRole != "super_admin" {
-		log.Printf("AddSupervisorSourceAccess: доступ запрещен, роль: %v", adminRole)
+		log.Printf("AddSupervisorAccess: доступ запрещен, роль: %v", adminRole)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
 		return
 	}
 
-	var req AddSupervisorSourceAccessRequest
+	var req AddSupervisorAccessRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("AddSupervisorSourceAccess: ошибка валидации: %v", err)
+		log.Printf("AddSupervisorAccess: ошибка валидации: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Валидация sourceType
-	validSources := map[string]bool{
-		"web_widget": true,
-		"instagram":  true,
-		"telegram":   true,
-		"whatsapp":   true,
-	}
-	if !validSources[req.SourceType] {
-		log.Printf("AddSupervisorSourceAccess: неверный sourceType: %s", req.SourceType)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный тип источника"})
-		return
+	// Добавляем доступ ко всем типам источников для данного бизнеса
+	// Мы добавляем записи для всех типов источников с NULL в source_id
+	sourceTypes := []string{"web_widget", "instagram", "telegram", "whatsapp"}
+
+	for _, sourceType := range sourceTypes {
+		err := database.AddSupervisorSourceAccess(req.SupervisorID, req.ClientID, sourceType, nil)
+		if err != nil {
+			log.Printf("AddSupervisorAccess: ошибка добавления доступа %s: %v", sourceType, err)
+			// Продолжаем добавление остальных, не прерываем
+		}
 	}
 
-	err := database.AddSupervisorSourceAccess(req.SupervisorID, req.ClientID, req.SourceType, req.SourceID)
-	if err != nil {
-		log.Printf("AddSupervisorSourceAccess: ошибка добавления доступа: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка добавления доступа"})
-		return
-	}
-
-	log.Printf("AddSupervisorSourceAccess: успешно добавлен доступ для supervisor %s к %s источнику клиента %s",
-		req.SupervisorID, req.SourceType, req.ClientID)
+	log.Printf("AddSupervisorAccess: успешно добавлен доступ для supervisor %s к бизнесу %s",
+		req.SupervisorID, req.ClientID)
 	c.JSON(http.StatusOK, gin.H{"message": "Доступ успешно добавлен"})
 }
 
-// RemoveSupervisorSourceAccess удаляет доступ supervisor к источнику
-// DELETE /api/admin/supervisors/sources
+// RemoveSupervisorAccess удаляет доступ supervisor ко ВСЕМ источникам бизнеса
+// DELETE /api/admin/supervisors/access
 // Только для super_admin
-func RemoveSupervisorSourceAccess(c *gin.Context) {
+func RemoveSupervisorAccess(c *gin.Context) {
 	// Проверка роли - только super_admin
 	adminRole, exists := c.Get("admin_role")
 	if !exists || adminRole != "super_admin" {
-		log.Printf("RemoveSupervisorSourceAccess: доступ запрещен, роль: %v", adminRole)
+		log.Printf("RemoveSupervisorAccess: доступ запрещен, роль: %v", adminRole)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
 		return
 	}
 
-	var req RemoveSupervisorSourceAccessRequest
+	var req RemoveSupervisorAccessRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("RemoveSupervisorSourceAccess: ошибка валидации: %v", err)
+		log.Printf("RemoveSupervisorAccess: ошибка валидации: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	err := queries.RemoveSupervisorSourceAccess(database.DB, req.SupervisorID, req.ClientID, req.SourceType, req.SourceID)
-	if err != nil {
-		log.Printf("RemoveSupervisorSourceAccess: ошибка удаления доступа: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления доступа"})
-		return
+	// Удаляем доступ ко всем типам источников для данного бизнеса
+	sourceTypes := []string{"web_widget", "instagram", "telegram", "whatsapp"}
+
+	for _, sourceType := range sourceTypes {
+		err := queries.RemoveSupervisorSourceAccess(database.DB, req.SupervisorID, req.ClientID, sourceType, nil)
+		if err != nil {
+			log.Printf("RemoveSupervisorAccess: ошибка удаления доступа %s: %v", sourceType, err)
+			// Продолжаем удаление остальных
+		}
 	}
 
-	log.Printf("RemoveSupervisorSourceAccess: успешно удален доступ для supervisor %s", req.SupervisorID)
+	log.Printf("RemoveSupervisorAccess: успешно удален доступ для supervisor %s к бизнесу %s", req.SupervisorID, req.ClientID)
 	c.JSON(http.StatusOK, gin.H{"message": "Доступ успешно удален"})
 }
 
-// GetSupervisorSources возвращает список источников, к которым имеет доступ supervisor
-// GET /api/admin/supervisors/:id/sources
+// GetSupervisorBusinesses возвращает список бизнесов, к которым имеет доступ supervisor
+// GET /api/admin/supervisors/:id/businesses
 // Для super_admin и самого supervisor
-func GetSupervisorSources(c *gin.Context) {
+func GetSupervisorBusinesses(c *gin.Context) {
 	supervisorIDParam := c.Param("id")
 	supervisorID, err := uuid.Parse(supervisorIDParam)
 	if err != nil {
-		log.Printf("GetSupervisorSources: неверный ID supervisor: %v", err)
+		log.Printf("GetSupervisorBusinesses: неверный ID supervisor: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
 		return
 	}
@@ -132,30 +130,46 @@ func GetSupervisorSources(c *gin.Context) {
 	adminRole, _ := c.Get("admin_role")
 
 	if adminRole != "super_admin" && adminID != supervisorID.String() {
-		log.Printf("GetSupervisorSources: доступ запрещен")
+		log.Printf("GetSupervisorBusinesses: доступ запрещен")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
 		return
 	}
 
-	sources, err := queries.GetSupervisorSources(database.DB, supervisorID)
+	// Получаем уникальные бизнесы для supervisor
+	query := `
+		SELECT DISTINCT ssa.client_id, c.business_name
+		FROM supervisor_source_access ssa
+		LEFT JOIN chats c ON c.business_id::text = ssa.client_id::text
+		WHERE ssa.supervisor_id = $1
+		ORDER BY c.business_name
+	`
+
+	rows, err := database.DB.Query(query, supervisorID)
 	if err != nil {
-		log.Printf("GetSupervisorSources: ошибка получения источников: %v", err)
+		log.Printf("GetSupervisorBusinesses: ошибка запроса: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения данных"})
 		return
 	}
+	defer rows.Close()
 
-	// Преобразуем в response формат
-	response := make([]SupervisorSourceResponse, len(sources))
-	for i, s := range sources {
-		response[i] = SupervisorSourceResponse{
-			ClientID:   s.ClientID,
-			SourceType: s.SourceType,
-			SourceID:   s.SourceID,
+	var businesses []ClientInfo
+	for rows.Next() {
+		var business ClientInfo
+		var businessName *string
+		if err := rows.Scan(&business.ID, &businessName); err != nil {
+			log.Printf("GetSupervisorBusinesses: ошибка сканирования: %v", err)
+			continue
 		}
+		if businessName != nil {
+			business.Name = *businessName
+		} else {
+			business.Name = "Без имени"
+		}
+		businesses = append(businesses, business)
 	}
 
-	log.Printf("GetSupervisorSources: найдено %d источников для supervisor %s", len(sources), supervisorID)
-	c.JSON(http.StatusOK, gin.H{"sources": response})
+	log.Printf("GetSupervisorBusinesses: найдено %d бизнесов для supervisor %s", len(businesses), supervisorID)
+	c.JSON(http.StatusOK, gin.H{"businesses": businesses})
 }
 
 // SupervisorInfo представляет информацию о supervisor
@@ -467,4 +481,43 @@ func DeleteUser(c *gin.Context) {
 
 	log.Printf("DeleteUser: пользователь %s успешно удален", userID)
 	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно удален"})
+}
+
+// GetAllClients возвращает список всех клиентов/компаний
+// GET /api/admin/clients
+func GetAllClients(c *gin.Context) {
+	// Доступ для super_admin и supervisor
+	adminRole, _ := c.Get("admin_role")
+	if adminRole != "super_admin" && adminRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещен"})
+		return
+	}
+
+	query := `
+		SELECT DISTINCT business_id, business_name
+		FROM chats
+		WHERE business_id IS NOT NULL AND business_name IS NOT NULL
+		ORDER BY business_name
+	`
+
+	rows, err := database.DB.Query(query)
+	if err != nil {
+		log.Printf("GetAllClients: ошибка запроса: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения списка клиентов"})
+		return
+	}
+	defer rows.Close()
+
+	var clients []ClientInfo
+	for rows.Next() {
+		var client ClientInfo
+		if err := rows.Scan(&client.ID, &client.Name); err != nil {
+			log.Printf("GetAllClients: ошибка сканирования: %v", err)
+			continue
+		}
+		clients = append(clients, client)
+	}
+
+	log.Printf("GetAllClients: найдено %d клиентов", len(clients))
+	c.JSON(http.StatusOK, gin.H{"clients": clients})
 }
