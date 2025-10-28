@@ -62,8 +62,10 @@ func SessionMiddleware() gin.HandlerFunc {
 
 		// Устанавливаем данные пользователя в контексте
 		c.Set("adminID", claims.AdminID)
+		c.Set("admin_id", claims.AdminID) // Для совместимости
 		c.Set("clientID", claims.ClientID)
 		c.Set("role", claims.Role)
+		c.Set("admin_role", claims.Role) // Для совместимости с admin_team_handler
 
 		c.Next()
 	}
