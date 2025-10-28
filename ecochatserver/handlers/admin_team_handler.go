@@ -244,11 +244,11 @@ func RemoveManager(c *gin.Context) {
 
 // PendingUser представляет пользователя ожидающего подтверждения
 type PendingUser struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	Status      string `json:"status"`
-	CreatedAt   string `json:"createdAt"`
+	ID          string  `json:"id"`
+	Email       *string `json:"email"`
+	DisplayName *string `json:"displayName"`
+	Status      string  `json:"status"`
+	CreatedAt   string  `json:"createdAt"`
 }
 
 // GetPendingUsers возвращает список пользователей ожидающих подтверждения
