@@ -26,16 +26,14 @@ import (
 func main() {
 	// Логи по файлу и строке
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	logInfo("EcoChat server starting with anti-duplication optimizations…")
+	logInfo("EcoChat server starting...")
 
 	// Создаем context для graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Загружаем .env (только для dev)
-	if err := godotenv.Load(); err != nil {
-		logInfo("Примечание: файл .env не найден или не загружен, используем переменные окружения")
-	}
+	_ = godotenv.Load() // Игнорируем ошибку - используем переменные окружения
 
 	// ─── PostgreSQL ──────────────────────────────────────────────────────────
 	if err := database.Init(); err != nil {
@@ -46,14 +44,8 @@ func main() {
 	// ─── LLM Usage Logger ────────────────────────────────────────────────────
 	if err := llm.InitUsageLogger(); err != nil {
 		logWarning("WARNING: LLM usage logger initialization failed: " + err.Error())
-		logWarning("LLM usage logging will be disabled")
-	} else {
-		logInfo("✓ LLM usage logger initialized")
 	}
 	defer llm.CloseUsageLogger()
-
-	// Простое кэширование инициализировано
-	logInfo("Простое кэширование инициализировано")
 
 	// Периодически обновляем партиции
 	go func(ctx context.Context) {
@@ -63,12 +55,9 @@ func main() {
 			select {
 			case <-ticker.C:
 				if err := database.RefreshPartitions(); err != nil {
-					log.Printf("Ошибка обновления партиций: %v", err)
-				} else {
-					log.Println("Успешное обновление партиций")
+					logError("Ошибка обновления партиций: " + err.Error())
 				}
 			case <-ctx.Done():
-				log.Println("Остановка обновления партиций...")
 				return
 			}
 		}
@@ -85,11 +74,9 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				log.Println("Запуск автоархивации неактивных чатов...")
 				handlers.AutoArchiveInactiveChats()
 				handlers.DeleteExpiredArchives()
 			case <-ctx.Done():
-				log.Println("Остановка автоархивации...")
 				return
 			}
 		}
@@ -120,7 +107,6 @@ func main() {
 
 	// ─── Автоответчик (если используется) ───────────────────────────────────
 	handlers.InitAutoResponder()
-	logInfo("Автоответчик инициализирован")
 
 	// ─── Инициализация буферов логов ─────────────────────────────────────────
 	handlers.InitLogBuffers()
@@ -130,15 +116,11 @@ func main() {
 		handlers.AddServerLog(handlers.LogLevel(level), message, source)
 	})
 
-	logInfo("Буферы логов инициализированы")
-
 	// ─── Инициализация настроек сервера ───────────────────────────────────────
 	handlers.InitServerSettings()
-	logInfo("Настройки сервера инициализированы")
 
 	// ─── REST API & WebSocket ───────────────────────────────────────────────
 	setupAPIRoutes(r)
-	logInfo("API маршруты настроены")
 
 	// ─── HTTP-server ─────────────────────────────────────────────────────────
 	addr := ":" + getEnv("PORT", "8080")
@@ -197,7 +179,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Получен сигнал остановки, начинаем graceful shutdown...")
+	logInfo("Получен сигнал остановки, начинаем graceful shutdown...")
 
 	// Отменяем context для всех горутин
 	cancel()
@@ -207,16 +189,16 @@ func main() {
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Ошибка при остановке сервера: %v", err)
+		logError("Ошибка при остановке сервера: " + err.Error())
 	}
 
 	if httpsServer != nil {
 		if err := httpsServer.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Ошибка при остановке HTTPS сервера: %v", err)
+			logError("Ошибка при остановке HTTPS сервера: " + err.Error())
 		}
 	}
 
-	log.Println("✓ Сервер остановлен успешно")
+	logInfo("✓ Сервер остановлен успешно")
 }
 
 // SimpleDeduplicationMiddleware простой middleware для дедупликации HTTP запросов
@@ -277,19 +259,18 @@ func startStatsServer(ctx context.Context, hub *websocket.Hub) {
 
 	// Запускаем сервер в отдельной горутине
 	go func() {
-		log.Printf("Статистический сервер запускается на порту %s", statsPort)
+		logInfo("Статистический сервер запускается на порту " + statsPort)
 		if err := statsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Ошибка запуска статистического сервера: %v", err)
+			logError("Ошибка запуска статистического сервера: " + err.Error())
 		}
 	}()
 
 	// Ждем сигнала остановки
 	<-ctx.Done()
-	log.Println("Остановка статистического сервера...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := statsServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Ошибка остановки статистического сервера: %v", err)
+		logError("Ошибка остановки статистического сервера: " + err.Error())
 	}
 }
 
@@ -315,7 +296,7 @@ func setupCORS(r *gin.Engine) {
 			AllowCredentials: false, // Нельзя использовать credentials с AllowAllOrigins
 			MaxAge:           12 * time.Hour,
 		}
-		log.Println("ВНИМАНИЕ: Разрешены все источники CORS (ALLOW_ALL_ORIGINS=true)")
+		logWarning("ВНИМАНИЕ: Разрешены все источники CORS (ALLOW_ALL_ORIGINS=true)")
 	} else {
 		// Разрешаем только указанные домены
 		allow := []string{"http://localhost:3000"}
@@ -331,9 +312,6 @@ func setupCORS(r *gin.Engine) {
 				}
 			}
 		}
-
-		log.Printf("CORS настроен для доменов: %v", allow)
-		log.Printf("CORS также разрешает все Vercel preview deployments (*.vercel.app)")
 
 		conf = cors.Config{
 			AllowOriginFunc: func(origin string) bool {
@@ -544,7 +522,6 @@ func setupAPIRoutes(r *gin.Engine) {
 
 	// WebSocket точка подключения - основной механизм взаимодействия с сервером
 	r.GET("/ws", handlers.ServeWs)
-	log.Println("WebSocket эндпоинт настроен: /ws")
 
 	// Для обратной совместимости
 	r.GET("/api/ws", handlers.ServeWs)
