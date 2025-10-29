@@ -132,7 +132,9 @@ func ServeWs(c *gin.Context) {
 		c.Set("clientID", claims.ClientID)
 		c.Set("role", claims.Role)
 
-		// DEBUG: log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
+		// DEBUG: раскомментируйте для отладки
+		// log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
+		_ = clientID // используется в DEBUG логах
 	} else if clientType == "widget" {
 		// Для виджета парсим chatID только если он передан
 		if chatIDStr != "" {
