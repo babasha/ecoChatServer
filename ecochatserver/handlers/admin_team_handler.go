@@ -14,13 +14,13 @@ import (
 // AddSupervisorAccessRequest запрос для добавления supervisor доступа к бизнесу (всем источникам)
 type AddSupervisorAccessRequest struct {
 	SupervisorID uuid.UUID `json:"supervisorId" binding:"required"`
-	ClientID     uuid.UUID `json:"clientId" binding:"required"` // business_id
+	BusinessID   string    `json:"businessId" binding:"required"` // widget_business_id (например "enddel")
 }
 
 // RemoveSupervisorAccessRequest запрос для удаления supervisor доступа к бизнесу
 type RemoveSupervisorAccessRequest struct {
 	SupervisorID uuid.UUID `json:"supervisorId" binding:"required"`
-	ClientID     uuid.UUID `json:"clientId" binding:"required"`
+	BusinessID   string    `json:"businessId" binding:"required"` // widget_business_id
 }
 
 // ClientInfo информация о клиенте/компании
@@ -63,11 +63,13 @@ func AddSupervisorAccess(c *gin.Context) {
 	}
 
 	// Добавляем доступ ко всем типам источников для данного бизнеса
-	// Мы добавляем записи для всех типов источников с NULL в source_id
+	// Используем source_id для хранения business_id (например "enddel")
+	// client_id оставляем пустым (используем нулевой UUID)
+	dummyClientID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
 	sourceTypes := []string{"web_widget", "instagram", "telegram", "whatsapp"}
 
 	for _, sourceType := range sourceTypes {
-		err := database.AddSupervisorSourceAccess(req.SupervisorID, req.ClientID, sourceType, nil)
+		err := database.AddSupervisorSourceAccess(req.SupervisorID, dummyClientID, sourceType, &req.BusinessID)
 		if err != nil {
 			log.Printf("AddSupervisorAccess: ошибка добавления доступа %s: %v", sourceType, err)
 			// Продолжаем добавление остальных, не прерываем
@@ -75,7 +77,7 @@ func AddSupervisorAccess(c *gin.Context) {
 	}
 
 	log.Printf("AddSupervisorAccess: успешно добавлен доступ для supervisor %s к бизнесу %s",
-		req.SupervisorID, req.ClientID)
+		req.SupervisorID, req.BusinessID)
 	c.JSON(http.StatusOK, gin.H{"message": "Доступ успешно добавлен"})
 }
 
@@ -99,17 +101,18 @@ func RemoveSupervisorAccess(c *gin.Context) {
 	}
 
 	// Удаляем доступ ко всем типам источников для данного бизнеса
+	dummyClientID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
 	sourceTypes := []string{"web_widget", "instagram", "telegram", "whatsapp"}
 
 	for _, sourceType := range sourceTypes {
-		err := queries.RemoveSupervisorSourceAccess(database.DB, req.SupervisorID, req.ClientID, sourceType, nil)
+		err := queries.RemoveSupervisorSourceAccess(database.DB, req.SupervisorID, dummyClientID, sourceType, &req.BusinessID)
 		if err != nil {
 			log.Printf("RemoveSupervisorAccess: ошибка удаления доступа %s: %v", sourceType, err)
 			// Продолжаем удаление остальных
 		}
 	}
 
-	log.Printf("RemoveSupervisorAccess: успешно удален доступ для supervisor %s к бизнесу %s", req.SupervisorID, req.ClientID)
+	log.Printf("RemoveSupervisorAccess: успешно удален доступ для supervisor %s к бизнесу %s", req.SupervisorID, req.BusinessID)
 	c.JSON(http.StatusOK, gin.H{"message": "Доступ успешно удален"})
 }
 
@@ -137,11 +140,10 @@ func GetSupervisorBusinesses(c *gin.Context) {
 
 	// Получаем уникальные бизнесы для supervisor
 	query := `
-		SELECT DISTINCT ssa.client_id, c.business_name
-		FROM supervisor_source_access ssa
-		LEFT JOIN chats c ON c.business_id::text = ssa.client_id::text
-		WHERE ssa.supervisor_id = $1
-		ORDER BY c.business_name
+		SELECT DISTINCT asa.source_id, asa.source_id as business_name
+		FROM admin_source_access asa
+		WHERE asa.admin_id = $1 AND asa.source_type = 'web_widget' AND asa.source_id IS NOT NULL
+		ORDER BY asa.source_id
 	`
 
 	rows, err := database.DB.Query(query, supervisorID)
@@ -494,10 +496,10 @@ func GetAllClients(c *gin.Context) {
 	}
 
 	query := `
-		SELECT DISTINCT business_id, business_name
+		SELECT DISTINCT widget_business_id, widget_business_id as business_name
 		FROM chats
-		WHERE business_id IS NOT NULL AND business_name IS NOT NULL
-		ORDER BY business_name
+		WHERE widget_business_id IS NOT NULL AND widget_business_id != ''
+		ORDER BY widget_business_id
 	`
 
 	rows, err := database.DB.Query(query)
