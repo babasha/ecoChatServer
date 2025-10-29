@@ -65,22 +65,15 @@ func GetAdminsWithChatAccess(db *sql.DB, chatID uuid.UUID) ([]AdminWithAccess, e
 	return admins, nil
 }
 
-// GetAdminLanguagesForChat возвращает языки всех админов с доступом к чату
-// Это ключевая функция для системы перевода - получаем все языки сразу
-func GetAdminLanguagesForChat(db *sql.DB, chatID uuid.UUID) ([]AdminLanguageInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
-	defer cancel()
-
-	// Получаем админов с доступом к чату
-	admins, err := GetAdminsWithChatAccess(db, chatID)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка получения админов: %w", err)
-	}
-
+// getAdminLanguagesFromList - внутренняя функция для получения языков списка админов
+// DRY: используется обеими публичными функциями
+func getAdminLanguagesFromList(db *sql.DB, admins []AdminWithAccess, logPrefix string) ([]AdminLanguageInfo, error) {
 	if len(admins) == 0 {
-		log.Printf("GetAdminLanguagesForChat: нет админов с доступом к чату %s", chatID)
 		return []AdminLanguageInfo{}, nil
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
 
 	// Формируем список ID для IN запроса
 	adminIDs := make([]interface{}, len(admins))
@@ -93,7 +86,7 @@ func GetAdminLanguagesForChat(db *sql.DB, chatID uuid.UUID) ([]AdminLanguageInfo
 		placeholders += fmt.Sprintf("$%d", i+1)
 	}
 
-	// Получаем языки всех админов за один запрос
+	// Получаем языки админов за один запрос
 	query := fmt.Sprintf(`
 		SELECT admin_id, preferred_language
 		FROM admin_settings
@@ -125,13 +118,33 @@ func GetAdminLanguagesForChat(db *sql.DB, chatID uuid.UUID) ([]AdminLanguageInfo
 	for _, admin := range admins {
 		lang, exists := languageMap[admin.AdminID]
 		if !exists || lang == "" {
-			lang = "en" // Дефолтный язык
-			log.Printf("GetAdminLanguagesForChat: для админа %s используется дефолтный язык: %s", admin.AdminID, lang)
+			lang = "ru" // Дефолтный язык
+			log.Printf("%s: для админа %s используется дефолтный язык: %s", logPrefix, admin.AdminID, lang)
 		}
 		result = append(result, AdminLanguageInfo{
 			AdminID:           admin.AdminID,
 			PreferredLanguage: lang,
 		})
+	}
+
+	return result, nil
+}
+
+// GetAdminLanguagesForChat возвращает языки всех админов с доступом к чату
+func GetAdminLanguagesForChat(db *sql.DB, chatID uuid.UUID) ([]AdminLanguageInfo, error) {
+	admins, err := GetAdminsWithChatAccess(db, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения админов: %w", err)
+	}
+
+	if len(admins) == 0 {
+		log.Printf("GetAdminLanguagesForChat: нет админов с доступом к чату %s", chatID)
+		return []AdminLanguageInfo{}, nil
+	}
+
+	result, err := getAdminLanguagesFromList(db, admins, "GetAdminLanguagesForChat")
+	if err != nil {
+		return nil, err
 	}
 
 	log.Printf("GetAdminLanguagesForChat: получено %d языков для чата %s", len(result), chatID)
@@ -141,9 +154,6 @@ func GetAdminLanguagesForChat(db *sql.DB, chatID uuid.UUID) ([]AdminLanguageInfo
 // GetAdminLanguagesForChatOnlineOnly возвращает языки ТОЛЬКО онлайн админов с доступом к чату
 // Это оптимизация для системы перевода - переводим только для тех кто реально смотрит
 func GetAdminLanguagesForChatOnlineOnly(db *sql.DB, chatID uuid.UUID, onlineAdminIDs []uuid.UUID) ([]AdminLanguageInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
-	defer cancel()
-
 	// Если никто не онлайн - возвращаем пустой список
 	if len(onlineAdminIDs) == 0 {
 		log.Printf("GetAdminLanguagesForChatOnlineOnly: нет онлайн админов")
@@ -161,14 +171,14 @@ func GetAdminLanguagesForChatOnlineOnly(db *sql.DB, chatID uuid.UUID, onlineAdmi
 		return []AdminLanguageInfo{}, nil
 	}
 
-	// Создаем map онлайн админов для быстрого поиска
-	onlineMap := make(map[uuid.UUID]bool)
+	// Создаем map онлайн админов для быстрого поиска O(1)
+	onlineMap := make(map[uuid.UUID]bool, len(onlineAdminIDs))
 	for _, adminID := range onlineAdminIDs {
 		onlineMap[adminID] = true
 	}
 
 	// Фильтруем только онлайн админов с доступом
-	onlineAdminsWithAccess := make([]AdminWithAccess, 0)
+	onlineAdminsWithAccess := make([]AdminWithAccess, 0, len(adminsWithAccess))
 	for _, admin := range adminsWithAccess {
 		if onlineMap[admin.AdminID] {
 			onlineAdminsWithAccess = append(onlineAdminsWithAccess, admin)
@@ -181,56 +191,10 @@ func GetAdminLanguagesForChatOnlineOnly(db *sql.DB, chatID uuid.UUID, onlineAdmi
 		return []AdminLanguageInfo{}, nil
 	}
 
-	// Формируем список ID для IN запроса
-	adminIDs := make([]interface{}, len(onlineAdminsWithAccess))
-	placeholders := ""
-	for i, admin := range onlineAdminsWithAccess {
-		adminIDs[i] = admin.AdminID
-		if i > 0 {
-			placeholders += ","
-		}
-		placeholders += fmt.Sprintf("$%d", i+1)
-	}
-
-	// Получаем языки онлайн админов за один запрос
-	query := fmt.Sprintf(`
-		SELECT admin_id, preferred_language
-		FROM admin_settings
-		WHERE admin_id IN (%s)
-	`, placeholders)
-
-	rows, err := db.QueryContext(ctx, query, adminIDs...)
+	// Используем общую функцию для получения языков
+	result, err := getAdminLanguagesFromList(db, onlineAdminsWithAccess, "GetAdminLanguagesForChatOnlineOnly")
 	if err != nil {
-		return nil, fmt.Errorf("ошибка получения языков админов: %w", err)
-	}
-	defer rows.Close()
-
-	languageMap := make(map[uuid.UUID]string)
-	for rows.Next() {
-		var adminID uuid.UUID
-		var lang string
-		if err := rows.Scan(&adminID, &lang); err != nil {
-			return nil, fmt.Errorf("ошибка сканирования языка: %w", err)
-		}
-		languageMap[adminID] = lang
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка итерации языков: %w", err)
-	}
-
-	// Формируем результат с дефолтными языками для админов без настроек
-	result := make([]AdminLanguageInfo, 0, len(onlineAdminsWithAccess))
-	for _, admin := range onlineAdminsWithAccess {
-		lang, exists := languageMap[admin.AdminID]
-		if !exists || lang == "" {
-			lang = "ru" // Дефолтный язык теперь русский (можно сделать конфигурируемым)
-			log.Printf("GetAdminLanguagesForChatOnlineOnly: для ОНЛАЙН админа %s используется дефолтный язык: %s", admin.AdminID, lang)
-		}
-		result = append(result, AdminLanguageInfo{
-			AdminID:           admin.AdminID,
-			PreferredLanguage: lang,
-		})
+		return nil, err
 	}
 
 	log.Printf("GetAdminLanguagesForChatOnlineOnly: получено %d ОНЛАЙН админов с языками для чата %s (всего админов с доступом: %d)",
