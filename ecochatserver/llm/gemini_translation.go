@@ -22,7 +22,6 @@ var langNames = map[string]string{
 	"es": "Spanish",
 	"it": "Italian",
 	"uk": "Ukrainian",
-	"be": "Belarusian",
 	"cs": "Czech",
 	"sk": "Slovak",
 	"lt": "Lithuanian",

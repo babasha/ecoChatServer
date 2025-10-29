@@ -148,6 +148,10 @@ func GetAdminLanguagesForChat(chatID uuid.UUID) ([]queries.AdminLanguageInfo, er
 	return queries.GetAdminLanguagesForChat(DB, chatID)
 }
 
+func GetAdminLanguagesForChatOnlineOnly(chatID uuid.UUID, onlineAdminIDs []uuid.UUID) ([]queries.AdminLanguageInfo, error) {
+	return queries.GetAdminLanguagesForChatOnlineOnly(DB, chatID, onlineAdminIDs)
+}
+
 func CheckAdminAccessToChat(adminID uuid.UUID, adminRole string, chatID uuid.UUID) (bool, error) {
 	return queries.CheckAdminAccessToChat(DB, adminID, adminRole, chatID)
 }

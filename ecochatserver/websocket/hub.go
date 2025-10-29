@@ -390,6 +390,21 @@ func (h *Hub) logStats() {
 	}
 }
 
+// GetOnlineAdminIDs возвращает список ID всех подключенных (онлайн) админов
+func (h *Hub) GetOnlineAdminIDs() []uuid.UUID {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	adminIDs := make([]uuid.UUID, 0, len(h.adminsByID))
+	for _, admin := range h.adminsByID {
+		if admin.UserID != uuid.Nil {
+			adminIDs = append(adminIDs, admin.UserID)
+		}
+	}
+
+	return adminIDs
+}
+
 // SendToAllAdmins отправляет сообщение всем подключенным админам
 func (h *Hub) SendToAllAdmins(message []byte) int {
 	h.mu.RLock()
