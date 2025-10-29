@@ -71,10 +71,8 @@ func checkOrigin(r *http.Request) bool {
 
 // ServeWs обрабатывает WebSocket соединение
 func ServeWs(c *gin.Context) {
-	logMsg := fmt.Sprintf("ServeWs: новое соединение от %s, origin: %s",
-		c.ClientIP(), c.Request.Header.Get("Origin"))
-	log.Println(logMsg)
-	AddWebSocketLog(LogLevelInfo, logMsg, "WebSocket")
+	// DEBUG: детальная информация только для отладки
+	// log.Printf("ServeWs: новое соединение от %s, origin: %s", c.ClientIP(), c.Request.Header.Get("Origin"))
 
 	// Получаем параметры и токен
 	token := c.Query("token")
@@ -82,9 +80,10 @@ func ServeWs(c *gin.Context) {
 	chatIDStr := c.Query("chat_id")
 
 	// Для виджета chat_id необязателен - может быть создан позже
-	if clientType == "widget" && chatIDStr == "" {
-		log.Printf("ServeWs: виджет подключается без chat_id - чат будет создан при первом сообщении")
-	}
+	// DEBUG: можно убрать этот лог
+	// if clientType == "widget" && chatIDStr == "" {
+	// 	log.Printf("ServeWs: виджет подключается без chat_id - чат будет создан при первом сообщении")
+	// }
 
 	// Проверяем токен для админа
 	var adminID, clientID, chatID uuid.UUID
@@ -95,7 +94,7 @@ func ServeWs(c *gin.Context) {
 		if token == "" {
 			if cookieToken, cookieErr := c.Cookie("session"); cookieErr == nil && cookieToken != "" {
 				token = cookieToken
-				log.Printf("ServeWs: использован session cookie для admin подключения")
+				// DEBUG: log.Printf("ServeWs: использован session cookie для admin подключения")
 			} else {
 				log.Printf("ServeWs: отсутствует токен и session cookie для admin подключения: %v", cookieErr)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Отсутствует токен авторизации"})
@@ -133,7 +132,7 @@ func ServeWs(c *gin.Context) {
 		c.Set("clientID", claims.ClientID)
 		c.Set("role", claims.Role)
 
-		log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
+		// DEBUG: log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
 	} else if clientType == "widget" {
 		// Для виджета парсим chatID только если он передан
 		if chatIDStr != "" {
@@ -156,14 +155,14 @@ func ServeWs(c *gin.Context) {
 			// Преобразуем userID в UUID таким же образом, как в telegram_handler
 			if parsedUUID, err := uuid.Parse(userIDStr); err == nil {
 				adminID = parsedUUID
-				log.Printf("ServeWs: UserID %s уже является валидным UUID", userIDStr)
+				// DEBUG: log.Printf("ServeWs: UserID %s уже является валидным UUID", userIDStr)
 			} else {
 				adminID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(userIDStr))
-				log.Printf("ServeWs: создан детерминированный UUID для userID %s: %s", userIDStr, adminID.String())
+				// DEBUG: log.Printf("ServeWs: создан детерминированный UUID для userID %s: %s", userIDStr, adminID.String())
 			}
 		}
 
-		log.Printf("ServeWs: подключение виджета, chatID: %s, userID: %s", chatID, adminID)
+		// DEBUG: log.Printf("ServeWs: подключение виджета, chatID: %s, userID: %s", chatID, adminID)
 	} else {
 		log.Printf("ServeWs: неверный тип клиента или отсутствует токен")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный тип клиента или отсутствует токен"})
@@ -184,7 +183,6 @@ func ServeWs(c *gin.Context) {
 	// Устанавливаем IP и UserAgent для мониторинга
 	client.IP = c.ClientIP()
 	client.UserAgent = c.Request.UserAgent()
-	log.Printf("ServeWs: клиент подключен с IP=%s, UA=%s", client.IP, client.UserAgent)
 
 	// Для виджета сохраняем исходный строковый userID
 	if clientType == "widget" {
@@ -196,7 +194,6 @@ func ServeWs(c *gin.Context) {
 		}
 		if userIDStr != "" {
 			client.UserIDString = userIDStr
-			log.Printf("ServeWs: сохранен строковый userID для виджета: %s", userIDStr)
 		}
 	}
 
@@ -210,7 +207,7 @@ func ServeWs(c *gin.Context) {
 	// Отправляем статус подключения
 	WebSocketHub.SendConnectionStatus(client, true)
 
-	successMsg := fmt.Sprintf("ServeWs: клиент %s успешно подключен (type=%s)", client.ID, clientType)
-	log.Println(successMsg)
-	AddWebSocketLog(LogLevelInfo, successMsg, "WebSocket")
+	// Один короткий лог вместо 10+ строк
+	log.Printf("WebSocket: %s подключен (ID=%s, chatID=%s)", clientType, client.ID, chatID)
+	AddWebSocketLog(LogLevelInfo, fmt.Sprintf("%s подключен: %s", clientType, client.ID), "WebSocket")
 }

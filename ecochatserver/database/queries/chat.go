@@ -13,17 +13,16 @@ import (
 )
 
 func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models.ChatResponse, int, error) {
-	log.Printf("GetChats: начало, clientID=%s, adminID=%s, page=%d, size=%d",
-		clientID, adminID, page, size)
+	// DEBUG: log.Printf("GetChats: начало, clientID=%s, adminID=%s, page=%d, size=%d", clientID, adminID, page, size)
 
 	if page < 1 {
 		page = 1
-		log.Printf("GetChats: page скорректирован на 1")
+		// DEBUG: log.Printf("GetChats: page скорректирован на 1")
 	}
 	if size < 1 || size > MaxPageSize {
-		oldSize := size
+		// oldSize := size
 		size = DefaultPageSize
-		log.Printf("GetChats: size скорректирован с %d на %d", oldSize, size)
+		// DEBUG: log.Printf("GetChats: size скорректирован с %d на %d", oldSize, size)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
@@ -43,14 +42,14 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 		countArgs = []interface{}{clientID, adminID}
 	}
 
-	log.Printf("GetChats: выполняем запрос подсчета: %s", countQuery)
-	log.Printf("GetChats: параметры подсчета: clientID=%s, adminID=%s", clientID, adminID)
+	// DEBUG: log.Printf("GetChats: выполняем запрос подсчета: %s", countQuery)
+	// DEBUG: log.Printf("GetChats: параметры подсчета: clientID=%s, adminID=%s", clientID, adminID)
 
 	if err := db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		log.Printf("GetChats: ошибка подсчета: %v", err)
 		return nil, 0, fmt.Errorf("ошибка подсчета чатов: %w", err)
 	}
-	log.Printf("GetChats: найдено всего чатов с фильтром: %d", total)
+	// DEBUG: log.Printf("GetChats: найдено всего чатов с фильтром: %d", total)
 
 	// Основной запрос для получения чатов
 	const q = `
@@ -88,7 +87,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 		mainArgs = []interface{}{clientID, adminID, size, offset}
 	}
 
-	log.Printf("GetChats: выполняем основной запрос с LIMIT=%d OFFSET=%d", size, offset)
+	// DEBUG: log.Printf("GetChats: выполняем основной запрос с LIMIT=%d OFFSET=%d", size, offset)
 
 	rows, err := db.QueryContext(ctx, mainQuery, mainArgs...)
 	if err != nil {
@@ -131,14 +130,10 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 				Timestamp: lastTime.Time,
 				ChatID:    chat.ID, // Добавляем ChatID для правильной связи
 			}
-			log.Printf("GetChats: чат %d имеет последнее сообщение ID=%s, ChatID=%s",
-				rowNum, lastID.String, chat.ID)
-		} else {
-			log.Printf("GetChats: чат %d не имеет сообщений", rowNum)
+			// DEBUG: log.Printf("GetChats: чат %d имеет последнее сообщение ID=%s", rowNum, lastID.String)
 		}
-
-		log.Printf("GetChats: чат %d: ID=%s, userID=%s, userName='%s', email='%s', status=%s, source='%s', unread=%d, created=%v, updated=%v",
-			rowNum, chat.ID, user.ID, user.Name, user.Email, chat.Status, chat.Source, unread, chat.CreatedAt, chat.UpdatedAt)
+		// DEBUG: не нужно логировать детали каждого чата
+		// log.Printf("GetChats: чат %d: ID=%s, userID=%s, userName='%s', email='%s', status=%s...", rowNum, ...)
 
 		list = append(list, chat)
 		rowNum++
@@ -149,18 +144,18 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 		return nil, 0, fmt.Errorf("ошибка обработки результатов: %w", err)
 	}
 
-	log.Printf("GetChats: успешно, возвращаем %d чатов из %d", len(list), total)
+	// DEBUG: log.Printf("GetChats: успешно, возвращаем %d чатов из %d", len(list), total)
 	return list, total, nil
 }
 
 // GetChatByID получает чат с сообщениями (поддерживает infinite scroll через параметр beforeTimestamp)
 func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string) (*models.Chat, int, error) {
-	log.Printf("GetChatByID: начало, chatID=%s, limit=%d, before=%s", chatID, limit, beforeTimestamp)
+	// DEBUG: log.Printf("GetChatByID: начало, chatID=%s, limit=%d, before=%s", chatID, limit, beforeTimestamp)
 
 	if limit < 1 || limit > MaxPageSize {
-		oldLimit := limit
+		// oldLimit := limit
 		limit = 25
-		log.Printf("GetChatByID: limit скорректирован с %d на %d", oldLimit, limit)
+		// DEBUG: log.Printf("GetChatByID: limit скорректирован с %d на %d", oldLimit, limit)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
@@ -193,7 +188,7 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 		return nil, 0, fmt.Errorf("ошибка преобразования assigned_to: %w", err)
 	}
 
-	log.Printf("GetChatByID: найден чат ID=%s, userID=%s", chat.ID, userID)
+	// DEBUG: log.Printf("GetChatByID: найден чат ID=%s, userID=%s", chat.ID, userID)
 
 	// Получаем данные пользователя
 	var (
@@ -218,7 +213,7 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 		return nil, 0, fmt.Errorf("ошибка подсчета сообщений: %w", err)
 	}
 
-	log.Printf("GetChatByID: всего сообщений в чате: %d", total)
+	// DEBUG: log.Printf("GetChatByID: всего сообщений в чате: %d", total)
 
 	// Получаем сообщения до указанной временной метки
 	var messagesQuery string
@@ -236,7 +231,7 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
                  LIMIT $3
               ) AS older_messages
              ORDER BY timestamp ASC`
-		log.Printf("GetChatByID: получаем сообщения до %s с LIMIT=%d", beforeTimestamp, limit)
+		// DEBUG: log.Printf("GetChatByID: получаем сообщения до %s с LIMIT=%d", beforeTimestamp, limit)
 		rows, err = db.QueryContext(ctx, messagesQuery, chatID, beforeTimestamp, limit)
 	} else {
 		// Загружаем последние сообщения (как обычно)
@@ -250,7 +245,7 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
                  LIMIT $2
               ) AS recent_messages
              ORDER BY timestamp ASC`
-		log.Printf("GetChatByID: получаем последние %d сообщений", limit)
+		// DEBUG: log.Printf("GetChatByID: получаем последние %d сообщений", limit)
 		rows, err = db.QueryContext(ctx, messagesQuery, chatID, limit)
 	}
 
@@ -308,7 +303,7 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 		return nil, 0, fmt.Errorf("ошибка получения последнего сообщения: %w", err)
 	}
 
-	log.Printf("GetChatByID: успешно, возвращаем чат с %d сообщениями", len(chat.Messages))
+	// DEBUG: log.Printf("GetChatByID: успешно, возвращаем чат с %d сообщениями", len(chat.Messages))
 	return &chat, total, nil
 }
 
@@ -332,8 +327,7 @@ func getOrCreateChatCore(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 	widgetBusinessID *string,
 ) (*chatCoreInfo, error) {
-	log.Printf("getOrCreateChatCore: начало, userID=%s, source=%s, botID=%s, widgetBusinessID=%v",
-		userID, source, botID, widgetBusinessID)
+	// DEBUG: log.Printf("getOrCreateChatCore: начало, userID=%s, source=%s, botID=%s", userID, source, botID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
@@ -377,7 +371,7 @@ func getOrCreateChatCore(
 		updatedAt = now
 		isNewChat = true
 
-		log.Printf("getOrCreateChatCore: создаем новый чат ID=%s", chatID)
+		// DEBUG: log.Printf("getOrCreateChatCore: создаем новый чат ID=%s", chatID)
 
 		insertQuery := `
             INSERT INTO chats(id,user_id,created_at,updated_at,status,source,bot_id,client_id,widget_business_id)
@@ -393,15 +387,14 @@ func getOrCreateChatCore(
 		isNewChat = false
 		// Для существующих чатов createdAt и updatedAt остаются нулевыми
 		// Они используются только для новых чатов в GetOrCreateChatMetadata
-		log.Printf("getOrCreateChatCore: найден существующий чат ID=%s", chatID)
+		// DEBUG: log.Printf("getOrCreateChatCore: найден существующий чат ID=%s", chatID)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("ошибка коммита транзакции: %w", err)
 	}
 
-	log.Printf("getOrCreateChatCore: успешно, chatID=%s, clientID=%s, userID=%s, isNewChat=%v",
-		chatID, clientUUID, user.ID, isNewChat)
+	// DEBUG: log.Printf("getOrCreateChatCore: успешно, chatID=%s, isNewChat=%v", chatID, isNewChat)
 
 	return &chatCoreInfo{
 		ChatID:           chatID,
@@ -422,8 +415,7 @@ func GetOrCreateChat(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 	widgetBusinessID *string,
 ) (*models.Chat, error) {
-	log.Printf("GetOrCreateChat: начало, userID=%s, userName='%s', userEmail='%s', source=%s, sourceID=%s, botID=%s, clientAPIKey=%s",
-		userID, userName, userEmail, source, sourceID, botID, clientAPIKey)
+	// DEBUG: log.Printf("GetOrCreateChat: начало, userID=%s, source=%s, botID=%s", userID, source, botID)
 
 	// Получаем базовую информацию о чате
 	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey, widgetBusinessID)
@@ -442,8 +434,7 @@ func GetOrCreateChat(
 	// Сохраняем флаг isNewChat для использования во внешнем слое
 	chat.IsNewChat = info.IsNewChat
 
-	log.Printf("GetOrCreateChat: успешно, возвращаем чат ID=%s с %d сообщениями, isNewChat=%v",
-		chat.ID, len(chat.Messages), info.IsNewChat)
+	// DEBUG: log.Printf("GetOrCreateChat: успешно, чат ID=%s с %d сообщениями, isNewChat=%v", chat.ID, len(chat.Messages), info.IsNewChat)
 	return chat, nil
 }
 
@@ -454,8 +445,7 @@ func GetOrCreateChatMetadata(
 	userID, userName, userEmail, source, sourceID, botID, clientAPIKey string,
 	widgetBusinessID *string,
 ) (*models.Chat, error) {
-	log.Printf("GetOrCreateChatMetadata: начало, userID=%s, source=%s, botID=%s",
-		userID, source, botID)
+	// DEBUG: log.Printf("GetOrCreateChatMetadata: начало, userID=%s, source=%s, botID=%s", userID, source, botID)
 
 	// Получаем базовую информацию о чате
 	info, err := getOrCreateChatCore(db, userID, userName, userEmail, source, sourceID, botID, clientAPIKey, widgetBusinessID)
@@ -477,7 +467,7 @@ func GetOrCreateChatMetadata(
 		assignedTo = nil
 		autoResponderEnabled = true // DEFAULT в БД тоже true
 		isArchived = false
-		log.Printf("GetOrCreateChatMetadata: новый чат, используем значения по умолчанию")
+		// DEBUG: log.Printf("GetOrCreateChatMetadata: новый чат, используем значения по умолчанию")
 	} else {
 		// Существующий чат - загружаем метаданные из БД
 		ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
@@ -502,7 +492,7 @@ func GetOrCreateChatMetadata(
 		if err != nil {
 			return nil, fmt.Errorf("ошибка преобразования assigned_to: %w", err)
 		}
-		log.Printf("GetOrCreateChatMetadata: существующий чат, загружены метаданные из БД")
+		// DEBUG: log.Printf("GetOrCreateChatMetadata: существующий чат, загружены метаданные из БД")
 	}
 
 	chat := &models.Chat{
@@ -522,8 +512,7 @@ func GetOrCreateChatMetadata(
 		IsNewChat:            info.IsNewChat, // Сохраняем флаг
 	}
 
-	log.Printf("GetOrCreateChatMetadata: успешно, возвращаем чат ID=%s БЕЗ сообщений, isNewChat=%v, autoResponderEnabled=%v",
-		chat.ID, info.IsNewChat, chat.AutoResponderEnabled)
+	// DEBUG: log.Printf("GetOrCreateChatMetadata: успешно, чат ID=%s БЕЗ сообщений, isNewChat=%v", chat.ID, info.IsNewChat)
 	return chat, nil
 }
 

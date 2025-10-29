@@ -126,7 +126,7 @@ func (h *Hub) registerClient(c *Client) {
 	// Регистрируем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
 		h.adminsByID[c.ID] = c
-		log.Printf("Админ %s зарегистрирован в adminsByID, всего админов: %d", c.ID, len(h.adminsByID))
+		// DEBUG: log.Printf("Админ %s зарегистрирован в adminsByID, всего админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
 		if _, ok := h.widgetsByID[c.ChatID.String()]; !ok {
 			h.widgetsByID[c.ChatID.String()] = make(map[*Client]bool)
@@ -136,11 +136,11 @@ func (h *Hub) registerClient(c *Client) {
 		// Всегда сохраняем виджет по userID для возможности обновления chat_id
 		if c.UserIDString != "" {
 			h.widgetsByUserID[c.UserIDString] = c
-			log.Printf("Виджет сохранен по userID %s (string) для последующего обновления chat_id", c.UserIDString)
+			// DEBUG: log.Printf("Виджет сохранен по userID %s (string) для последующего обновления chat_id", c.UserIDString)
 		} else {
 			// Fallback на UUID если по какой-то причине строкового ID нет
 			h.widgetsByUserID[c.ID] = c
-			log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
+			// DEBUG: log.Printf("Виджет сохранен по userID %s (UUID) для последующего обновления chat_id", c.ID)
 		}
 
 		// Проверяем, есть ли отложенное обновление chat_id для этого виджета
@@ -178,8 +178,8 @@ func (h *Hub) registerClient(c *Client) {
 	h.stats.ActiveConnections++
 	h.stats.mu.Unlock()
 
-	log.Printf("Клиент зарегистрирован: type=%s, id=%s, chatID=%s",
-		c.ClientType, c.ID, c.ChatID)
+	// DEBUG: лог уже выводится в ServeWs
+	// log.Printf("Клиент зарегистрирован: type=%s, id=%s, chatID=%s", c.ClientType, c.ID, c.ChatID)
 
 	h.mu.Unlock()
 
@@ -210,7 +210,7 @@ func (h *Hub) unregisterClient(c *Client) {
 	// Удаляем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
 		delete(h.adminsByID, c.ID)
-		log.Printf("Админ %s удален из adminsByID, осталось админов: %d", c.ID, len(h.adminsByID))
+		// DEBUG: log.Printf("Админ %s удален из adminsByID, осталось админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
 		chatID := c.ChatID.String()
 		if widgets, ok := h.widgetsByID[chatID]; ok {
@@ -243,7 +243,8 @@ func (h *Hub) unregisterClient(c *Client) {
 	h.stats.DisconnectedClients++
 	h.stats.mu.Unlock()
 
-	log.Printf("Клиент отключен: type=%s, id=%s", c.ClientType, c.ID)
+	// DEBUG: лог уже выводится в client.Disconnect()
+	// log.Printf("Клиент отключен: type=%s, id=%s", c.ClientType, c.ID)
 
 	// Уведомляем админов об отключении клиента
 	// Важно: вызываем ПОСЛЕ unlock, чтобы избежать deadlock
@@ -354,9 +355,9 @@ func (h *Hub) SendConnectionStatus(c *Client, online bool) {
 	msg, _ := NewMessage("connection_status", payload)
 
 	// Отправляем только админам вместо broadcast всем клиентам
-	sent := h.SendToAllAdmins(msg)
-	log.Printf("SendConnectionStatus: уведомление о %s %s отправлено %d админам",
-		c.ClientType, map[bool]string{true: "подключении", false: "отключении"}[online], sent)
+	h.SendToAllAdmins(msg)
+	// DEBUG: log.Printf("SendConnectionStatus: уведомление о %s %s отправлено %d админам",
+	//	c.ClientType, map[bool]string{true: "подключении", false: "отключении"}[online], sent)
 }
 
 // GetStats возвращает статистику хаба
@@ -415,24 +416,24 @@ func (h *Hub) SendToAllAdmins(message []byte) int {
 	h.mu.RUnlock()
 
 	if len(admins) == 0 {
-		log.Printf("SendToAllAdmins: нет подключенных админов")
+		// Не логируем, если админов нет - это частая ситуация
 		return 0
 	}
 
 	sent := 0
 	for _, admin := range admins {
-		log.Printf("SendToAllAdmins: попытка отправить админу %s, message: %s", admin.ID, string(message))
+		// DEBUG: log.Printf("SendToAllAdmins: попытка отправить админу %s", admin.ID)
 		select {
 		case admin.Send <- message:
 			sent++
-			log.Printf("SendToAllAdmins: сообщение успешно добавлено в канал админа %s", admin.ID)
+			// DEBUG: log.Printf("SendToAllAdmins: сообщение успешно добавлено в канал админа %s", admin.ID)
 		default:
 			log.Printf("SendToAllAdmins: не удалось отправить админу %s (канал занят)", admin.ID)
 			go h.cleanupClient(admin)
 		}
 	}
 
-	log.Printf("Отправлено %d сообщений всем админам (всего админов: %d)", sent, len(admins))
+	// DEBUG: log.Printf("Отправлено %d сообщений всем админам (всего админов: %d)", sent, len(admins))
 	return sent
 }
 

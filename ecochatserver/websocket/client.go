@@ -132,7 +132,8 @@ func (c *Client) ReadPump(messageHandler func(client *Client, message []byte)) {
 
 		// Очищаем переносы строк
 		raw = bytes.TrimSpace(bytes.Replace(raw, newline, space, -1))
-		log.Printf("WS recv from %s %s: %s", c.ClientType, c.ID, string(raw))
+		// DEBUG: логируем только в режиме отладки
+		// log.Printf("WS recv from %s %s: %s", c.ClientType, c.ID, string(raw))
 
 		// Вызываем обработчик сообщения
 		if messageHandler != nil {
@@ -197,7 +198,8 @@ func (c *Client) writeMessage(message interface{}) error {
 		}
 	}
 
-	log.Printf("WS send to %s %s: %s", c.ClientType, c.ID, string(msgBytes))
+	// DEBUG: логируем только в режиме отладки
+	// log.Printf("WS send to %s %s: %s", c.ClientType, c.ID, string(msgBytes))
 
 	if err := c.Conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
 		return err
