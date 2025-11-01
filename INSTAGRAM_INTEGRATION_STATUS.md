@@ -38,7 +38,7 @@
 ALTER TYPE chat_source ADD VALUE IF NOT EXISTS 'instagram';
 
 -- Production (Railway)
-PGPASSWORD=ejSDSrimMuSZgakvLNNxyHydDOtBsRhw psql -h maglev.proxy.rlwy.net -U postgres -p 38184 -d railway -c "ALTER TYPE chat_source ADD VALUE IF NOT EXISTS 'instagram';"
+PGPASSWORD=<POSTGRES_PASSWORD> psql -h <POSTGRES_HOST> -U postgres -p <POSTGRES_PORT> -d <POSTGRES_DB> -c "ALTER TYPE chat_source ADD VALUE IF NOT EXISTS 'instagram';"
 ```
 
 ### Проблема #2: Неправильный тип токена (User Access Token вместо Page Access Token)
@@ -47,10 +47,10 @@ PGPASSWORD=ejSDSrimMuSZgakvLNNxyHydDOtBsRhw psql -h maglev.proxy.rlwy.net -U pos
 
 **Решение:**
 1. Получили список страниц через Graph API Explorer: `GET /me/accounts`
-2. Извлекли Page Access Token для страницы "Enddel"
+2. Извлекли Page Access Token для страницы "<FACEBOOK_PAGE_NAME>"
 3. Обновили в Railway переменную `INSTAGRAM_ACCESS_TOKEN`:
    ```
-   EAASz7FiOQ0sBPrzpnZC9yZCQTc7PTGiLROll1ZCve5hwUHVIz6uZAEfNRgnB21fXKi14dGxCsJUuZCXZB6tflRFQMfrP8q06PQvMlArW8QX5rk7NplfOhB5JbxYuwTF82eBH2yZA4dhF42PaIydm9YwEhG4lHExZBfsUvD3VfCpJHMkKV3WmDKZAJeZAV1Sv3hx7IZAkYl7yShJHI9sJRPeHZBXW8pVtGJoMfXcFWKdQroZAA19CNj3pHC7QoI5UZD
+   <PAGE_ACCESS_TOKEN>
    ```
 
 ### Проблема #3: Conversations API недоступен (OAuth error #3)
@@ -100,24 +100,25 @@ func fetchMessageText(messageID string) (string, error) {
 
 ### Environment Variables (Railway)
 ```bash
-INSTAGRAM_VERIFY_TOKEN=asdasdacxzcc32132
-INSTAGRAM_BUSINESS_ACCOUNT_ID=17841400772641672
-INSTAGRAM_APP_SECRET=69a3efcc67686f26ac952c607bc283bd
-INSTAGRAM_ACCESS_TOKEN=EAASz7FiOQ0sBPrzpnZC9yZCQTc7PTGiLROll1ZCve5hwUHVIz6uZAEfNRgnB21fXKi14dGxCsJUuZCXZB6tflRFQMfrP8q06PQvMlArW8QX5rk7NplfOhB5JbxYuwTF82eBH2yZA4dhF42PaIydm9YwEhG4lHExZBfsUvD3VfCpJHMkKV3WmDKZAJeZAV1Sv3hx7IZAkYl7yShJHI9sJRPeHZBXW8pVtGJoMfXcFWKdQroZAA19CNj3pHC7QoI5UZD
+INSTAGRAM_VERIFY_TOKEN=<VERIFY_TOKEN>
+INSTAGRAM_BUSINESS_ACCOUNT_ID=<BUSINESS_ACCOUNT_ID>
+INSTAGRAM_APP_SECRET=<INSTAGRAM_APP_SECRET>
+INSTAGRAM_ACCESS_TOKEN=<PAGE_ACCESS_TOKEN>
 INSTAGRAM_API_VERSION=v21.0
 INSTAGRAM_CLIENT_API_KEY=instagram_default_client
 ```
+> Все значения указаны как плейсхолдеры. Реальные секреты хранятся только в переменных окружения и не попадают в репозиторий.
 
 ### Facebook App Settings
-- **App Name:** eddelChat
-- **App ID:** 1923727586214731
+- **App Name:** <APP_NAME>
+- **App ID:** <APP_ID>
 - **Status:** Development Mode (не Live)
-- **Instagram Business Account:** 17841400772641672 (babushkin_egor)
-- **Facebook Page:** Enddel (ID: 912808858572357)
+- **Instagram Business Account:** <BUSINESS_ACCOUNT_ID> (<INSTAGRAM_USERNAME>)
+- **Facebook Page:** <FACEBOOK_PAGE_NAME> (ID: <FACEBOOK_PAGE_ID>)
 
 ### Webhook Configuration
 - **URL:** `https://ecochatserver-production.up.railway.app/api/instagram/webhook`
-- **Verify Token:** `asdasdacxzcc32132`
+- **Verify Token:** `<VERIFY_TOKEN>`
 - **Subscribed Fields:**
   - ✅ `messages`
   - ✅ `messaging_postbacks`
@@ -126,11 +127,11 @@ INSTAGRAM_CLIENT_API_KEY=instagram_default_client
 
 ### Database (Railway)
 ```bash
-PGHOST=maglev.proxy.rlwy.net
-PGPORT=38184
+PGHOST=<POSTGRES_HOST>
+PGPORT=<POSTGRES_PORT>
 PGUSER=postgres
-PGPASSWORD=ejSDSrimMuSZgakvLNNxyHydDOtBsRhw
-PGDATABASE=railway
+PGPASSWORD=<POSTGRES_PASSWORD>
+PGDATABASE=<POSTGRES_DB>
 ```
 
 ---
@@ -198,8 +199,8 @@ database/
 ### Быстрая проверка статуса
 ```bash
 # Подключение к production БД
-export PGPASSWORD=ejSDSrimMuSZgakvLNNxyHydDOtBsRhw
-psql -h maglev.proxy.rlwy.net -U postgres -p 38184 -d railway
+export PGPASSWORD=<POSTGRES_PASSWORD>
+psql -h <POSTGRES_HOST> -U postgres -p <POSTGRES_PORT> -d <POSTGRES_DB>
 
 # Проверка enum
 SELECT enumlabel FROM pg_enum WHERE enumtypid = 'chat_source'::regtype ORDER BY enumsortorder;
@@ -228,7 +229,7 @@ ORDER BY m.timestamp DESC;
 ### Проверка webhook
 ```bash
 # Verification (GET)
-curl "https://ecochatserver-production.up.railway.app/api/instagram/webhook?hub.mode=subscribe&hub.challenge=test123&hub.verify_token=asdasdacxzcc32132"
+curl "https://ecochatserver-production.up.railway.app/api/instagram/webhook?hub.mode=subscribe&hub.challenge=test123&hub.verify_token=<VERIFY_TOKEN>"
 # Должен вернуть: test123
 
 # Тест POST (без валидной подписи)
@@ -265,7 +266,7 @@ https://railway.app/ → lucky-nourishment → Logs
 ## 📚 Полезные ссылки
 
 ### Facebook/Instagram
-- **Facebook App Dashboard:** https://developers.facebook.com/apps/1923727586214731
+- **Facebook App Dashboard:** https://developers.facebook.com/apps/<APP_ID>
 - **Graph API Explorer:** https://developers.facebook.com/tools/explorer/
 - **Access Token Debugger:** https://developers.facebook.com/tools/debug/accesstoken/
 - **Instagram Messaging API Docs:** https://developers.facebook.com/docs/messenger-platform/instagram
@@ -341,9 +342,9 @@ curl -I https://ecochatserver-production.up.railway.app/api/instagram/webhook
 - Код 190 или 463
 
 **Решение:**
-1. Graph API Explorer → выбрать eddelChat app
+1. Graph API Explorer → выбрать <APP_NAME> app
 2. GET /me/accounts
-3. Найти страницу "Enddel"
+3. Найти страницу "<FACEBOOK_PAGE_NAME>"
 4. Скопировать новый `access_token`
 5. Обновить в Railway Variables
 
@@ -419,7 +420,7 @@ Conversations API требует разрешения, которое нужно
 **Как создать Test App:**
 
 1. **Создать Test App в Facebook Dashboard:**
-   - Открыть https://developers.facebook.com/apps/1923727586214731
+   - Открыть https://developers.facebook.com/apps/<APP_ID>
    - Settings → Basic → Create Test App
    - Новое приложение будет дочерним (child app) от основного
 
@@ -434,7 +435,7 @@ Conversations API требует разрешения, которое нужно
 3. **Добавить Instagram Testers:**
    ```
    - Instagram Basic Display → Add or Remove Instagram Testers
-   - Добавить ваш Instagram Business Account (babushkin_egor)
+   - Добавить ваш Instagram Business Account (<INSTAGRAM_USERNAME>)
    - Принять приглашение в Instagram
    ```
 
@@ -444,14 +445,14 @@ Conversations API требует разрешения, которое нужно
    - Webhooks → Edit Subscriptions
    - Subscribe to: messages, messaging_postbacks, message_edits
    - Callback URL: https://ecochatserver-production.up.railway.app/api/instagram/webhook
-   - Verify Token: asdasdacxzcc32132
+   - Verify Token: <VERIFY_TOKEN>
    ```
 
 5. **Получить новый токен для Test App:**
    ```
    - Graph API Explorer → выбрать Test App
    - GET /me/accounts
-   - Скопировать access_token для страницы Enddel
+   - Скопировать access_token для страницы <FACEBOOK_PAGE_NAME>
    - Обновить INSTAGRAM_ACCESS_TOKEN в Railway
    ```
 
@@ -551,9 +552,9 @@ Conversations API требует разрешения, которое нужно
   - Тестировщиков (Tester)
 
 **Текущее состояние:**
-- App: eddelChat (1923727586214731) - Development Mode
-- Instagram Business Account: 17841400772641672 (babushkin_egor)
-- Facebook Page: Enddel (912808858572357)
+- App: <APP_NAME> (<APP_ID>) - Development Mode
+- Instagram Business Account: <BUSINESS_ACCOUNT_ID> (<INSTAGRAM_USERNAME>)
+- Facebook Page: <FACEBOOK_PAGE_NAME> (<FACEBOOK_PAGE_ID>)
 
 ---
 
@@ -891,11 +892,11 @@ curl -X POST https://ecochatserver-production.up.railway.app/api/instagram/webho
   -d '{
     "object": "instagram",
     "entry": [{
-      "id": "17841400772641672",
+      "id": "<BUSINESS_ACCOUNT_ID>",
       "time": 1729500000,
       "messaging": [{
         "sender": {"id": "test_user_123", "username": "test_user"},
-        "recipient": {"id": "17841400772641672"},
+        "recipient": {"id": "<BUSINESS_ACCOUNT_ID>"},
         "timestamp": "1729500000",
         "message": {"mid": "test_123", "text": "Test message"}
       }]
@@ -903,7 +904,7 @@ curl -X POST https://ecochatserver-production.up.railway.app/api/instagram/webho
   }'
 
 # Проверка в БД
-psql -h maglev.proxy.rlwy.net -U postgres -p 38184 -d railway \
+psql -h <POSTGRES_HOST> -U postgres -p <POSTGRES_PORT> -d <POSTGRES_DB> \
   -c "SELECT content, source, timestamp FROM messages WHERE source='instagram' ORDER BY timestamp DESC LIMIT 5;"
 ```
 
