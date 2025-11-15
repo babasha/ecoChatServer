@@ -118,6 +118,24 @@ type Provider interface {
 	TranslateBatch(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error)
 }
 
+// ProviderWithTOON расширяет Provider для поддержки TOON формата (экономия ~40% токенов)
+// Провайдеры могут опционально реализовать этот интерфейс для более эффективного общения с LLM
+type ProviderWithTOON interface {
+	Provider
+
+	// DetectAndTranslateTOON - TOON версия DetectAndTranslate (экономия ~45-50% токенов)
+	// Использует компактный key: value формат вместо JSON
+	DetectAndTranslateTOON(ctx context.Context, text, targetLang string) (*TranslationResult, error)
+
+	// TranslateBatchTOON - TOON версия TranslateBatch (экономия ~40% токенов)
+	// Использует простой список (одна строка = один перевод) вместо JSON массива
+	TranslateBatchTOON(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error)
+
+	// TranslateTextTOON - TOON версия TranslateText (экономия ~50-60% токенов)
+	// Возвращает только перевод без структуры
+	TranslateTextTOON(ctx context.Context, text, fromLang, toLang string) (string, error)
+}
+
 // ============================================================================
 // PROVIDER CONFIG - Configuration for creating providers
 // ============================================================================

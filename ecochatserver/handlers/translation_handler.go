@@ -23,6 +23,7 @@ type TranslationService struct {
 	provider llm.Provider // Используем универсальный провайдер вместо старого LLM интерфейса
 	db       *sql.DB
 	hub      HubInterface // Hub для получения списка онлайн админов
+	useTOON  bool         // Использовать TOON формат (экономия ~40% токенов)
 }
 
 // NewTranslationService создает новый TranslationService
@@ -31,6 +32,27 @@ func NewTranslationService(provider llm.Provider, hub HubInterface) *Translation
 		provider: provider,
 		db:       database.DB,
 		hub:      hub,
+		useTOON:  false, // по умолчанию выключен для обратной совместимости
+	}
+}
+
+// NewTranslationServiceWithTOON создает TranslationService с опциональным TOON форматом
+func NewTranslationServiceWithTOON(provider llm.Provider, hub HubInterface, useTOON bool) *TranslationService {
+	return &TranslationService{
+		provider: provider,
+		db:       database.DB,
+		hub:      hub,
+		useTOON:  useTOON,
+	}
+}
+
+// SetTOONEnabled включает/выключает TOON формат
+func (ts *TranslationService) SetTOONEnabled(enabled bool) {
+	ts.useTOON = enabled
+	if enabled {
+		log.Printf("🎯 TOON формат ВКЛЮЧЕН - ожидаемая экономия ~40%% токенов")
+	} else {
+		log.Printf("📋 TOON формат ВЫКЛЮЧЕН - используется JSON")
 	}
 }
 
@@ -99,7 +121,27 @@ processLanguages:
 		if firstLang {
 			// Первый запрос: определяем язык И переводим
 			log.Printf("TranslateUserMessage: определение языка И перевод на %s", targetLang)
-			result, err := ts.provider.DetectAndTranslate(ctx, content, targetLang)
+
+			// 🎯 TOON или JSON в зависимости от флага
+			var result *llm.TranslationResult
+			var err error
+
+			if ts.useTOON {
+				// Проверяем поддерживает ли провайдер TOON
+				if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
+					result, err = providerWithTOON.DetectAndTranslateTOON(ctx, content, targetLang)
+					if err == nil {
+						log.Printf("✅ TOON формат использован")
+					}
+				} else {
+					// Fallback на JSON если провайдер не поддерживает TOON
+					log.Printf("⚠️ Провайдер не поддерживает TOON, fallback на JSON")
+					result, err = ts.provider.DetectAndTranslate(ctx, content, targetLang)
+				}
+			} else {
+				result, err = ts.provider.DetectAndTranslate(ctx, content, targetLang)
+			}
+
 			if err != nil {
 				log.Printf("⚠️ TranslateUserMessage: ошибка DetectAndTranslate: %v", err)
 				detectedLang = "unknown"
@@ -129,7 +171,22 @@ processLanguages:
 		}
 
 		log.Printf("TranslateUserMessage: перевод на %s", targetLang)
-		translatedText, err := ts.provider.TranslateText(ctx, content, detectedLang, targetLang)
+
+		// 🎯 TOON или JSON в зависимости от флага
+		var translatedText string
+		var err error
+
+		if ts.useTOON {
+			// Проверяем поддерживает ли провайдер TOON
+			if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
+				translatedText, err = providerWithTOON.TranslateTextTOON(ctx, content, detectedLang, targetLang)
+			} else {
+				translatedText, err = ts.provider.TranslateText(ctx, content, detectedLang, targetLang)
+			}
+		} else {
+			translatedText, err = ts.provider.TranslateText(ctx, content, detectedLang, targetLang)
+		}
+
 		if err != nil {
 			log.Printf("⚠️ TranslateUserMessage: ошибка перевода на %s: %v", targetLang, err)
 			translations[targetLang] = content
@@ -224,7 +281,20 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 	// Не дублируем retry на уровне сервиса
 	log.Printf("TranslateAdminMessage: перевод с %s на %s", sourceLang, clientLang)
 
-	translated, translateErr := ts.provider.TranslateText(ctx, content, sourceLang, clientLang)
+	// 🎯 TOON или JSON в зависимости от флага
+	var translated string
+	var translateErr error
+
+	if ts.useTOON {
+		// Проверяем поддерживает ли провайдер TOON
+		if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
+			translated, translateErr = providerWithTOON.TranslateTextTOON(ctx, content, sourceLang, clientLang)
+		} else {
+			translated, translateErr = ts.provider.TranslateText(ctx, content, sourceLang, clientLang)
+		}
+	} else {
+		translated, translateErr = ts.provider.TranslateText(ctx, content, sourceLang, clientLang)
+	}
 
 	if translateErr != nil {
 		log.Printf("🔴 TranslateAdminMessage: КРИТИЧЕСКАЯ ОШИБКА перевода: %v", translateErr)

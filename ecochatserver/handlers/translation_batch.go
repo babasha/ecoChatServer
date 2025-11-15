@@ -19,7 +19,7 @@ type TranslateBatchRequest struct {
 }
 
 // TranslateBatch переводит несколько текстов за один API вызов
-// Использует универсальный Provider.TranslateBatch (работает с любым провайдером)
+// Использует TOON формат если включен (экономия ~40% токенов)
 func (ts *TranslationService) TranslateBatch(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error) {
 	if len(texts) == 0 {
 		return []string{}, nil
@@ -31,9 +31,26 @@ func (ts *TranslationService) TranslateBatch(ctx context.Context, texts []string
 
 	log.Printf("TranslateBatch: перевод %d текстов с %s на %s за ОДИН запрос", len(texts), fromLang, toLang)
 
-	// 🔧 ОПТИМИЗАЦИЯ: Используем универсальный Provider.TranslateBatch
-	// Все провайдеры (Gemini, OpenAI, Claude) реализуют этот метод
-	translations, err := ts.provider.TranslateBatch(ctx, texts, fromLang, toLang)
+	// 🎯 TOON или JSON в зависимости от флага
+	var translations []string
+	var err error
+
+	if ts.useTOON {
+		// Проверяем поддерживает ли провайдер TOON
+		if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
+			translations, err = providerWithTOON.TranslateBatchTOON(ctx, texts, fromLang, toLang)
+			if err == nil {
+				log.Printf("✅ TOON batch формат использован")
+			}
+		} else {
+			// Fallback на JSON если провайдер не поддерживает TOON
+			log.Printf("⚠️ Провайдер не поддерживает TOON, fallback на JSON")
+			translations, err = ts.provider.TranslateBatch(ctx, texts, fromLang, toLang)
+		}
+	} else {
+		translations, err = ts.provider.TranslateBatch(ctx, texts, fromLang, toLang)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("TranslateBatch: %w", err)
 	}

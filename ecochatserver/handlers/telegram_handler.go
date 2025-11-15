@@ -48,8 +48,15 @@ func InitAutoResponder() {
 
 	// Инициализируем сервис перевода с ТЕМ ЖЕ провайдером (переиспользование!)
 	// НОВАЯ ОПТИМИЗАЦИЯ: передаем Hub для получения списка онлайн админов
-	Translator = NewTranslationService(provider, WebSocketHub)
-	log.Printf("Сервис перевода инициализирован с Hub для оптимизации (переиспользует провайдер)")
+	// 🎯 TOON FORMAT: читаем настройку из БД (по умолчанию false для безопасности)
+	useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
+	Translator = NewTranslationServiceWithTOON(provider, WebSocketHub, useTOON)
+
+	if useTOON {
+		log.Printf("🎯 Сервис перевода инициализирован с TOON форматом (экономия ~40%% токенов)")
+	} else {
+		log.Printf("📋 Сервис перевода инициализирован с JSON форматом (переиспользует провайдер)")
+	}
 
 	// Устанавливаем callback для отправки сообщений извинения
 	AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {
