@@ -127,11 +127,13 @@ func main() {
 	logInfo("HTTP сервер запускается на " + addr)
 
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:    addr,
+		Handler: r,
+		// Для WebSocket соединений не используем жесткие таймауты
+		// ReadTimeout и WriteTimeout устанавливаются в 0 для WebSocket
+		ReadTimeout:  0, // Отключаем для WebSocket
+		WriteTimeout: 0, // Отключаем для WebSocket
+		IdleTimeout:  120 * time.Second, // Увеличено для WebSocket
 	}
 
 	// Запускаем HTTP сервер в отдельной горутине
@@ -157,9 +159,9 @@ func main() {
 			httpsServer = &http.Server{
 				Addr:         httpsAddr,
 				Handler:      r,
-				ReadTimeout:  15 * time.Second,
-				WriteTimeout: 15 * time.Second,
-				IdleTimeout:  60 * time.Second,
+				ReadTimeout:  0, // Отключаем для WebSocket
+				WriteTimeout: 0, // Отключаем для WebSocket
+				IdleTimeout:  120 * time.Second, // Увеличено для WebSocket
 			}
 
 			go func() {
