@@ -83,8 +83,12 @@ func (o *OpenAIAdapter) GenerateContent(
 		// Конвертируем tools из ADK в OpenAI формат
 		var tools []interface{}
 		if req.Tools != nil && len(req.Tools) > 0 {
+			log.Printf("[OpenAI_Adapter] DEBUG: req.Tools содержит %d элементов", len(req.Tools))
+			log.Printf("[OpenAI_Adapter] DEBUG: req.Tools = %+v", req.Tools)
 			tools = o.convertToolsToOpenAI(req.Tools)
 			log.Printf("[OpenAI_Adapter] Добавлено %d tools в запрос", len(tools))
+		} else {
+			log.Printf("[OpenAI_Adapter] WARNING: req.Tools пустой или nil!")
 		}
 
 		openaiReq := OpenAIChatRequest{
