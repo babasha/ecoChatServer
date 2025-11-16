@@ -80,9 +80,17 @@ func (o *OpenAIAdapter) GenerateContent(
 		// Преобразуем ADK запрос в OpenAI формат
 		messages := o.convertToOpenAIMessages(req)
 
+		// Конвертируем tools из ADK в OpenAI формат
+		var tools []interface{}
+		if req.Tools != nil && len(req.Tools) > 0 {
+			tools = o.convertToolsToOpenAI(req.Tools)
+			log.Printf("[OpenAI_Adapter] Добавлено %d tools в запрос", len(tools))
+		}
+
 		openaiReq := OpenAIChatRequest{
 			Model:       o.model,
 			Messages:    messages,
+			Tools:       tools,
 			Temperature: 0.3, // Более предсказуемые ответы, меньше "креатива"
 		}
 
@@ -175,4 +183,40 @@ func (o *OpenAIAdapter) convertToOpenAIMessages(req *model.LLMRequest) []OpenAIM
 	}
 
 	return messages
+}
+
+// convertToolsToOpenAI конвертирует ADK tools в OpenAI формат
+func (o *OpenAIAdapter) convertToolsToOpenAI(adkTools map[string]any) []interface{} {
+	tools := make([]interface{}, 0)
+
+	// ADK передает tools как map, нужно извлечь FunctionDeclarations
+	for _, toolValue := range adkTools {
+		// Попытка преобразовать в genai.Tool
+		if toolMap, ok := toolValue.(map[string]interface{}); ok {
+			// Ищем FunctionDeclarations
+			if fnDecls, ok := toolMap["FunctionDeclarations"]; ok {
+				if fnDeclsList, ok := fnDecls.([]interface{}); ok {
+					for _, fnDecl := range fnDeclsList {
+						if fn, ok := fnDecl.(map[string]interface{}); ok {
+							// Строим OpenAI tool
+							openaiTool := map[string]interface{}{
+								"type": "function",
+								"function": map[string]interface{}{
+									"name":        fn["Name"],
+									"description": fn["Description"],
+									"parameters": map[string]interface{}{
+										"type":       "object",
+										"properties": fn["Parameters"],
+									},
+								},
+							}
+							tools = append(tools, openaiTool)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return tools
 }
