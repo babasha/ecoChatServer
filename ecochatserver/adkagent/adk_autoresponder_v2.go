@@ -25,7 +25,9 @@ type ADKAutoResponderV2 struct {
 	authorizedAgent     *SupportAgent   // Agent для залогиненных пользователей (19 tools)
 	unauthorizedAgent   *SupportAgent   // Agent для гостей (13 public tools)
 
-	// Эскалации
+	// Эскалации (in-memory - при рестарте сбрасываются)
+	// NOTE: Это intentional - эскалация это ephemeral state.
+	// При рестарте сервера автоответчик снова начнёт отвечать, что правильно.
 	escalationsMu sync.RWMutex
 	escalations   map[string]*EscalationState
 }
