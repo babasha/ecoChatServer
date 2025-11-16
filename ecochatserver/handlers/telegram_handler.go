@@ -59,12 +59,23 @@ func InitAutoResponder() {
 	AutoResponder = adkAutoResponder
 	log.Printf("✅ ADK AutoResponder инициализирован с hot-swap поддержкой")
 
-	// TODO: Инициализировать Translator с отдельным провайдером
-	// Пока что Translator остается nil, можно добавить позже
-	// useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
-	// Translator = NewTranslationServiceWithTOON(provider, WebSocketHub, useTOON)
+	// Инициализируем Translator для перевода и определения языка клиента
+	// ВАЖНО: Используем отдельный провайдер для переводов (не блокирует автоответчик)
+	translatorProvider, err := llm.NewProvider(nil)
+	if err != nil {
+		log.Printf("⚠️ InitAutoResponder: не удалось создать провайдера для переводчика: %v", err)
+		log.Printf("⚠️ Переводчик будет недоступен (автоответчик будет отвечать на английском)")
+	} else {
+		// 🎯 TOON FORMAT: читаем настройку из БД (по умолчанию false для безопасности)
+		useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
+		Translator = NewTranslationServiceWithTOON(translatorProvider, WebSocketHub, useTOON)
 
-	log.Printf("ℹ️ Сервис перевода будет инициализирован отдельно при необходимости")
+		if useTOON {
+			log.Printf("✅ Сервис перевода инициализирован с TOON форматом (экономия ~40%% токенов)")
+		} else {
+			log.Printf("✅ Сервис перевода инициализирован с JSON форматом")
+		}
+	}
 
 	log.Println("✅ Автоответчик успешно инициализирован")
 }
