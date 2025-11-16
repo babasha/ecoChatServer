@@ -85,6 +85,10 @@ func NewSupportAgentV2(ctx context.Context, storeClient *llm.StoreClient, isAuth
 
 	log.Printf("[AGENT_V2] Агент успешно создан с %d tools", len(tools))
 
+	// 7. Создаём rate limiter для защиты от превышения Gemini free tier
+	rateLimiter := NewGeminiFreeTierLimiter()
+	log.Printf("[AGENT_V2] Rate limiter создан: 10 RPM, 250 RPD (Gemini Free Tier)")
+
 	sa := &SupportAgentV2{
 		agent:          adkAgent,
 		runner:         r,
@@ -93,6 +97,7 @@ func NewSupportAgentV2(ctx context.Context, storeClient *llm.StoreClient, isAuth
 		isAuthorized:   isAuthorized,
 		appName:        appName,
 		userID:         0, // Будет установлен в ProcessMessage
+		rateLimiter:    rateLimiter,
 	}
 
 	// Заполняем ссылку на агента для tools
@@ -104,6 +109,16 @@ func NewSupportAgentV2(ctx context.Context, storeClient *llm.StoreClient, isAuth
 // ProcessMessage обрабатывает сообщение через ADK runner
 func (sa *SupportAgentV2) ProcessMessage(ctx context.Context, sessionID, message string, storeUserID int) (string, error) {
 	log.Printf("[AGENT_V2] ProcessMessage: sessionID=%s, storeUserID=%d, message=%s", sessionID, storeUserID, truncate(message, 50))
+
+	// Проверяем rate limiter ПЕРЕД запросом к LLM
+	if sa.rateLimiter != nil && !sa.rateLimiter.AllowRequest() {
+		// Получаем текущую статистику
+		rpm, rpd, maxRPM, maxRPD := sa.rateLimiter.GetStats()
+		log.Printf("[AGENT_V2] ⚠️ Rate limit exceeded: RPM=%d/%d, RPD=%d/%d", rpm, maxRPM, rpd, maxRPD)
+
+		return fmt.Sprintf("Извините, достигнут лимит запросов к AI. RPM: %d/%d, RPD: %d/%d. Пожалуйста, попробуйте позже.",
+			rpm, maxRPM, rpd, maxRPD), nil
+	}
 
 	// Сохраняем userID для использования в tools
 	sa.userID = storeUserID
@@ -165,16 +180,16 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "get_products",
 			Description: "Get list of products from store. Use when customer asks about products, catalog, assortment.",
 		},
-		func(ctx tool.Context, input GetProductsInput) ProductsOutput {
+		func(ctx tool.Context, input GetProductsInput) (ProductsOutput, error) {
 			log.Printf("[TOOL] get_products called: query=%s", input.SearchQuery)
 
 			products, err := storeClient.GetAllProducts(ctx, input.SearchQuery)
 			if err != nil {
-				return ProductsOutput{Result: fmt.Sprintf("Error: %v", err)}
+				return ProductsOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return ProductsOutput{Result: "No products found."}
+				return ProductsOutput{Result: "No products found."}, nil
 			}
 
 			if len(products) > 15 {
@@ -182,7 +197,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			}
 
 			result := llm.FormatProductsList(products)
-			return ProductsOutput{Result: result}
+			return ProductsOutput{Result: result}, nil
 		},
 	)
 	if err != nil {
@@ -203,7 +218,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "get_store_info",
 			Description: "Get store information: delivery cost, working hours, payment methods, etc.",
 		},
-		func(ctx tool.Context, input GetStoreInfoInput) StoreInfoOutput {
+		func(ctx tool.Context, input GetStoreInfoInput) (StoreInfoOutput, error) {
 			log.Printf("[TOOL] get_store_info called: type=%s", input.InfoType)
 
 			infoType := input.InfoType
@@ -228,7 +243,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 				result += "🕐 WORKING HOURS: 8:00-23:00 daily\n"
 			}
 
-			return StoreInfoOutput{Info: result}
+			return StoreInfoOutput{Info: result}, nil
 		},
 	)
 	if err != nil {
@@ -249,16 +264,16 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "get_categories",
 			Description: "Get list of all product categories available in the store. Use when customer asks about product categories or wants to browse by category.",
 		},
-		func(ctx tool.Context, input GetCategoriesInput) CategoriesOutput {
+		func(ctx tool.Context, input GetCategoriesInput) (CategoriesOutput, error) {
 			log.Printf("[TOOL] get_categories called")
 
 			categories, err := storeClient.GetAllCategories(ctx)
 			if err != nil {
-				return CategoriesOutput{Result: fmt.Sprintf("Error: %v", err)}
+				return CategoriesOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(categories) == 0 {
-				return CategoriesOutput{Result: "No categories found in the store."}
+				return CategoriesOutput{Result: "No categories found in the store."}, nil
 			}
 
 			// Format categories list
@@ -271,7 +286,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 				result += fmt.Sprintf("• %s\n", cat.NameRu)
 			}
 
-			return CategoriesOutput{Result: result}
+			return CategoriesOutput{Result: result}, nil
 		},
 	)
 	if err != nil {
@@ -292,26 +307,26 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "search_product",
 			Description: "Search for a specific product by name. Use when customer asks about a specific product or wants detailed info about one product.",
 		},
-		func(ctx tool.Context, input SearchProductInput) SearchProductOutput {
+		func(ctx tool.Context, input SearchProductInput) (SearchProductOutput, error) {
 			log.Printf("[TOOL] search_product called: productName=%s", input.ProductName)
 
 			if input.ProductName == "" {
-				return SearchProductOutput{Result: "Error: product name is required"}
+				return SearchProductOutput{Result: "Error: product name is required"}, nil
 			}
 
 			products, err := storeClient.GetAllProducts(ctx, input.ProductName)
 			if err != nil {
-				return SearchProductOutput{Result: fmt.Sprintf("Error: %v", err)}
+				return SearchProductOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return SearchProductOutput{Result: fmt.Sprintf("Product '%s' not found.", input.ProductName)}
+				return SearchProductOutput{Result: fmt.Sprintf("Product '%s' not found.", input.ProductName)}, nil
 			}
 
 			// If single product found, show detailed info
 			if len(products) == 1 {
 				result := llm.FormatProductDetails(products[0])
-				return SearchProductOutput{Result: result}
+				return SearchProductOutput{Result: result}, nil
 			}
 
 			// Multiple products - show list
@@ -319,7 +334,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 				products = products[:10]
 			}
 			result := llm.FormatProductsList(products)
-			return SearchProductOutput{Result: result}
+			return SearchProductOutput{Result: result}, nil
 		},
 	)
 	if err != nil {
@@ -340,7 +355,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "inspect_website_page",
 			Description: "Get information from website pages. Use when customer asks about website structure, pages, or UI elements.",
 		},
-		func(ctx tool.Context, input InspectWebsiteInput) InspectWebsiteOutput {
+		func(ctx tool.Context, input InspectWebsiteInput) (InspectWebsiteOutput, error) {
 			log.Printf("[TOOL] inspect_website_page called: pagePath=%s", input.PagePath)
 
 			// Create website inspector
@@ -351,10 +366,10 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 				log.Printf("[TOOL] Error inspecting website page %s: %v", input.PagePath, err)
 				return InspectWebsiteOutput{
 					Result: fmt.Sprintf("Error inspecting page %s: %v. The page might not be accessible or doesn't exist.", input.PagePath, err),
-				}
+				}, nil
 			}
 
-			return InspectWebsiteOutput{Result: pageInfo}
+			return InspectWebsiteOutput{Result: pageInfo}, nil
 		},
 	)
 	if err != nil {
@@ -375,28 +390,28 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "get_user_orders",
 			Description: "Get user's order history. ONLY for authorized users. Use when customer asks 'show my orders', 'my order history', etc.",
 		},
-		func(ctx tool.Context, input GetUserOrdersInput) UserOrdersOutput {
+		func(ctx tool.Context, input GetUserOrdersInput) (UserOrdersOutput, error) {
 			log.Printf("[TOOL] get_user_orders called: limit=%d", input.Limit)
 
 			// Проверяем что агент создан и есть userID
 			if agentRef == nil || *agentRef == nil {
-				return UserOrdersOutput{Result: "Error: agent not initialized"}
+				return UserOrdersOutput{Result: "Error: agent not initialized"}, nil
 			}
 
 			userID := (*agentRef).userID
 			if userID == 0 {
-				return UserOrdersOutput{Result: "⚠️ This feature is only available for registered users. Please log in to view your orders."}
+				return UserOrdersOutput{Result: "⚠️ This feature is only available for registered users. Please log in to view your orders."}, nil
 			}
 
 			// Получаем заказы
 			orders, err := storeClient.GetUserOrders(ctx, userID)
 			if err != nil {
 				log.Printf("[TOOL] Error getting user orders: %v", err)
-				return UserOrdersOutput{Result: fmt.Sprintf("Error retrieving orders: %v", err)}
+				return UserOrdersOutput{Result: fmt.Sprintf("Error retrieving orders: %v", err)}, nil
 			}
 
 			if len(orders) == 0 {
-				return UserOrdersOutput{Result: "You don't have any orders yet. Start shopping to see your order history!"}
+				return UserOrdersOutput{Result: "You don't have any orders yet. Start shopping to see your order history!"}, nil
 			}
 
 			// Применяем лимит если указан
@@ -405,7 +420,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			}
 
 			result := llm.FormatOrdersList(orders)
-			return UserOrdersOutput{Result: result}
+			return UserOrdersOutput{Result: result}, nil
 		},
 	)
 	if err != nil {
@@ -426,32 +441,32 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "get_order_status",
 			Description: "Get status of a specific order by ID. ONLY for authorized users. Use when customer asks 'where is my order #123', 'order status', etc.",
 		},
-		func(ctx tool.Context, input GetOrderStatusInput) OrderStatusOutput {
+		func(ctx tool.Context, input GetOrderStatusInput) (OrderStatusOutput, error) {
 			log.Printf("[TOOL] get_order_status called: orderID=%s", input.OrderID)
 
 			// Проверяем что агент создан и есть userID
 			if agentRef == nil || *agentRef == nil {
-				return OrderStatusOutput{Result: "Error: agent not initialized"}
+				return OrderStatusOutput{Result: "Error: agent not initialized"}, nil
 			}
 
 			userID := (*agentRef).userID
 			if userID == 0 {
-				return OrderStatusOutput{Result: "⚠️ This feature is only available for registered users. Please log in to view your order status."}
+				return OrderStatusOutput{Result: "⚠️ This feature is only available for registered users. Please log in to view your order status."}, nil
 			}
 
 			if input.OrderID == "" {
-				return OrderStatusOutput{Result: "Error: order ID is required"}
+				return OrderStatusOutput{Result: "Error: order ID is required"}, nil
 			}
 
 			// Получаем заказ
 			order, err := storeClient.GetOrderByID(ctx, input.OrderID, userID)
 			if err != nil {
 				log.Printf("[TOOL] Error getting order: %v", err)
-				return OrderStatusOutput{Result: fmt.Sprintf("Order #%s not found or you don't have access to it.", input.OrderID)}
+				return OrderStatusOutput{Result: fmt.Sprintf("Order #%s not found or you don't have access to it.", input.OrderID)}, nil
 			}
 
 			result := llm.FormatOrderInfo(order)
-			return OrderStatusOutput{Result: result}
+			return OrderStatusOutput{Result: result}, nil
 		},
 	)
 	if err != nil {
@@ -472,18 +487,18 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 			Name:        "check_product_availability",
 			Description: "Check if a product is available in stock. Use when customer asks 'is this product available', 'in stock', etc.",
 		},
-		func(ctx tool.Context, input CheckProductAvailabilityInput) ProductAvailabilityOutput {
+		func(ctx tool.Context, input CheckProductAvailabilityInput) (ProductAvailabilityOutput, error) {
 			log.Printf("[TOOL] check_product_availability called: slug=%s", input.ProductSlug)
 
 			if input.ProductSlug == "" {
-				return ProductAvailabilityOutput{Result: "Error: product slug is required"}
+				return ProductAvailabilityOutput{Result: "Error: product slug is required"}, nil
 			}
 
 			// Получаем продукт по slug
 			product, err := storeClient.GetProductBySlug(ctx, input.ProductSlug)
 			if err != nil {
 				log.Printf("[TOOL] Error getting product: %v", err)
-				return ProductAvailabilityOutput{Result: fmt.Sprintf("Product not found or error checking availability: %v", err)}
+				return ProductAvailabilityOutput{Result: fmt.Sprintf("Product not found or error checking availability: %v", err)}, nil
 			}
 
 			// Формируем ответ о наличии
@@ -500,7 +515,7 @@ func createTools(storeClient *llm.StoreClient, agentRef **SupportAgentV2) ([]too
 
 			result += fmt.Sprintf("\n💰 Price: %s₾", product.Price)
 
-			return ProductAvailabilityOutput{Result: result}
+			return ProductAvailabilityOutput{Result: result}, nil
 		},
 	)
 	if err != nil {

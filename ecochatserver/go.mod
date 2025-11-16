@@ -85,3 +85,6 @@ require (
 	rsc.io/omap v1.2.0 // indirect
 	rsc.io/ordered v1.1.1 // indirect
 )
+
+// Use forked ADK with OpenAI support
+replace google.golang.org/adk => github.com/babasha/adk-go_openai v0.0.0-20251116195233-6449c1bf57dc

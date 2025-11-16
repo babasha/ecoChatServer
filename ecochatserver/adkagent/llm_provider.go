@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
+	"google.golang.org/adk/model/openai"
 	"google.golang.org/genai"
 
 	"github.com/egor/ecochatserver/database"
@@ -124,25 +125,42 @@ func newGeminiModel(ctx context.Context, config *LLMConfig) (model.LLM, error) {
 	return geminiModel, nil
 }
 
-// newOpenAIModel создаёт OpenAI модель через наш адаптер
+// newOpenAIModel создаёт OpenAI модель через форкнутый ADK
 func newOpenAIModel(ctx context.Context, config *LLMConfig) (model.LLM, error) {
 	if config.APIKey == "" {
 		log.Println("[ADK_LLM] ⚠️ OPENAI_API_KEY не установлен, используем MockLLM")
 		return &MockLLM{}, nil
 	}
 
-	adapter := NewOpenAIAdapter(config.BaseURL, config.APIKey, config.Model)
-	log.Printf("[ADK_LLM] ✅ OpenAI адаптер инициализирован: %s (base: %s)", config.Model, config.BaseURL)
-	return adapter, nil
+	// Используем новый openai.NewModel() из форка
+	openaiModel, err := openai.NewModel(config.Model, &openai.Config{
+		BaseURL: config.BaseURL,
+		APIKey:  config.APIKey,
+	})
+	if err != nil {
+		log.Printf("[ADK_LLM] ❌ Ошибка создания OpenAI модели: %v, fallback на Mock", err)
+		return &MockLLM{}, nil
+	}
+
+	log.Printf("[ADK_LLM] ✅ OpenAI модель инициализирована: %s (base: %s)", config.Model, config.BaseURL)
+	return openaiModel, nil
 }
 
 // newLMStudioModel создаёт LM Studio модель (через OpenAI API)
 func newLMStudioModel(ctx context.Context, config *LLMConfig) (model.LLM, error) {
-	// LM Studio совместим с OpenAI API, используем наш адаптер
-	adapter := NewOpenAIAdapter(config.BaseURL, config.APIKey, config.Model)
-	log.Printf("[ADK_LLM] ✅ LM Studio адаптер инициализирован: %s (base: %s)", config.Model, config.BaseURL)
+	// LM Studio совместим с OpenAI API, используем openai.NewModel()
+	lmStudioModel, err := openai.NewModel(config.Model, &openai.Config{
+		BaseURL: config.BaseURL,
+		APIKey:  config.APIKey,
+	})
+	if err != nil {
+		log.Printf("[ADK_LLM] ❌ Ошибка создания LM Studio модели: %v, fallback на Mock", err)
+		return &MockLLM{}, nil
+	}
+
+	log.Printf("[ADK_LLM] ✅ LM Studio модель инициализирована: %s (base: %s)", config.Model, config.BaseURL)
 	log.Printf("[ADK_LLM] 💡 Убедитесь что LM Studio запущен на %s", config.BaseURL)
-	return adapter, nil
+	return lmStudioModel, nil
 }
 
 // MockLLM - заглушка для тестирования и fallback
