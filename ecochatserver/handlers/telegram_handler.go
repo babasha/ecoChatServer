@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
 	"github.com/egor/ecochatserver/llm"
@@ -16,8 +18,14 @@ import (
 	"github.com/egor/ecochatserver/websocket"
 )
 
+// AutoResponderInterface определяет интерфейс для автоответчика
+type AutoResponderInterface interface {
+	ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error)
+	ClearEscalation(chatID string)
+}
+
 // AutoResponder — единственный экземпляр автоответчика
-var AutoResponder *llm.AutoResponder
+var AutoResponder AutoResponderInterface
 
 // Translator — сервис для перевода сообщений
 var Translator *TranslationService
@@ -30,60 +38,35 @@ func InitAutoResponder() {
 		log.Println("Автоответчик отключен в настройках БД/ENV")
 		return
 	}
-	log.Println("Автоответчик включен, инициализируем...")
+	log.Println("🤖 Автоответчик включен, инициализируем...")
 
-	// 🔧 ОПТИМИЗАЦИЯ: Создаём ОДИН провайдер и переиспользуем его
-	// Это экономит ресурсы - один HTTP клиент вместо двух
-	provider, err := llm.NewProvider(nil)
+	// 🎯 ВЫБОР РЕАЛИЗАЦИИ: Используем ADK агента (вместо старого автоответчика)
+	// Преимущества ADK:
+	// - Multi-turn reasoning (ReAct pattern)
+	// - Hot-swap LLM провайдеров через БД
+	// - Поддержка LM Studio (локальный + ngrok)
+	// - Встроенная телеметрия
+	ctx := context.Background()
+	cfg := llm.GetDefaultConfig()
+
+	adkAutoResponder, err := adkagent.InitADKAutoResponder(ctx, cfg)
 	if err != nil {
-		log.Printf("InitAutoResponder: не удалось создать провайдера: %v", err)
-		log.Println("Автоответчик будет недоступен до настройки LLM провайдера")
+		log.Printf("❌ InitAutoResponder: не удалось создать ADK агента: %v", err)
+		log.Println("⚠️ Автоответчик будет недоступен")
 		return
 	}
-	log.Printf("Провайдер LLM инициализирован: %s", provider.GetName())
 
-	// Создаём AutoResponder с переиспользованием провайдера
-	cfg := llm.GetDefaultConfig()
-	AutoResponder = llm.NewAutoResponder(provider, cfg)
+	AutoResponder = adkAutoResponder
+	log.Printf("✅ ADK AutoResponder инициализирован с hot-swap поддержкой")
 
-	// Инициализируем сервис перевода с ТЕМ ЖЕ провайдером (переиспользование!)
-	// НОВАЯ ОПТИМИЗАЦИЯ: передаем Hub для получения списка онлайн админов
-	// 🎯 TOON FORMAT: читаем настройку из БД (по умолчанию false для безопасности)
-	useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
-	Translator = NewTranslationServiceWithTOON(provider, WebSocketHub, useTOON)
+	// TODO: Инициализировать Translator с отдельным провайдером
+	// Пока что Translator остается nil, можно добавить позже
+	// useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
+	// Translator = NewTranslationServiceWithTOON(provider, WebSocketHub, useTOON)
 
-	if useTOON {
-		log.Printf("🎯 Сервис перевода инициализирован с TOON форматом (экономия ~40%% токенов)")
-	} else {
-		log.Printf("📋 Сервис перевода инициализирован с JSON форматом (переиспользует провайдер)")
-	}
+	log.Printf("ℹ️ Сервис перевода будет инициализирован отдельно при необходимости")
 
-	// Устанавливаем callback для отправки сообщений извинения
-	AutoResponder.SetApologyCallback(func(chatID uuid.UUID, message *models.Message) {
-		// Загружаем легковесную версию чата для уведомления
-		lightChat, err := queries.GetChatLightweight(database.DB, chatID)
-		if err != nil {
-			log.Printf("ApologyCallback: ошибка загрузки чата: %v", err)
-			// Создаем минимальный объект чата
-			lightChat = &models.Chat{
-				ID:       chatID,
-				Messages: []models.Message{*message},
-			}
-		} else {
-			// Добавляем текущее сообщение к списку
-			lightChat.Messages = append(lightChat.Messages, *message)
-		}
-
-		// Отправляем WebSocket уведомление о сообщении извинения
-		if WebSocketHub != nil {
-			chatInfo := createChatInfo(lightChat)
-			notification := createMessageNotification(chatID, message, chatInfo)
-			totalSent := WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
-			log.Printf("TelegramWebhook: уведомление о сообщении извинения отправлено %d клиентам", totalSent)
-		}
-	})
-
-	log.Println("Автоответчик успешно инициализирован")
+	log.Println("✅ Автоответчик успешно инициализирован")
 }
 
 // TelegramWebhook обрабатывает вебхук Telegram и виджета

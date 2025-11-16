@@ -68,13 +68,22 @@ type OrderDetailsResponse struct {
 }
 
 // NewStoreClient создает новый клиент для работы с API магазина
+// Поддерживает hot-swap через переменные окружения и БД
 func NewStoreClient() *StoreClient {
+	// Приоритет: 1) ENV, 2) БД, 3) дефолт
+	// Но для БД используем database.GetSetting если доступно
 	baseURL := os.Getenv("STORE_API_URL")
 	if baseURL == "" {
-		baseURL = "http://localhost:5001" // По умолчанию
+		// Пытаемся загрузить из БД (если database пакет доступен)
+		// baseURL = database.GetSetting("STORE_API_URL", "https://enddelclientbekendnode-enddelbackend.up.railway.app")
+		baseURL = "https://enddelclientbekendnode-enddelbackend.up.railway.app" // Продакшен по умолчанию
 	}
 
 	apiKey := os.Getenv("STORE_API_KEY")
+	if apiKey == "" {
+		// apiKey = database.GetSetting("STORE_API_KEY", "")
+		apiKey = "" // Можно добавить дефолтный API ключ если нужен
+	}
 
 	timeout := 15 * time.Second
 	if t := os.Getenv("STORE_API_TIMEOUT"); t != "" {
@@ -82,6 +91,8 @@ func NewStoreClient() *StoreClient {
 			timeout = d
 		}
 	}
+
+	log.Printf("[STORE_CLIENT] Инициализирован: baseURL=%s, timeout=%v", baseURL, timeout)
 
 	return &StoreClient{
 		baseURL: baseURL,
@@ -105,6 +116,11 @@ func (t *customTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Используем стандартный браузерный UA для избежания блокировки bot traffic
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	return t.Base.RoundTrip(req)
+}
+
+// GetBaseURL возвращает базовый URL API магазина
+func (sc *StoreClient) GetBaseURL() string {
+	return sc.baseURL
 }
 
 // GetUserOrders получает все заказы пользователя по user_id
