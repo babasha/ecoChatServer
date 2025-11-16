@@ -45,7 +45,7 @@ func LoadLLMConfig() *LLMConfig {
 	switch provider {
 	case ProviderGemini:
 		config.APIKey = database.GetSetting("GEMINI_API_KEY", "")
-		config.Model = database.GetSetting("GEMINI_MODEL", "gemini-2.5-flash")
+		config.Model = database.GetSetting("GEMINI_MODEL", "gemini-2.5-flash") // Updated to latest stable model
 		log.Printf("[ADK_LLM] Загружена конфигурация Gemini: model=%s", config.Model)
 
 	case ProviderOpenAI:

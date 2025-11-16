@@ -25,7 +25,8 @@ type SupportAgentV2 struct {
 	storeClient    *llm.StoreClient
 	isAuthorized   bool
 	appName        string
-	userID         int // User ID для авторизованных пользователей
+	userID         int          // User ID для авторизованных пользователей
+	rateLimiter    *RateLimiter // Rate limiter для защиты от превышения Gemini free tier
 }
 
 // NewSupportAgentV2 создаёт агента с правильным API

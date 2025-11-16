@@ -37,6 +37,16 @@ type OpenAIMessage struct {
 	Content string `json:"content"`
 }
 
+// OpenAIToolCall вызов функции от модели
+type OpenAIToolCall struct {
+	Type     string `json:"type"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
 // OpenAIChatResponse ответ от OpenAI API
 type OpenAIChatResponse struct {
 	ID      string `json:"id"`
@@ -46,8 +56,9 @@ type OpenAIChatResponse struct {
 	Choices []struct {
 		Index   int `json:"index"`
 		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role      string           `json:"role"`
+			Content   string           `json:"content"`
+			ToolCalls []OpenAIToolCall `json:"tool_calls,omitempty"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -105,6 +116,9 @@ func (o *OpenAIAdapter) GenerateContent(
 			return
 		}
 
+		// DEBUG: выводим первые 500 символов запроса
+		log.Printf("[OpenAI_Adapter] DEBUG Request Body: %s", truncate(string(body), 1000))
+
 		// Создаём HTTP запрос
 		endpoint := fmt.Sprintf("%s/chat/completions", o.baseURL)
 		httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
@@ -114,6 +128,7 @@ func (o *OpenAIAdapter) GenerateContent(
 		}
 
 		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("ngrok-skip-browser-warning", "true") // Для ngrok
 		if o.apiKey != "" && o.apiKey != "not-needed" {
 			httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", o.apiKey))
 		}
@@ -134,9 +149,17 @@ func (o *OpenAIAdapter) GenerateContent(
 			return
 		}
 
+		// Читаем тело ответа для debug
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			yield(nil, fmt.Errorf("failed to read response: %w", err))
+			return
+		}
+		log.Printf("[OpenAI_Adapter] DEBUG Response Body: %s", truncate(string(bodyBytes), 1000))
+
 		// Парсим ответ
 		var openaiResp OpenAIChatResponse
-		if err := json.NewDecoder(resp.Body).Decode(&openaiResp); err != nil {
+		if err := json.Unmarshal(bodyBytes, &openaiResp); err != nil {
 			yield(nil, fmt.Errorf("failed to decode response: %w", err))
 			return
 		}
@@ -146,14 +169,67 @@ func (o *OpenAIAdapter) GenerateContent(
 			return
 		}
 
-		// Преобразуем ответ в ADK формат
-		content := openaiResp.Choices[0].Message.Content
-		log.Printf("[OpenAI_Adapter] Получен ответ: %s", truncate(content, 100))
+		choice := openaiResp.Choices[0]
+
+		// Проверяем есть ли tool_calls в ответе
+		if choice.FinishReason == "tool_calls" && len(choice.Message.ToolCalls) > 0 {
+			log.Printf("[OpenAI_Adapter] Получено %d tool calls", len(choice.Message.ToolCalls))
+
+			// Создаем Parts с FunctionCall для каждого tool call
+			parts := make([]*genai.Part, 0)
+			for _, tc := range choice.Message.ToolCalls {
+				log.Printf("[OpenAI_Adapter] Tool call: %s (args: %s)", tc.Function.Name, tc.Function.Arguments)
+
+				// Парсим arguments из JSON string в map[string]any
+				var args map[string]any
+				if tc.Function.Arguments != "" && tc.Function.Arguments != "{}" {
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+						log.Printf("[OpenAI_Adapter] WARNING: Failed to parse arguments for %s: %v", tc.Function.Name, err)
+						args = make(map[string]any)
+					}
+				} else {
+					args = make(map[string]any)
+				}
+
+				// Создаем FunctionCall
+				functionCall := &genai.FunctionCall{
+					ID:   tc.ID,
+					Name: tc.Function.Name,
+					Args: args,
+				}
+
+				// Добавляем Part с FunctionCall
+				parts = append(parts, &genai.Part{
+					FunctionCall: functionCall,
+				})
+
+				log.Printf("[OpenAI_Adapter] ✅ Created FunctionCall: %s with %d args", tc.Function.Name, len(args))
+			}
+
+			// Создаем Content с role=model
+			content := &genai.Content{
+				Role:  genai.RoleModel,
+				Parts: parts,
+			}
+
+			response := &model.LLMResponse{
+				Content:      content,
+				TurnComplete: false, // Tool calls НЕ завершают turn!
+			}
+
+			log.Printf("[OpenAI_Adapter] 🔧 Returning %d tool calls to ADK", len(parts))
+			yield(response, nil)
+			return
+		}
+
+		// Обрабатываем как текстовый ответ
+		content := choice.Message.Content
+		log.Printf("[OpenAI_Adapter] Получен текстовый ответ: %s", truncate(content, 100))
 
 		textContent := genai.Text(content)
 		response := &model.LLMResponse{
 			Content:      textContent[0],
-			TurnComplete: openaiResp.Choices[0].FinishReason == "stop",
+			TurnComplete: choice.FinishReason == "stop",
 		}
 
 		yield(response, nil)
@@ -189,36 +265,59 @@ func (o *OpenAIAdapter) convertToOpenAIMessages(req *model.LLMRequest) []OpenAIM
 	return messages
 }
 
+// FunctionTool интерфейс для получения FunctionDeclaration из ADK tool
+type FunctionTool interface {
+	Name() string
+	Declaration() *genai.FunctionDeclaration
+}
+
 // convertToolsToOpenAI конвертирует ADK tools в OpenAI формат
 func (o *OpenAIAdapter) convertToolsToOpenAI(adkTools map[string]any) []interface{} {
 	tools := make([]interface{}, 0)
 
-	// ADK передает tools как map, нужно извлечь FunctionDeclarations
-	for _, toolValue := range adkTools {
-		// Попытка преобразовать в genai.Tool
-		if toolMap, ok := toolValue.(map[string]interface{}); ok {
-			// Ищем FunctionDeclarations
-			if fnDecls, ok := toolMap["FunctionDeclarations"]; ok {
-				if fnDeclsList, ok := fnDecls.([]interface{}); ok {
-					for _, fnDecl := range fnDeclsList {
-						if fn, ok := fnDecl.(map[string]interface{}); ok {
-							// Строим OpenAI tool
-							openaiTool := map[string]interface{}{
-								"type": "function",
-								"function": map[string]interface{}{
-									"name":        fn["Name"],
-									"description": fn["Description"],
-									"parameters": map[string]interface{}{
-										"type":       "object",
-										"properties": fn["Parameters"],
-									},
-								},
-							}
-							tools = append(tools, openaiTool)
-						}
+	// ADK передает tools как map[string]tool.Tool (где tool.Tool это интерфейс)
+	// Нужно вызвать Declaration() чтобы получить *genai.FunctionDeclaration
+	for toolName, toolValue := range adkTools {
+		// Проверяем что tool реализует интерфейс с методом Declaration()
+		if funcTool, ok := toolValue.(FunctionTool); ok {
+			decl := funcTool.Declaration()
+			if decl == nil {
+				log.Printf("[OpenAI_Adapter] WARNING: Tool %s has nil Declaration", toolName)
+				continue
+			}
+
+			// Конвертируем параметры из ParametersJsonSchema в OpenAI формат
+			parameters := map[string]interface{}{
+				"type":       "object",
+				"properties": make(map[string]interface{}),
+			}
+
+			if decl.ParametersJsonSchema != nil {
+				// ParametersJsonSchema это any, нужно type assert к map
+				if schema, ok := decl.ParametersJsonSchema.(map[string]interface{}); ok {
+					if props, ok := schema["properties"]; ok {
+						parameters["properties"] = props
+					}
+					if required, ok := schema["required"]; ok {
+						parameters["required"] = required
 					}
 				}
 			}
+
+			// Строим OpenAI tool
+			openaiTool := map[string]interface{}{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":        decl.Name,
+					"description": decl.Description,
+					"parameters":  parameters,
+				},
+			}
+
+			tools = append(tools, openaiTool)
+			log.Printf("[OpenAI_Adapter] Добавлен tool: %s (description: %s)", decl.Name, truncate(decl.Description, 50))
+		} else {
+			log.Printf("[OpenAI_Adapter] WARNING: Tool %s does not implement FunctionTool interface (type: %T)", toolName, toolValue)
 		}
 	}
 
