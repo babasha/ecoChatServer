@@ -186,7 +186,7 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 		StreamingMode: agent.StreamingModeNone,
 	}) {
 		if err != nil {
-			log.Printf("[AGENT] Error during run: %v", err)
+			log.Printf("[AGENT] ❌ Error during run: %v", err)
 			return "", fmt.Errorf("agent run error: %w", err)
 		}
 
@@ -198,6 +198,10 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 				if part.FunctionCall != nil {
 					toolCallsCount++
 					log.Printf("[AGENT] 🔧 Tool called: %s", part.FunctionCall.Name)
+					// Детальное логирование параметров
+					if part.FunctionCall.Args != nil {
+						log.Printf("[AGENT] 📋 Tool args: %v", part.FunctionCall.Args)
+					}
 				}
 			}
 		}
