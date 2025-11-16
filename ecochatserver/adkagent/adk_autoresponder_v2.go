@@ -188,8 +188,9 @@ func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, isAuthorized
 	return agent, nil
 }
 
-// getUserIDWithCache получает user_id
+// getUserIDWithCache получает user_id из metadata или через Store API
 func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *models.Chat) int {
+	// Пытаемся получить из cache (metadata)
 	if chat.Metadata != nil {
 		if userID, ok := chat.Metadata["store_user_id"].(int); ok && userID > 0 {
 			return userID
@@ -199,14 +200,11 @@ func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *mode
 		}
 	}
 
+	// Если не закешировано - получаем через Store API
 	userID := llm.ExtractUserIDFromChat(ctx, ar.storeClient, chat)
 
-	if userID > 0 {
-		if chat.Metadata == nil {
-			chat.Metadata = make(map[string]interface{})
-		}
-		chat.Metadata["store_user_id"] = userID
-	}
+	// NOTE: Не модифицируем chat.Metadata здесь - это должно делаться на уровне выше
+	// где chat создаётся/загружается из БД, чтобы избежать race conditions
 
 	return userID
 }
