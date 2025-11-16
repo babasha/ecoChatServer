@@ -2,7 +2,6 @@ package adkagent
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"strings"
 	"sync"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
 )
