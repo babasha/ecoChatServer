@@ -16,9 +16,9 @@ import (
 	"github.com/egor/ecochatserver/llm"
 )
 
-// SupportAgentV3 - улучшенная версия агента с расширенным набором tools
+// SupportAgent - AI-агент поддержки клиентов с 19 специализированными инструментами
 // Реализует интерфейс UserIDProvider для передачи в tools
-type SupportAgentV3 struct {
+type SupportAgent struct {
 	agent          agent.Agent
 	runner         *runner.Runner
 	sessionService session.Service
@@ -30,12 +30,12 @@ type SupportAgentV3 struct {
 }
 
 // GetUserID реализует интерфейс UserIDProvider
-func (sa *SupportAgentV3) GetUserID() int {
+func (sa *SupportAgent) GetUserID() int {
 	return sa.userID
 }
 
-// NewSupportAgentV3 создаёт агента с полным набором инструментов
-func NewSupportAgentV3(ctx context.Context, storeClient *llm.StoreClient, isAuthorized bool) (*SupportAgentV3, error) {
+// NewSupportAgent создаёт агента с полным набором из 19 инструментов
+func NewSupportAgent(ctx context.Context, storeClient *llm.StoreClient, isAuthorized bool) (*SupportAgent, error) {
 	// 1. Создаём LLM модель
 	llmModel, err := NewLLMModel(ctx)
 	if err != nil {
@@ -54,7 +54,7 @@ func NewSupportAgentV3(ctx context.Context, storeClient *llm.StoreClient, isAuth
 		return nil, fmt.Errorf("failed to create product tools: %w", err)
 	}
 	allTools = append(allTools, productTools...)
-	log.Printf("[AGENT_V3] Added %d product tools", len(productTools))
+	log.Printf("[AGENT] Added %d product tools", len(productTools))
 
 	// Order Tools (требуют userIDProvider для доступа к userID)
 	orderTools, err := CreateOrderTools(storeClient, &userIDProvider)
@@ -62,7 +62,7 @@ func NewSupportAgentV3(ctx context.Context, storeClient *llm.StoreClient, isAuth
 		return nil, fmt.Errorf("failed to create order tools: %w", err)
 	}
 	allTools = append(allTools, orderTools...)
-	log.Printf("[AGENT_V3] Added %d order tools", len(orderTools))
+	log.Printf("[AGENT] Added %d order tools", len(orderTools))
 
 	// Support Tools
 	supportTools, err := CreateSupportTools(storeClient)
@@ -70,21 +70,21 @@ func NewSupportAgentV3(ctx context.Context, storeClient *llm.StoreClient, isAuth
 		return nil, fmt.Errorf("failed to create support tools: %w", err)
 	}
 	allTools = append(allTools, supportTools...)
-	log.Printf("[AGENT_V3] Added %d support tools", len(supportTools))
+	log.Printf("[AGENT] Added %d support tools", len(supportTools))
 
 	// 4. Выбираем промпт
 	var systemPrompt string
 	if isAuthorized {
 		systemPrompt = getEnhancedAuthorizedPrompt()
-		log.Printf("[AGENT_V3] Создаём АВТОРИЗОВАННОГО агента с %d tools", len(allTools))
+		log.Printf("[AGENT] Создаём АВТОРИЗОВАННОГО агента с %d tools", len(allTools))
 	} else {
 		systemPrompt = getEnhancedUnauthorizedPrompt()
-		log.Printf("[AGENT_V3] Создаём НЕАВТОРИЗОВАННОГО агента с %d tools", len(allTools))
+		log.Printf("[AGENT] Создаём НЕАВТОРИЗОВАННОГО агента с %d tools", len(allTools))
 	}
 
 	// 5. Создаём агента
 	adkAgent, err := llmagent.New(llmagent.Config{
-		Name:        "enddel_support_v3",
+		Name:        "enddel_support",
 		Model:       llmModel,
 		Description: "AI-powered assistant for Enddel online grocery delivery service with comprehensive product, order, and support capabilities",
 		Instruction: systemPrompt,
@@ -108,14 +108,14 @@ func NewSupportAgentV3(ctx context.Context, storeClient *llm.StoreClient, isAuth
 		return nil, fmt.Errorf("failed to create runner: %w", err)
 	}
 
-	log.Printf("[AGENT_V3] ✅ Агент создан с %d инструментами", len(allTools))
-	log.Printf("[AGENT_V3] 📊 Breakdown: Products=%d, Orders=%d, Support=%d",
+	log.Printf("[AGENT] ✅ Агент создан с %d инструментами", len(allTools))
+	log.Printf("[AGENT] 📊 Breakdown: Products=%d, Orders=%d, Support=%d",
 		len(productTools), len(orderTools), len(supportTools))
 
 	// 8. Создаём rate limiter
 	rateLimiter := NewGeminiFreeTierLimiter()
 
-	sa := &SupportAgentV3{
+	sa := &SupportAgent{
 		agent:          adkAgent,
 		runner:         r,
 		sessionService: sessionService,
@@ -126,20 +126,21 @@ func NewSupportAgentV3(ctx context.Context, storeClient *llm.StoreClient, isAuth
 		rateLimiter:    rateLimiter,
 	}
 
-	// Заполняем userIDProvider - SupportAgentV3 реализует UserIDProvider
+	// Заполняем userIDProvider - SupportAgent реализует UserIDProvider
 	userIDProvider = sa
 
 	return sa, nil
 }
 
 // ProcessMessage обрабатывает сообщение через ADK runner
-func (sa *SupportAgentV3) ProcessMessage(ctx context.Context, sessionID, message string, storeUserID int) (string, error) {
-	log.Printf("[AGENT_V3] ProcessMessage: sessionID=%s, storeUserID=%d, message=%s", sessionID, storeUserID, truncate(message, 50))
+// clientLanguage - опциональный параметр языка клиента (ru, en, ka и т.д.)
+func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message string, storeUserID int, clientLanguage ...string) (string, error) {
+	log.Printf("[AGENT] ProcessMessage: sessionID=%s, storeUserID=%d, message=%s", sessionID, storeUserID, truncate(message, 50))
 
 	// Проверяем rate limiter
 	if sa.rateLimiter != nil && !sa.rateLimiter.AllowRequest() {
 		rpm, rpd, maxRPM, maxRPD := sa.rateLimiter.GetStats()
-		log.Printf("[AGENT_V3] ⚠️ Rate limit exceeded: RPM=%d/%d, RPD=%d/%d", rpm, maxRPM, rpd, maxRPD)
+		log.Printf("[AGENT] ⚠️ Rate limit exceeded: RPM=%d/%d, RPD=%d/%d", rpm, maxRPM, rpd, maxRPD)
 		return fmt.Sprintf("Извините, достигнут лимит запросов к AI. RPM: %d/%d, RPD: %d/%d. Пожалуйста, попробуйте позже.",
 			rpm, maxRPM, rpd, maxRPD), nil
 	}
@@ -156,8 +157,26 @@ func (sa *SupportAgentV3) ProcessMessage(ctx context.Context, sessionID, message
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// 2. Создаём user content
-	userMsg := genai.NewContentFromText(message, genai.RoleUser)
+	// 2. Создаём user content с инструкцией по языку
+	userMessage := message
+	if len(clientLanguage) > 0 && clientLanguage[0] != "" {
+		lang := clientLanguage[0]
+		var langInstruction string
+		switch lang {
+		case "ru":
+			langInstruction = "[IMPORTANT: Respond ONLY in Russian language]"
+		case "en":
+			langInstruction = "[IMPORTANT: Respond ONLY in English language]"
+		case "ka", "ge":
+			langInstruction = "[IMPORTANT: Respond ONLY in Georgian language]"
+		default:
+			langInstruction = fmt.Sprintf("[IMPORTANT: Respond ONLY in %s language]", lang)
+		}
+		userMessage = langInstruction + "\n\n" + message
+		log.Printf("[AGENT] Client language detected: %s, added instruction", lang)
+	}
+
+	userMsg := genai.NewContentFromText(userMessage, genai.RoleUser)
 
 	// 3. Запускаем агента
 	var response strings.Builder
@@ -167,7 +186,7 @@ func (sa *SupportAgentV3) ProcessMessage(ctx context.Context, sessionID, message
 		StreamingMode: agent.StreamingModeNone,
 	}) {
 		if err != nil {
-			log.Printf("[AGENT_V3] Error during run: %v", err)
+			log.Printf("[AGENT] Error during run: %v", err)
 			return "", fmt.Errorf("agent run error: %w", err)
 		}
 
@@ -178,26 +197,26 @@ func (sa *SupportAgentV3) ProcessMessage(ctx context.Context, sessionID, message
 				// Логируем вызовы tools
 				if part.FunctionCall != nil {
 					toolCallsCount++
-					log.Printf("[AGENT_V3] 🔧 Tool called: %s", part.FunctionCall.Name)
+					log.Printf("[AGENT] 🔧 Tool called: %s", part.FunctionCall.Name)
 				}
 			}
 		}
 	}
 
 	result := response.String()
-	log.Printf("[AGENT_V3] ✅ Response generated (%d chars, %d tool calls)", len(result), toolCallsCount)
-	log.Printf("[AGENT_V3] Preview: %s", truncate(result, 100))
+	log.Printf("[AGENT] ✅ Response generated (%d chars, %d tool calls)", len(result), toolCallsCount)
+	log.Printf("[AGENT] Preview: %s", truncate(result, 100))
 
 	return result, nil
 }
 
 // IsEscalationNeeded проверяет нужна ли эскалация
-func (sa *SupportAgentV3) IsEscalationNeeded(response string) bool {
+func (sa *SupportAgent) IsEscalationNeeded(response string) bool {
 	return strings.Contains(response, "#escalate")
 }
 
 // ============================================================================
-// Улучшенные промпты для V3
+// Улучшенные промпты для production
 // ============================================================================
 
 func getEnhancedUnauthorizedPrompt() string {
@@ -237,7 +256,6 @@ SUPPORT (5 tools):
 
 🎨 TONE & STYLE:
 - Friendly and conversational
-- Respond in customer's language (English/Russian/Georgian)
 - Be concise but helpful
 - Use emojis sparingly
 

@@ -20,10 +20,10 @@ type ADKAutoResponderV2 struct {
 	storeClient *llm.StoreClient
 	config      llm.AutoResponderConfig
 
-	// Кэш агентов V2
+	// Кэш агентов (2 экземпляра: для авторизованных и гостей)
 	agentsMu            sync.RWMutex
-	authorizedAgentV2   *SupportAgentV2
-	unauthorizedAgentV2 *SupportAgentV2
+	authorizedAgent     *SupportAgent   // Agent для залогиненных пользователей (19 tools)
+	unauthorizedAgent   *SupportAgent   // Agent для гостей (13 public tools)
 
 	// Эскалации
 	escalationsMu sync.RWMutex
@@ -44,20 +44,15 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 	return ar, nil
 }
 
-// ProcessMessage - основной метод (совместим со старым интерфейсом)
+// ProcessMessage - основной метод обработки сообщения пользователя
 func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
 	log.Printf("[ADK_V2] ProcessMessage: chatID=%s", chat.ID)
 
-	// Проверки
-	if !ar.config.Enabled || msg.Sender != "user" {
-		return nil, nil
-	}
-
-	if chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil {
-		return nil, nil
-	}
-
-	if !chat.AutoResponderEnabled {
+	// Быстрые проверки: должен ли автоответчик отвечать?
+	if !ar.config.Enabled ||                              // Автоответчик выключен
+		msg.Sender != "user" ||                            // Сообщение не от пользователя
+		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) || // Чат назначен оператору
+		!chat.AutoResponderEnabled {                       // Автоответчик отключен для чата
 		return nil, nil
 	}
 
@@ -75,9 +70,10 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	// Определяем авторизацию
 	userID := ar.getUserIDWithCache(ctx, chat)
 	isAuthorized := userID > 0
+	log.Printf("[ADK_V2] User context: userID=%d, authorized=%v", userID, isAuthorized)
 
-	// Получаем агента
-	agentV2, err := ar.getOrCreateAgentV2(ctx, isAuthorized)
+	// Получаем агента (с полным набором из 19 tools)
+	agent, err := ar.getOrCreateAgent(ctx, isAuthorized)
 	if err != nil {
 		log.Printf("[ADK_V2] Ошибка создания агента: %v", err)
 		return nil, err
@@ -88,18 +84,33 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		time.Sleep(time.Duration(ar.config.DelaySeconds) * time.Second)
 	}
 
+	// Получаем язык клиента из метаданных сообщения (если есть)
+	var clientLang string
+	if msg.Metadata != nil {
+		if detectedLang, ok := msg.Metadata["detectedLanguage"].(string); ok && detectedLang != "" {
+			clientLang = detectedLang
+			log.Printf("[ADK_V2] Client language detected from metadata: %s", clientLang)
+		}
+	}
+
 	// Запуск агента
 	genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
 	defer cancel()
 
-	response, err := agentV2.ProcessMessage(genCtx, chatKey, msg.Content, userID)
+	// Передаём язык клиента в агента (если определён)
+	var response string
+	if clientLang != "" {
+		response, err = agent.ProcessMessage(genCtx, chatKey, msg.Content, userID, clientLang)
+	} else {
+		response, err = agent.ProcessMessage(genCtx, chatKey, msg.Content, userID)
+	}
 	if err != nil {
 		log.Printf("[ADK_V2] Ошибка агента: %v", err)
 		return nil, err
 	}
 
 	// Проверка эскалации
-	if agentV2.IsEscalationNeeded(response) {
+	if agent.IsEscalationNeeded(response) {
 		ar.escalationsMu.Lock()
 		ar.escalations[chatKey] = &EscalationState{
 			EscalatedAt: time.Now(),
@@ -136,16 +147,16 @@ func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
 	delete(ar.escalations, chatID)
 }
 
-// getOrCreateAgentV2 получает или создаёт агента
-func (ar *ADKAutoResponderV2) getOrCreateAgentV2(ctx context.Context, isAuthorized bool) (*SupportAgentV2, error) {
+// getOrCreateAgent создаёт или возвращает закешированный агент V3
+func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, isAuthorized bool) (*SupportAgent, error) {
 	ar.agentsMu.RLock()
-	if isAuthorized && ar.authorizedAgentV2 != nil {
+	if isAuthorized && ar.authorizedAgent != nil {
 		ar.agentsMu.RUnlock()
-		return ar.authorizedAgentV2, nil
+		return ar.authorizedAgent, nil
 	}
-	if !isAuthorized && ar.unauthorizedAgentV2 != nil {
+	if !isAuthorized && ar.unauthorizedAgent != nil {
 		ar.agentsMu.RUnlock()
-		return ar.unauthorizedAgentV2, nil
+		return ar.unauthorizedAgent, nil
 	}
 	ar.agentsMu.RUnlock()
 
@@ -153,23 +164,25 @@ func (ar *ADKAutoResponderV2) getOrCreateAgentV2(ctx context.Context, isAuthoriz
 	defer ar.agentsMu.Unlock()
 
 	// Double-check
-	if isAuthorized && ar.authorizedAgentV2 != nil {
-		return ar.authorizedAgentV2, nil
+	if isAuthorized && ar.authorizedAgent != nil {
+		return ar.authorizedAgent, nil
 	}
-	if !isAuthorized && ar.unauthorizedAgentV2 != nil {
-		return ar.unauthorizedAgentV2, nil
+	if !isAuthorized && ar.unauthorizedAgent != nil {
+		return ar.unauthorizedAgent, nil
 	}
 
-	// Создаём
-	agent, err := NewSupportAgentV2(ctx, ar.storeClient, isAuthorized)
+	// Создаём V3 агента с полным набором из 19 tools
+	agent, err := NewSupportAgent(ctx, ar.storeClient, isAuthorized)
 	if err != nil {
 		return nil, err
 	}
 
 	if isAuthorized {
-		ar.authorizedAgentV2 = agent
+		ar.authorizedAgent = agent
+		log.Printf("[ADK_V2] Created AUTHORIZED V3 agent with 19 tools")
 	} else {
-		ar.unauthorizedAgentV2 = agent
+		ar.unauthorizedAgent = agent
+		log.Printf("[ADK_V2] Created UNAUTHORIZED V3 agent with 19 tools")
 	}
 
 	return agent, nil
@@ -196,25 +209,4 @@ func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *mode
 	}
 
 	return userID
-}
-
-// detectLanguage определяет язык (не используется в V2, но оставим для совместимости)
-func (ar *ADKAutoResponderV2) detectLanguage(msg *models.Message, chat *models.Chat) string {
-	customerLang := ""
-
-	if msg.Metadata != nil {
-		if detected, ok := msg.Metadata["detectedLanguage"].(string); ok {
-			customerLang = strings.ToLower(strings.TrimSpace(detected))
-		}
-	}
-
-	if customerLang == "" || customerLang == "unknown" {
-		if lang, err := database.GetClientLanguageFromChat(chat.ID); err == nil {
-			customerLang = strings.ToLower(strings.TrimSpace(lang))
-		} else if err != sql.ErrNoRows {
-			log.Printf("[ADK_V2] Ошибка получения языка: %v", err)
-		}
-	}
-
-	return customerLang
 }

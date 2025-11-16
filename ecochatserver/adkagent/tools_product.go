@@ -124,7 +124,7 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 
 func createSearchProductTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type SearchProductInput struct {
-		ProductName string `json:"productName"`
+		Query string `json:"query"` // Параметр для поиска
 	}
 	type SearchProductOutput struct {
 		Result string `json:"result"`
@@ -133,22 +133,22 @@ func createSearchProductTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "search_product",
-			Description: "Search for a specific product by name. Use when customer asks about a specific product or wants detailed info about one product.",
+			Description: "Search for a specific product by name. Use when customer asks about a specific product or wants detailed info about one product. Provide search query in 'query' parameter.",
 		},
 		func(ctx tool.Context, input SearchProductInput) (SearchProductOutput, error) {
-			log.Printf("[TOOL] search_product called: productName=%s", input.ProductName)
+			log.Printf("[TOOL] search_product called: query=%s", input.Query)
 
-			if input.ProductName == "" {
-				return SearchProductOutput{Result: "Error: product name is required"}, nil
+			if input.Query == "" {
+				return SearchProductOutput{Result: "Error: search query is required"}, nil
 			}
 
-			products, err := storeClient.GetAllProducts(ctx, input.ProductName)
+			products, err := storeClient.GetAllProducts(ctx, input.Query)
 			if err != nil {
 				return SearchProductOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return SearchProductOutput{Result: fmt.Sprintf("Product '%s' not found.", input.ProductName)}, nil
+				return SearchProductOutput{Result: fmt.Sprintf("Product '%s' not found.", input.Query)}, nil
 			}
 
 			if len(products) == 1 {
