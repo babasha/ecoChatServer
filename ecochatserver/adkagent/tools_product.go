@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -14,6 +15,20 @@ import (
 // ============================================================================
 // PRODUCT AGENT TOOLS - Инструменты для продуктового консультанта
 // ============================================================================
+
+// ============================================================================
+// SESSION STATE OPTIMIZATION - Константы для кэша
+// ============================================================================
+
+const (
+	// Кэш категорий (живет всю сессию)
+	SessionKeyCategoriesCache = "app:categories_cache"
+	SessionKeyCategoriesTTL   = "app:categories_ttl"
+
+	// Контекст пользователя
+	SessionKeyUserInterest     = "user:interested_in"
+	SessionKeyUserLastCategory = "user:last_category"
+)
 
 // CreateProductTools создает набор инструментов для работы с продуктами
 func CreateProductTools(storeClient *llm.StoreClient) ([]tool.Tool, error) {
@@ -99,7 +114,7 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products",
-			Description: "Get list of products from store. Use when customer asks about products, catalog, assortment. Can optionally filter by 'query' or 'category' parameter (product name, category, etc). Use 'all' to get all products.",
+			Description: "Get products. Filter by query or category.",
 		},
 		func(ctx tool.Context, input GetProductsInput) (ProductsOutput, error) {
 			// Поддерживаем оба параметра для совместимости с разными LLM
@@ -146,7 +161,7 @@ func createSearchProductTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "search_product",
-			Description: "Search for a specific product by name. Use when customer asks about a specific product or wants detailed info about one product. Provide search query in 'query' parameter.",
+			Description: "Search product by name.",
 		},
 		func(ctx tool.Context, input SearchProductInput) (SearchProductOutput, error) {
 			log.Printf("[TOOL] search_product called: query=%s", input.Query)
@@ -178,6 +193,7 @@ func createSearchProductTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	)
 }
 
+// createGetCategoriesTool - ОПТИМИЗИРОВАННАЯ версия с Session State кэшированием
 func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetCategoriesInput struct {
 		// No input needed
@@ -189,28 +205,52 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_categories",
-			Description: "Get list of all product categories available in the store. Use when customer asks about product categories or wants to browse by category.",
+			Description: "Get all categories.",
 		},
 		func(ctx tool.Context, input GetCategoriesInput) (CategoriesOutput, error) {
 			log.Printf("[TOOL] get_categories called")
 
+			session := ctx.Session()
+
+			// ===== ШАГ 1: Проверяем SESSION CACHE =====
+			if cached, err := session.State().Get(SessionKeyCategoriesCache); err == nil {
+				// Проверяем TTL
+				if ttl, _ := session.State().Get(SessionKeyCategoriesTTL); ttl != nil {
+					if time.Now().Before(ttl.(time.Time)) {
+						log.Printf("[SESSION] ✅ Categories from session cache! (saved API call)")
+						return CategoriesOutput{Result: cached.(string)}, nil
+					}
+					log.Printf("[SESSION] ⏰ Cache expired, fetching fresh data")
+				}
+			}
+
+			log.Printf("[SESSION] ❌ Cache miss, fetching from API...")
+
+			// ===== ШАГ 2: Запрашиваем из API =====
 			categories, err := storeClient.GetAllCategories(ctx)
 			if err != nil {
 				return CategoriesOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(categories) == 0 {
-				return CategoriesOutput{Result: "No categories found in the store."}, nil
+				return CategoriesOutput{Result: "No categories found."}, nil
 			}
 
-			result := fmt.Sprintf("Store has %d product categories:\n", len(categories))
+			// Форматируем результат
+			result := fmt.Sprintf("Store has %d categories:\n", len(categories))
 			for i, cat := range categories {
 				if i >= 20 {
-					result += fmt.Sprintf("\n... and %d more categories", len(categories)-20)
+					result += fmt.Sprintf("\n... and %d more", len(categories)-20)
 					break
 				}
 				result += fmt.Sprintf("• %s\n", cat.NameRu)
 			}
+
+			// ===== ШАГ 3: Сохраняем в SESSION =====
+			session.State().Set(SessionKeyCategoriesCache, result)
+			session.State().Set(SessionKeyCategoriesTTL, time.Now().Add(10*time.Minute)) // TTL 10 минут
+
+			log.Printf("[SESSION] 💾 Cached categories for 10 minutes")
 
 			return CategoriesOutput{Result: result}, nil
 		},
@@ -228,7 +268,7 @@ func createCheckAvailabilityTool(storeClient *llm.StoreClient) (tool.Tool, error
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "check_product_availability",
-			Description: "Check if a product is available in stock by its slug. Use when customer asks 'is this product available', 'in stock', etc.",
+			Description: "Check product stock by slug.",
 		},
 		func(ctx tool.Context, input CheckProductAvailabilityInput) (ProductAvailabilityOutput, error) {
 			log.Printf("[TOOL] check_product_availability called: slug=%s", input.ProductSlug)
@@ -277,7 +317,7 @@ func createCompareProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) 
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "compare_products",
-			Description: "Compare multiple products side by side. Use when customer asks 'what's the difference between X and Y', 'compare these products', 'which is better'. Provide product names to compare.",
+			Description: "Compare multiple products.",
 		},
 		func(ctx tool.Context, input CompareProductsInput) (CompareProductsOutput, error) {
 			log.Printf("[TOOL] compare_products called: products=%v", input.Products)
@@ -345,7 +385,7 @@ func createRecommendProductsTool(storeClient *llm.StoreClient) (tool.Tool, error
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "recommend_products",
-			Description: "Get smart product recommendations based on context. Use when customer asks 'what should I buy for breakfast/dinner/party', 'recommend something', 'what's good for kids'. Provide context (e.g. 'breakfast', 'dinner', 'healthy', 'kids') and max number of products.",
+			Description: "Recommend products by context.",
 		},
 		func(ctx tool.Context, input RecommendProductsInput) (RecommendProductsOutput, error) {
 			log.Printf("[TOOL] recommend_products called: context=%s, max=%d", input.Context, input.MaxProducts)
@@ -417,7 +457,7 @@ func createFindAlternativesTool(storeClient *llm.StoreClient) (tool.Tool, error)
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "find_alternatives",
-			Description: "Find alternative products similar to specified product. Use when customer asks 'show me cheaper alternatives', 'similar products', 'other options'. Criteria can be: 'cheaper' (lower price), 'premium' (higher quality), 'similar' (same category).",
+			Description: "Find alternative products.",
 		},
 		func(ctx tool.Context, input FindAlternativesInput) (FindAlternativesOutput, error) {
 			log.Printf("[TOOL] find_alternatives called: product=%s, criteria=%s", input.Product, input.Criteria)
@@ -475,7 +515,7 @@ func createFindAlternativesTool(storeClient *llm.StoreClient) (tool.Tool, error)
 	)
 }
 
-// createGetProductsByCategoryTool - получение товаров по категории
+// createGetProductsByCategoryTool - ОПТИМИЗИРОВАННАЯ версия с tracking интересов
 func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetProductsByCategoryInput struct {
 		Category string `json:"category"` // Название категории
@@ -488,34 +528,40 @@ func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, e
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products_by_category",
-			Description: "Get products from a specific category. Use when customer asks 'show me products from X category', 'what do you have in Y section'. Provide category name in 'category' parameter and optional 'limit' parameter.",
+			Description: "Get products from category.",
 		},
 		func(ctx tool.Context, input GetProductsByCategoryInput) (GetProductsByCategoryOutput, error) {
-			log.Printf("[TOOL] get_products_by_category called: category=%s, limit=%d", input.Category, input.Limit)
+			log.Printf("[TOOL] get_products_by_category: category=%s", input.Category)
 
 			if input.Category == "" {
-				return GetProductsByCategoryOutput{Result: "Error: category name is required"}, nil
+				return GetProductsByCategoryOutput{Result: "Error: category required"}, nil
 			}
 
 			if input.Limit <= 0 {
 				input.Limit = 10
 			}
 
-			// Используем поиск по названию категории
+			// Запрашиваем товары
 			products, err := storeClient.GetAllProducts(ctx, input.Category)
 			if err != nil {
 				return GetProductsByCategoryOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return GetProductsByCategoryOutput{Result: fmt.Sprintf("No products found in category '%s'.", input.Category)}, nil
+				return GetProductsByCategoryOutput{Result: fmt.Sprintf("No products in '%s'.", input.Category)}, nil
 			}
 
 			if len(products) > input.Limit {
 				products = products[:input.Limit]
 			}
 
-			result := fmt.Sprintf("📂 Products in '%s' category:\n\n", input.Category)
+			// ===== TRACKING: Сохраняем интерес пользователя в SESSION =====
+			session := ctx.Session()
+			session.State().Set(SessionKeyUserInterest, input.Category)
+			session.State().Set(SessionKeyUserLastCategory, input.Category)
+			log.Printf("[SESSION] 📝 Tracked user interest: %s", input.Category)
+
+			result := fmt.Sprintf("📂 Products in '%s':\n\n", input.Category)
 			result += llm.FormatProductsList(products)
 
 			return GetProductsByCategoryOutput{Result: result}, nil

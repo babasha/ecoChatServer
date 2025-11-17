@@ -2,12 +2,17 @@ package adkagent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
@@ -26,12 +31,101 @@ type SupportAgent struct {
 	isAuthorized   bool
 	appName        string
 	userID         int
+	currentSessionID string
 	rateLimiter    *RateLimiter
 }
 
 // GetUserID реализует интерфейс UserIDProvider
 func (sa *SupportAgent) GetUserID() int {
 	return sa.userID
+}
+
+// resetContext очищает пользовательский контекст перед возвратом агента в пул
+func (sa *SupportAgent) resetContext() {
+	sa.userID = 0
+	sa.currentSessionID = ""
+}
+
+// ============================================================================
+// RESPONSE CACHING - Кэширование LLM ответов
+// ============================================================================
+
+// CacheEntry - запись в кэше
+type responseCacheEntry struct {
+	Content   *genai.Content
+	CreatedAt time.Time
+	TTL       time.Duration
+}
+
+// ResponseCache - глобальный кэш для ответов LLM (thread-safe)
+type responseCache struct {
+	mu    sync.RWMutex
+	cache map[string]*responseCacheEntry
+}
+
+var globalResponseCache = &responseCache{
+	cache: make(map[string]*responseCacheEntry),
+}
+
+// generateCacheKey создает уникальный ключ для запроса
+func generateCacheKey(req *model.LLMRequest) string {
+	data, _ := json.Marshal(req.Content)
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%x", hash[:8]) // Первые 8 байт хэша
+}
+
+// Get проверяет наличие ответа в кэше (thread-safe)
+func (rc *responseCache) Get(key string) *genai.Content {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+
+	entry, exists := rc.cache[key]
+	if !exists {
+		return nil
+	}
+
+	// Проверяем TTL
+	if time.Since(entry.CreatedAt) > entry.TTL {
+		log.Printf("[CACHE] ⏰ Cache expired for key %s", key[:8])
+		// Не удаляем здесь (под RLock), удалим в ClearExpired()
+		return nil
+	}
+
+	log.Printf("[CACHE] ✅ Cache HIT for key %s (age: %v)", key[:8], time.Since(entry.CreatedAt))
+	return entry.Content
+}
+
+// Set сохраняет ответ в кэш (thread-safe)
+func (rc *responseCache) Set(key string, content *genai.Content, ttl time.Duration) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	rc.cache[key] = &responseCacheEntry{
+		Content:   content,
+		CreatedAt: time.Now(),
+		TTL:       ttl,
+	}
+	log.Printf("[CACHE] 💾 Cached response for key %s (TTL: %v)", key[:8], ttl)
+}
+
+// ClearExpired удаляет истекшие записи из кэша (thread-safe)
+func (rc *responseCache) ClearExpired() int {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	deleted := 0
+	for key, entry := range rc.cache {
+		if time.Since(entry.CreatedAt) > entry.TTL {
+			delete(rc.cache, key)
+			deleted++
+		}
+	}
+
+	if deleted > 0 {
+		log.Printf("[CACHE] 🗑️ Cleared %d expired entries", deleted)
+	}
+
+	return deleted
 }
 
 // NewSupportAgent создаёт агента с полным набором из 19 инструментов
@@ -72,27 +166,82 @@ func NewSupportAgent(ctx context.Context, storeClient *llm.StoreClient, isAuthor
 	allTools = append(allTools, supportTools...)
 	log.Printf("[AGENT] Added %d support tools", len(supportTools))
 
-	// 4. Выбираем промпт
+	// 4. Выбираем ОПТИМИЗИРОВАННЫЙ промпт (lean version)
 	var systemPrompt string
 	if isAuthorized {
-		systemPrompt = getEnhancedAuthorizedPrompt()
-		log.Printf("[AGENT] Создаём АВТОРИЗОВАННОГО агента с %d tools", len(allTools))
+		systemPrompt = getLeanAuthorizedPrompt()
+		log.Printf("[AGENT] Создаём АВТОРИЗОВАННОГО агента с %d tools (LEAN prompt)", len(allTools))
 	} else {
-		systemPrompt = getEnhancedUnauthorizedPrompt()
-		log.Printf("[AGENT] Создаём НЕАВТОРИЗОВАННОГО агента с %d tools", len(allTools))
+		systemPrompt = getLeanUnauthorizedPrompt()
+		log.Printf("[AGENT] Создаём НЕАВТОРИЗОВАННОГО агента с %d tools (LEAN prompt)", len(allTools))
 	}
 
-	// 5. Создаём агента
+	// 5. Создаём агента с ОПТИМИЗАЦИЯМИ
 	adkAgent, err := llmagent.New(llmagent.Config{
 		Name:        "enddel_support",
 		Model:       llmModel,
 		Description: "AI-powered assistant for Enddel online grocery delivery service with comprehensive product, order, and support capabilities",
 		Instruction: systemPrompt,
 		Tools:       allTools,
+
+		// ✨ ОПТИМИЗАЦИЯ 1: Лимиты генерации
+		GenerateContentConfig: &genai.GenerateContentConfig{
+			Temperature:     0.3,   // Меньше креативности = более стабильные ответы = дешевле
+			MaxOutputTokens: 800,   // Лимит на длину ответа (экономия output токенов)
+			CandidateCount:  1,     // Только 1 вариант (не генерировать альтернативы)
+			TopP:            0.9,   // Nucleus sampling
+			TopK:            40,    // Top-K sampling
+		},
+
+		// ✨ ОПТИМИЗАЦИЯ 2: Кэширование через BeforeModelCallback
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
+			func(ctx context.Context, req *model.LLMRequest) (*genai.Content, error) {
+				cacheKey := generateCacheKey(req)
+
+				// Проверяем кэш ПЕРЕД вызовом LLM
+				if cached := globalResponseCache.Get(cacheKey); cached != nil {
+					// ВОЗВРАЩАЕМ ИЗ КЭША - LLM НЕ ВЫЗЫВАЕТСЯ! 🎉
+					return cached, nil
+				}
+
+				log.Printf("[CACHE] ❌ Cache MISS for key %s - calling LLM", cacheKey[:8])
+				return nil, nil // Продолжаем обычный flow
+			},
+		},
+
+		// ✨ ОПТИМИЗАЦИЯ 3: Сохранение в кэш через AfterModelCallback
+		AfterModelCallbacks: []llmagent.AfterModelCallback{
+			func(ctx context.Context, req *model.LLMRequest, resp *model.LLMResponse) error {
+				cacheKey := generateCacheKey(req)
+
+				// Сохраняем ответ в кэш
+				if resp.Content != nil {
+					globalResponseCache.Set(cacheKey, resp.Content, 5*time.Minute) // TTL 5 минут
+				}
+
+				// Логируем использование токенов
+				if resp.UsageMetadata != nil {
+					log.Printf("[METRICS] 📊 Tokens: prompt=%d, response=%d, total=%d",
+						resp.UsageMetadata.PromptTokenCount,
+						resp.UsageMetadata.CandidatesTokenCount,
+						resp.UsageMetadata.TotalTokenCount,
+					)
+				}
+
+				return nil
+			},
+		},
+
+		// ✨ ОПТИМИЗАЦИЯ 4: Не включать историю (экономия 50% в multi-turn)
+		// Grocery delivery - в основном single-turn запросы ("покажи вино", "есть молоко?")
+		// Cache работает максимально эффективно при стабильных промптах без истории
+		IncludeContents: llmagent.IncludeContentsNone, // Не включать всю историю
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
+
+	log.Printf("[AGENT] 🚀 Агент создан с ОПТИМИЗАЦИЯМИ: MaxTokens=800, Temperature=0.3, Caching=5min")
 
 	// 6. Создаём session service
 	sessionService := session.InMemoryService()
@@ -135,7 +284,7 @@ func NewSupportAgent(ctx context.Context, storeClient *llm.StoreClient, isAuthor
 // ProcessMessage обрабатывает сообщение через ADK runner
 // clientLanguage - опциональный параметр языка клиента (ru, en, ka и т.д.)
 func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message string, storeUserID int, clientLanguage ...string) (string, error) {
-	log.Printf("[AGENT] ProcessMessage: sessionID=%s, storeUserID=%d, message=%s", sessionID, storeUserID, truncate(message, 50))
+	defer sa.resetContext()
 
 	// Проверяем rate limiter
 	if sa.rateLimiter != nil && !sa.rateLimiter.AllowRequest() {
@@ -147,6 +296,7 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 
 	// Сохраняем userID для использования в tools
 	sa.userID = storeUserID
+	sa.currentSessionID = sessionID
 
 	// 1. Создаём или получаем сессию
 	sessionResp, err := sa.sessionService.Create(ctx, &session.CreateRequest{
@@ -220,103 +370,23 @@ func (sa *SupportAgent) IsEscalationNeeded(response string) bool {
 }
 
 // ============================================================================
-// Улучшенные промпты для production
+// ОПТИМИЗИРОВАННЫЕ LEAN PROMPTS - экономия ~370 токенов (82%)
 // ============================================================================
 
-func getEnhancedUnauthorizedPrompt() string {
-	return `You are a friendly AI assistant for "Enddel" - an online grocery delivery service in Tbilisi, Georgia.
+func getLeanUnauthorizedPrompt() string {
+	return `AI assistant for Enddel grocery delivery (Tbilisi).
 
-🎯 YOUR ROLE:
-- Help customers find products in our store
-- Answer questions about delivery, payment, and store policies
-- Provide excellent customer service
-- Use tools to search our actual inventory
+RULES:
+1. Use tools for real data - never invent info
+2. For product categories: call get_categories first, then search by exact name
+3. Always respond in customer's language
+4. Escalate (#escalate) if: bot question, complaints, refunds, customer frustrated
 
-🛠️ AVAILABLE TOOLS:
-
-PRODUCTS (8 tools):
-- get_products: Browse product catalog
-- search_product: Find specific products
-- get_categories: View all categories
-- check_product_availability: Check stock status
-- compare_products: Compare multiple items
-- recommend_products: Get smart recommendations
-- find_alternatives: Find similar products
-- get_products_by_category: Browse by category
-
-SUPPORT (5 tools):
-- get_store_info: Delivery, payment, hours
-- inspect_website_page: Website help
-- search_faq: Search knowledge base
-- get_contact_info: Contact details
-- check_service_status: System status
-
-⚠️ CRITICAL RULES:
-1. ALWAYS use tools to get real product data - NEVER make up information
-2. When customer asks about a CATEGORY of products (drinks, food, wine, etc):
-   - FIRST call get_categories to see available categories
-   - THEN use the exact category name from the list to search
-3. If customer asks about specific products, use search_product
-4. If asked to compare, use compare_products
-5. If asked for recommendations, use recommend_products
-6. For general info, use get_store_info or search_faq
-
-🎨 TONE & STYLE:
-- Friendly and conversational
-- Be concise but helpful
-- Use emojis sparingly
-
-🚨 ESCALATION (#escalate when):
-- Customer asks if you're a bot
-- Complaints about quality/delivery
-- Refund requests
-- Customer is upset or frustrated
-- You're unsure how to help
-
-📝 EXAMPLES:
-
-Example 1 - Category search (CORRECT):
-User: "What drinks do you have?" / "а что у вас есть попить?"
-You:
-  Step 1: [Call get_categories to see available categories]
-  Step 2: [See "Beverages" category in the list]
-  Step 3: [Call get_products_by_category with category="Beverages"]
-  Step 4: [Present the drinks to customer in their language]
-
-Example 2 - Specific product:
-User: "Do you have wine?"
-You: [Call search_product with query="wine"]
-
-Example 3 - Comparison:
-User: "Compare red and white wine"
-You: [Call compare_products with both wines]
-
-Example 4 - Recommendations:
-User: "Recommend something for breakfast"
-You: [Call recommend_products with context="breakfast"]
-
-🎯 KEY STRATEGY: When in doubt about category names, ALWAYS call get_categories first!
-
-Respond naturally and always prioritize using tools for accurate information!`
+Tools available via function calling.`
 }
 
-func getEnhancedAuthorizedPrompt() string {
-	return getEnhancedUnauthorizedPrompt() + `
+func getLeanAuthorizedPrompt() string {
+	return getLeanUnauthorizedPrompt() + `
 
-🔐 AUTHORIZED USER FEATURES:
-
-ORDERS (6 additional tools):
-- get_user_orders: View order history
-- get_order_status: Check order status
-- track_order: Real-time tracking
-- get_orders_by_status: Filter by status
-- get_recent_orders: Last N orders
-- report_delivery_issue: Report problems
-
-SECURITY:
-- User is logged in - can access personal data
-- ONLY show current user's orders
-- Verify user owns order before showing details
-
-Use order tools when customer asks about "my orders", "where is my delivery", "order history", etc.`
+AUTHORIZED: Access to order tools. Show only user's own orders.`
 }

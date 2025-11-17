@@ -1,4 +1,4 @@
-package adkagent
+﻿package adkagent
 
 import (
 	"context"
@@ -13,24 +13,24 @@ import (
 	"github.com/egor/ecochatserver/models"
 )
 
-// ADKAutoResponderV2 - обновлённая версия с правильным ADK API
+// ADKAutoResponderV2 - ╨╛╨▒╨╜╨╛╨▓╨╗╤æ╨╜╨╜╨░╤Å ╨▓╨╡╤Ç╤ü╨╕╤Å ╤ü ╨┐╤Ç╨░╨▓╨╕╨╗╤î╨╜╤ï╨╝ ADK API
 type ADKAutoResponderV2 struct {
 	storeClient *llm.StoreClient
 	config      llm.AutoResponderConfig
 
-	// Кэш агентов (2 экземпляра: для авторизованных и гостей)
+	// ╨Ü╤ì╤ê ╨░╨│╨╡╨╜╤é╨╛╨▓ (2 ╤ì╨║╨╖╨╡╨╝╨┐╨╗╤Å╤Ç╨░: ╨┤╨╗╤Å ╨░╨▓╤é╨╛╤Ç╨╕╨╖╨╛╨▓╨░╨╜╨╜╤ï╤à ╨╕ ╨│╨╛╤ü╤é╨╡╨╣)
 	agentsMu            sync.RWMutex
-	authorizedAgent     *SupportAgent   // Agent для залогиненных пользователей (19 tools)
-	unauthorizedAgent   *SupportAgent   // Agent для гостей (13 public tools)
+	authorizedAgent     *SupportAgent   // Agent ╨┤╨╗╤Å ╨╖╨░╨╗╨╛╨│╨╕╨╜╨╡╨╜╨╜╤ï╤à ╨┐╨╛╨╗╤î╨╖╨╛╨▓╨░╤é╨╡╨╗╨╡╨╣ (19 tools)
+	unauthorizedAgent   *SupportAgent   // Agent ╨┤╨╗╤Å ╨│╨╛╤ü╤é╨╡╨╣ (13 public tools)
 
-	// Эскалации (in-memory - при рестарте сбрасываются)
-	// NOTE: Это intentional - эскалация это ephemeral state.
-	// При рестарте сервера автоответчик снова начнёт отвечать, что правильно.
+	// ╨¡╤ü╨║╨░╨╗╨░╤å╨╕╨╕ (in-memory - ╨┐╤Ç╨╕ ╤Ç╨╡╤ü╤é╨░╤Ç╤é╨╡ ╤ü╨▒╤Ç╨░╤ü╤ï╨▓╨░╤Ä╤é╤ü╤Å)
+	// NOTE: ╨¡╤é╨╛ intentional - ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╤Å ╤ì╤é╨╛ ephemeral state.
+	// ╨ƒ╤Ç╨╕ ╤Ç╨╡╤ü╤é╨░╤Ç╤é╨╡ ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░ ╨░╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╤ü╨╜╨╛╨▓╨░ ╨╜╨░╤ç╨╜╤æ╤é ╨╛╤é╨▓╨╡╤ç╨░╤é╤î, ╤ç╤é╨╛ ╨┐╤Ç╨░╨▓╨╕╨╗╤î╨╜╨╛.
 	escalationsMu sync.RWMutex
 	escalations   map[string]*EscalationState
 }
 
-// NewADKAutoResponderV2 создаёт автоответчик на базе ADK V2
+// NewADKAutoResponderV2 ╤ü╨╛╨╖╨┤╨░╤æ╤é ╨░╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨╜╨░ ╨▒╨░╨╖╨╡ ADK V2
 func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
 	storeClient := llm.NewStoreClient()
 
@@ -40,25 +40,25 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 		escalations: make(map[string]*EscalationState),
 	}
 
-	log.Printf("[ADK_V2] Инициализирован (lazy agent creation)")
+	log.Printf("[ADK_V2] ╨ÿ╨╜╨╕╤å╨╕╨░╨╗╨╕╨╖╨╕╤Ç╨╛╨▓╨░╨╜ (lazy agent creation)")
 	return ar, nil
 }
 
-// ProcessMessage - основной метод обработки сообщения пользователя
+// ProcessMessage - ╨╛╤ü╨╜╨╛╨▓╨╜╨╛╨╣ ╨╝╨╡╤é╨╛╨┤ ╨╛╨▒╤Ç╨░╨▒╨╛╤é╨║╨╕ ╤ü╨╛╨╛╨▒╤ë╨╡╨╜╨╕╤Å ╨┐╨╛╨╗╤î╨╖╨╛╨▓╨░╤é╨╡╨╗╤Å
 func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
 	log.Printf("[ADK_V2] ProcessMessage: chatID=%s", chat.ID)
 
-	// Быстрые проверки: должен ли автоответчик отвечать?
-	if !ar.config.Enabled ||                              // Автоответчик выключен
-		msg.Sender != "user" ||                            // Сообщение не от пользователя
-		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) || // Чат назначен оператору
-		!chat.AutoResponderEnabled {                       // Автоответчик отключен для чата
+	// ╨æ╤ï╤ü╤é╤Ç╤ï╨╡ ╨┐╤Ç╨╛╨▓╨╡╤Ç╨║╨╕: ╨┤╨╛╨╗╨╢╨╡╨╜ ╨╗╨╕ ╨░╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨╛╤é╨▓╨╡╤ç╨░╤é╤î?
+	if !ar.config.Enabled ||                              // ╨É╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨▓╤ï╨║╨╗╤Ä╤ç╨╡╨╜
+		msg.Sender != "user" ||                            // ╨í╨╛╨╛╨▒╤ë╨╡╨╜╨╕╨╡ ╨╜╨╡ ╨╛╤é ╨┐╨╛╨╗╤î╨╖╨╛╨▓╨░╤é╨╡╨╗╤Å
+		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) || // ╨º╨░╤é ╨╜╨░╨╖╨╜╨░╤ç╨╡╨╜ ╨╛╨┐╨╡╤Ç╨░╤é╨╛╤Ç╤â
+		!chat.AutoResponderEnabled {                       // ╨É╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨╛╤é╨║╨╗╤Ä╤ç╨╡╨╜ ╨┤╨╗╤Å ╤ç╨░╤é╨░
 		return nil, nil
 	}
 
 	chatKey := chat.ID.String()
 
-	// Проверка эскалации
+	// ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░ ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╨╕
 	ar.escalationsMu.RLock()
 	escalation := ar.escalations[chatKey]
 	ar.escalationsMu.RUnlock()
@@ -67,24 +67,24 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		return nil, nil
 	}
 
-	// Определяем авторизацию
+	// ╨₧╨┐╤Ç╨╡╨┤╨╡╨╗╤Å╨╡╨╝ ╨░╨▓╤é╨╛╤Ç╨╕╨╖╨░╤å╨╕╤Ä
 	userID := ar.getUserIDWithCache(ctx, chat)
 	isAuthorized := userID > 0
 	log.Printf("[ADK_V2] User context: userID=%d, authorized=%v", userID, isAuthorized)
 
-	// Получаем агента (с полным набором из 19 tools)
+	// ╨ƒ╨╛╨╗╤â╤ç╨░╨╡╨╝ ╨░╨│╨╡╨╜╤é╨░ (╤ü ╨┐╨╛╨╗╨╜╤ï╨╝ ╨╜╨░╨▒╨╛╤Ç╨╛╨╝ ╨╕╨╖ 19 tools)
 	agent, err := ar.getOrCreateAgent(ctx, isAuthorized)
 	if err != nil {
-		log.Printf("[ADK_V2] Ошибка создания агента: %v", err)
+		log.Printf("[ADK_V2] ╨₧╤ê╨╕╨▒╨║╨░ ╤ü╨╛╨╖╨┤╨░╨╜╨╕╤Å ╨░╨│╨╡╨╜╤é╨░: %v", err)
 		return nil, err
 	}
 
-	// Задержка
+	// ╨ù╨░╨┤╨╡╤Ç╨╢╨║╨░
 	if ar.config.DelaySeconds > 0 {
 		time.Sleep(time.Duration(ar.config.DelaySeconds) * time.Second)
 	}
 
-	// Получаем язык клиента из метаданных сообщения (если есть)
+	// ╨ƒ╨╛╨╗╤â╤ç╨░╨╡╨╝ ╤Å╨╖╤ï╨║ ╨║╨╗╨╕╨╡╨╜╤é╨░ ╨╕╨╖ ╨╝╨╡╤é╨░╨┤╨░╨╜╨╜╤ï╤à ╤ü╨╛╨╛╨▒╤ë╨╡╨╜╨╕╤Å (╨╡╤ü╨╗╨╕ ╨╡╤ü╤é╤î)
 	var clientLang string
 	if msg.Metadata != nil {
 		if detectedLang, ok := msg.Metadata["detectedLanguage"].(string); ok && detectedLang != "" {
@@ -93,11 +93,11 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		}
 	}
 
-	// Запуск агента
+	// ╨ù╨░╨┐╤â╤ü╨║ ╨░╨│╨╡╨╜╤é╨░
 	genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
 	defer cancel()
 
-	// Передаём язык клиента в агента (если определён)
+	// ╨ƒ╨╡╤Ç╨╡╨┤╨░╤æ╨╝ ╤Å╨╖╤ï╨║ ╨║╨╗╨╕╨╡╨╜╤é╨░ ╨▓ ╨░╨│╨╡╨╜╤é╨░ (╨╡╤ü╨╗╨╕ ╨╛╨┐╤Ç╨╡╨┤╨╡╨╗╤æ╨╜)
 	var response string
 	if clientLang != "" {
 		response, err = agent.ProcessMessage(genCtx, chatKey, msg.Content, userID, clientLang)
@@ -105,11 +105,11 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response, err = agent.ProcessMessage(genCtx, chatKey, msg.Content, userID)
 	}
 	if err != nil {
-		log.Printf("[ADK_V2] Ошибка агента: %v", err)
+		log.Printf("[ADK_V2] ╨₧╤ê╨╕╨▒╨║╨░ ╨░╨│╨╡╨╜╤é╨░: %v", err)
 		return nil, err
 	}
 
-	// Проверка эскалации
+	// ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░ ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╨╕
 	if agent.IsEscalationNeeded(response) {
 		ar.escalationsMu.Lock()
 		ar.escalations[chatKey] = &EscalationState{
@@ -121,7 +121,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response = strings.TrimSpace(response)
 	}
 
-	// Формируем ответ
+	// ╨ñ╨╛╤Ç╨╝╨╕╤Ç╤â╨╡╨╝ ╨╛╤é╨▓╨╡╤é
 	botMsg := &models.Message{
 		ChatID:    chat.ID,
 		Content:   response,
@@ -140,14 +140,14 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	return botMsg, nil
 }
 
-// ClearEscalation очищает эскалацию
+// ClearEscalation ╨╛╤ç╨╕╤ë╨░╨╡╤é ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╤Ä
 func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
 	ar.escalationsMu.Lock()
 	defer ar.escalationsMu.Unlock()
 	delete(ar.escalations, chatID)
 }
 
-// getOrCreateAgent создаёт или возвращает закешированный агент V3
+// getOrCreateAgent ╤ü╨╛╨╖╨┤╨░╤æ╤é ╨╕╨╗╨╕ ╨▓╨╛╨╖╨▓╤Ç╨░╤ë╨░╨╡╤é ╨╖╨░╨║╨╡╤ê╨╕╤Ç╨╛╨▓╨░╨╜╨╜╤ï╨╣ ╨░╨│╨╡╨╜╤é V3
 func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, isAuthorized bool) (*SupportAgent, error) {
 	ar.agentsMu.RLock()
 	if isAuthorized && ar.authorizedAgent != nil {
@@ -171,7 +171,7 @@ func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, isAuthorized
 		return ar.unauthorizedAgent, nil
 	}
 
-	// Создаём V3 агента с полным набором из 19 tools
+	// ╨í╨╛╨╖╨┤╨░╤æ╨╝ V3 ╨░╨│╨╡╨╜╤é╨░ ╤ü ╨┐╨╛╨╗╨╜╤ï╨╝ ╨╜╨░╨▒╨╛╤Ç╨╛╨╝ ╨╕╨╖ 19 tools
 	agent, err := NewSupportAgent(ctx, ar.storeClient, isAuthorized)
 	if err != nil {
 		return nil, err
@@ -188,9 +188,9 @@ func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, isAuthorized
 	return agent, nil
 }
 
-// getUserIDWithCache получает user_id из metadata или через Store API
+// getUserIDWithCache ╨┐╨╛╨╗╤â╤ç╨░╨╡╤é user_id ╨╕╨╖ metadata ╨╕╨╗╨╕ ╤ç╨╡╤Ç╨╡╨╖ Store API
 func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *models.Chat) int {
-	// Пытаемся получить из cache (metadata)
+	// ╨ƒ╤ï╤é╨░╨╡╨╝╤ü╤Å ╨┐╨╛╨╗╤â╤ç╨╕╤é╤î ╨╕╨╖ cache (metadata)
 	if chat.Metadata != nil {
 		if userID, ok := chat.Metadata["store_user_id"].(int); ok && userID > 0 {
 			return userID
@@ -200,11 +200,11 @@ func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *mode
 		}
 	}
 
-	// Если не закешировано - получаем через Store API
+	// ╨ò╤ü╨╗╨╕ ╨╜╨╡ ╨╖╨░╨║╨╡╤ê╨╕╤Ç╨╛╨▓╨░╨╜╨╛ - ╨┐╨╛╨╗╤â╤ç╨░╨╡╨╝ ╤ç╨╡╤Ç╨╡╨╖ Store API
 	userID := llm.ExtractUserIDFromChat(ctx, ar.storeClient, chat)
 
-	// NOTE: Не модифицируем chat.Metadata здесь - это должно делаться на уровне выше
-	// где chat создаётся/загружается из БД, чтобы избежать race conditions
+	// NOTE: ╨¥╨╡ ╨╝╨╛╨┤╨╕╤ä╨╕╤å╨╕╤Ç╤â╨╡╨╝ chat.Metadata ╨╖╨┤╨╡╤ü╤î - ╤ì╤é╨╛ ╨┤╨╛╨╗╨╢╨╜╨╛ ╨┤╨╡╨╗╨░╤é╤î╤ü╤Å ╨╜╨░ ╤â╤Ç╨╛╨▓╨╜╨╡ ╨▓╤ï╤ê╨╡
+	// ╨│╨┤╨╡ chat ╤ü╨╛╨╖╨┤╨░╤æ╤é╤ü╤Å/╨╖╨░╨│╤Ç╤â╨╢╨░╨╡╤é╤ü╤Å ╨╕╨╖ ╨æ╨ö, ╤ç╤é╨╛╨▒╤ï ╨╕╨╖╨▒╨╡╨╢╨░╤é╤î race conditions
 
 	return userID
 }
