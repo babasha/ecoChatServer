@@ -18,10 +18,10 @@ type ADKAutoResponderV2 struct {
 	storeClient *llm.StoreClient
 	config      llm.AutoResponderConfig
 
-	// ╨Ü╤ì╤ê ╨░╨│╨╡╨╜╤é╨╛╨▓ (2 ╤ì╨║╨╖╨╡╨╝╨┐╨╗╤Å╤Ç╨░: ╨┤╨╗╤Å ╨░╨▓╤é╨╛╤Ç╨╕╨╖╨╛╨▓╨░╨╜╨╜╤ï╤à ╨╕ ╨│╨╛╤ü╤é╨╡╨╣)
-	agentsMu            sync.RWMutex
-	authorizedAgent     *SupportAgent   // Agent ╨┤╨╗╤Å ╨╖╨░╨╗╨╛╨│╨╕╨╜╨╡╨╜╨╜╤ï╤à ╨┐╨╛╨╗╤î╨╖╨╛╨▓╨░╤é╨╡╨╗╨╡╨╣ (19 tools)
-	unauthorizedAgent   *SupportAgent   // Agent ╨┤╨╗╤Å ╨│╨╛╤ü╤é╨╡╨╣ (13 public tools)
+	// Agent cache per chatID (isolated agent for each chat)
+	// FIX: Prevents race condition with userID - each chat gets its own agent
+	agentsMu    sync.RWMutex
+	agentCache  map[string]*SupportAgent  // chatID -> agent
 
 	// ╨¡╤ü╨║╨░╨╗╨░╤å╨╕╨╕ (in-memory - ╨┐╤Ç╨╕ ╤Ç╨╡╤ü╤é╨░╤Ç╤é╨╡ ╤ü╨▒╤Ç╨░╤ü╤ï╨▓╨░╤Ä╤é╤ü╤Å)
 	// NOTE: ╨¡╤é╨╛ intentional - ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╤Å ╤ì╤é╨╛ ephemeral state.
@@ -37,6 +37,7 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 	ar := &ADKAutoResponderV2{
 		storeClient: storeClient,
 		config:      cfg,
+		agentCache:  make(map[string]*SupportAgent),
 		escalations: make(map[string]*EscalationState),
 	}
 
@@ -73,7 +74,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	log.Printf("[ADK_V2] User context: userID=%d, authorized=%v", userID, isAuthorized)
 
 	// ╨ƒ╨╛╨╗╤â╤ç╨░╨╡╨╝ ╨░╨│╨╡╨╜╤é╨░ (╤ü ╨┐╨╛╨╗╨╜╤ï╨╝ ╨╜╨░╨▒╨╛╤Ç╨╛╨╝ ╨╕╨╖ 19 tools)
-	agent, err := ar.getOrCreateAgent(ctx, isAuthorized)
+	agent, err := ar.getOrCreateAgent(ctx, chatKey, isAuthorized)
 	if err != nil {
 		log.Printf("[ADK_V2] ╨₧╤ê╨╕╨▒╨║╨░ ╤ü╨╛╨╖╨┤╨░╨╜╨╕╤Å ╨░╨│╨╡╨╜╤é╨░: %v", err)
 		return nil, err
@@ -147,43 +148,38 @@ func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
 	delete(ar.escalations, chatID)
 }
 
-// getOrCreateAgent ╤ü╨╛╨╖╨┤╨░╤æ╤é ╨╕╨╗╨╕ ╨▓╨╛╨╖╨▓╤Ç╨░╤ë╨░╨╡╤é ╨╖╨░╨║╨╡╤ê╨╕╤Ç╨╛╨▓╨░╨╜╨╜╤ï╨╣ ╨░╨│╨╡╨╜╤é V3
-func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, isAuthorized bool) (*SupportAgent, error) {
+// getOrCreateAgent creates or returns cached agent for specific chatID
+// FIX: Each chat gets isolated agent to prevent userID race condition
+func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, chatID string, isAuthorized bool) (*SupportAgent, error) {
+	// Try read lock first (fast path)
 	ar.agentsMu.RLock()
-	if isAuthorized && ar.authorizedAgent != nil {
+	if agent, exists := ar.agentCache[chatID]; exists {
 		ar.agentsMu.RUnlock()
-		return ar.authorizedAgent, nil
-	}
-	if !isAuthorized && ar.unauthorizedAgent != nil {
-		ar.agentsMu.RUnlock()
-		return ar.unauthorizedAgent, nil
+		return agent, nil
 	}
 	ar.agentsMu.RUnlock()
 
+	// Need to create - acquire write lock
 	ar.agentsMu.Lock()
 	defer ar.agentsMu.Unlock()
 
-	// Double-check
-	if isAuthorized && ar.authorizedAgent != nil {
-		return ar.authorizedAgent, nil
-	}
-	if !isAuthorized && ar.unauthorizedAgent != nil {
-		return ar.unauthorizedAgent, nil
+	// Double-check after acquiring write lock
+	if agent, exists := ar.agentCache[chatID]; exists {
+		return agent, nil
 	}
 
-	// ╨í╨╛╨╖╨┤╨░╤æ╨╝ V3 ╨░╨│╨╡╨╜╤é╨░ ╤ü ╨┐╨╛╨╗╨╜╤ï╨╝ ╨╜╨░╨▒╨╛╤Ç╨╛╨╝ ╨╕╨╖ 19 tools
+	// Create new isolated agent for this chat
 	agent, err := NewSupportAgent(ctx, ar.storeClient, isAuthorized)
 	if err != nil {
 		return nil, err
 	}
 
+	ar.agentCache[chatID] = agent
+	authType := "UNAUTHORIZED"
 	if isAuthorized {
-		ar.authorizedAgent = agent
-		log.Printf("[ADK_V2] Created AUTHORIZED V3 agent with 19 tools")
-	} else {
-		ar.unauthorizedAgent = agent
-		log.Printf("[ADK_V2] Created UNAUTHORIZED V3 agent with 19 tools")
+		authType = "AUTHORIZED"
 	}
+	log.Printf("[ADK_V2] Created %s agent for chat %s (total agents: %d)", authType, chatID, len(ar.agentCache))
 
 	return agent, nil
 }
@@ -207,4 +203,38 @@ func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *mode
 	// ╨│╨┤╨╡ chat ╤ü╨╛╨╖╨┤╨░╤æ╤é╤ü╤Å/╨╖╨░╨│╤Ç╤â╨╢╨░╨╡╤é╤ü╤Å ╨╕╨╖ ╨æ╨ö, ╤ç╤é╨╛╨▒╤ï ╨╕╨╖╨▒╨╡╨╢╨░╤é╤î race conditions
 
 	return userID
+}
+
+// RemoveAgentForChat removes cached agent for specific chat (memory cleanup)
+func (ar *ADKAutoResponderV2) RemoveAgentForChat(chatID string) {
+	ar.agentsMu.Lock()
+	defer ar.agentsMu.Unlock()
+
+	if _, exists := ar.agentCache[chatID]; exists {
+		delete(ar.agentCache, chatID)
+		log.Printf("[ADK_V2] Removed agent for chat %s (total agents: %d)", chatID, len(ar.agentCache))
+	}
+}
+
+// ClearAllAgents removes all cached agents (memory cleanup on restart/maintenance)
+func (ar *ADKAutoResponderV2) ClearAllAgents() {
+	ar.agentsMu.Lock()
+	defer ar.agentsMu.Unlock()
+
+	count := len(ar.agentCache)
+	ar.agentCache = make(map[string]*SupportAgent)
+	log.Printf("[ADK_V2] Cleared all agents (removed %d agents)", count)
+}
+
+// GetAgentCacheStats returns statistics about cached agents
+func (ar *ADKAutoResponderV2) GetAgentCacheStats() (total int, chatIDs []string) {
+	ar.agentsMu.RLock()
+	defer ar.agentsMu.RUnlock()
+
+	total = len(ar.agentCache)
+	chatIDs = make([]string, 0, total)
+	for chatID := range ar.agentCache {
+		chatIDs = append(chatIDs, chatID)
+	}
+	return total, chatIDs
 }
