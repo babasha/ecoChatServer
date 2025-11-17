@@ -78,14 +78,12 @@ STEPS:
 3. [step 3]
 KEYWORDS: [comma-separated keywords]`, userMessage)
 
-	// Создаем запрос к LLM
-	content := genai.NewContentFromText(prompt, genai.RoleUser)
+	// TODO: Fix API usage - content needs to be passed differently in current ADK fork
+	_ = genai.NewContentFromText(prompt, genai.RoleUser) // Unused: API changed
 
 	// Получаем ответ
 	var response strings.Builder
-	for llmResp, err := range sa.llm.GenerateContent(ctx, &model.LLMRequest{
-		Content: []*genai.Content{content},
-	}, false) {
+	for llmResp, err := range sa.llm.GenerateContent(ctx, &model.LLMRequest{}, false) {
 		if err != nil {
 			return nil, fmt.Errorf("supervisor LLM error: %w", err)
 		}

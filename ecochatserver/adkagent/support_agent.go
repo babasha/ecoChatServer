@@ -2,17 +2,13 @@ package adkagent
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
@@ -40,93 +36,19 @@ func (sa *SupportAgent) GetUserID() int {
 	return sa.userID
 }
 
+// ptrFloat32 helper function to convert float to *float32
+func ptrFloat32(v float32) *float32 {
+	return &v
+}
+
 // resetContext очищает пользовательский контекст перед возвратом агента в пул
 func (sa *SupportAgent) resetContext() {
 	sa.userID = 0
 	sa.currentSessionID = ""
 }
 
-// ============================================================================
-// RESPONSE CACHING - Кэширование LLM ответов
-// ============================================================================
-
-// CacheEntry - запись в кэше
-type responseCacheEntry struct {
-	Content   *genai.Content
-	CreatedAt time.Time
-	TTL       time.Duration
-}
-
-// ResponseCache - глобальный кэш для ответов LLM (thread-safe)
-type responseCache struct {
-	mu    sync.RWMutex
-	cache map[string]*responseCacheEntry
-}
-
-var globalResponseCache = &responseCache{
-	cache: make(map[string]*responseCacheEntry),
-}
-
-// generateCacheKey создает уникальный ключ для запроса
-func generateCacheKey(req *model.LLMRequest) string {
-	data, _ := json.Marshal(req.Content)
-	hash := sha256.Sum256(data)
-	return fmt.Sprintf("%x", hash[:8]) // Первые 8 байт хэша
-}
-
-// Get проверяет наличие ответа в кэше (thread-safe)
-func (rc *responseCache) Get(key string) *genai.Content {
-	rc.mu.RLock()
-	defer rc.mu.RUnlock()
-
-	entry, exists := rc.cache[key]
-	if !exists {
-		return nil
-	}
-
-	// Проверяем TTL
-	if time.Since(entry.CreatedAt) > entry.TTL {
-		log.Printf("[CACHE] ⏰ Cache expired for key %s", key[:8])
-		// Не удаляем здесь (под RLock), удалим в ClearExpired()
-		return nil
-	}
-
-	log.Printf("[CACHE] ✅ Cache HIT for key %s (age: %v)", key[:8], time.Since(entry.CreatedAt))
-	return entry.Content
-}
-
-// Set сохраняет ответ в кэш (thread-safe)
-func (rc *responseCache) Set(key string, content *genai.Content, ttl time.Duration) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	rc.cache[key] = &responseCacheEntry{
-		Content:   content,
-		CreatedAt: time.Now(),
-		TTL:       ttl,
-	}
-	log.Printf("[CACHE] 💾 Cached response for key %s (TTL: %v)", key[:8], ttl)
-}
-
-// ClearExpired удаляет истекшие записи из кэша (thread-safe)
-func (rc *responseCache) ClearExpired() int {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	deleted := 0
-	for key, entry := range rc.cache {
-		if time.Since(entry.CreatedAt) > entry.TTL {
-			delete(rc.cache, key)
-			deleted++
-		}
-	}
-
-	if deleted > 0 {
-		log.Printf("[CACHE] 🗑️ Cleared %d expired entries", deleted)
-	}
-
-	return deleted
-}
+// Note: Response caching removed due to incompatibility with current ADK fork
+// Consider re-implementing when ADK callbacks are stable
 
 // NewSupportAgent создаёт агента с полным набором из 19 инструментов
 func NewSupportAgent(ctx context.Context, storeClient *llm.StoreClient, isAuthorized bool) (*SupportAgent, error) {
@@ -186,56 +108,16 @@ func NewSupportAgent(ctx context.Context, storeClient *llm.StoreClient, isAuthor
 
 		// ✨ ОПТИМИЗАЦИЯ 1: Лимиты генерации
 		GenerateContentConfig: &genai.GenerateContentConfig{
-			Temperature:     0.3,   // Меньше креативности = более стабильные ответы = дешевле
-			MaxOutputTokens: 800,   // Лимит на длину ответа (экономия output токенов)
-			CandidateCount:  1,     // Только 1 вариант (не генерировать альтернативы)
-			TopP:            0.9,   // Nucleus sampling
-			TopK:            40,    // Top-K sampling
+			Temperature:     ptrFloat32(0.3),   // Меньше креативности = более стабильные ответы = дешевле
+			MaxOutputTokens: 800,                // Лимит на длину ответа (экономия output токенов)
+			CandidateCount:  1,                  // Только 1 вариант (не генерировать альтернативы)
+			TopP:            ptrFloat32(0.9),    // Nucleus sampling
+			TopK:            ptrFloat32(40),     // Top-K sampling
 		},
 
-		// ✨ ОПТИМИЗАЦИЯ 2: Кэширование через BeforeModelCallback
-		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
-			func(ctx context.Context, req *model.LLMRequest) (*genai.Content, error) {
-				cacheKey := generateCacheKey(req)
-
-				// Проверяем кэш ПЕРЕД вызовом LLM
-				if cached := globalResponseCache.Get(cacheKey); cached != nil {
-					// ВОЗВРАЩАЕМ ИЗ КЭША - LLM НЕ ВЫЗЫВАЕТСЯ! 🎉
-					return cached, nil
-				}
-
-				log.Printf("[CACHE] ❌ Cache MISS for key %s - calling LLM", cacheKey[:8])
-				return nil, nil // Продолжаем обычный flow
-			},
-		},
-
-		// ✨ ОПТИМИЗАЦИЯ 3: Сохранение в кэш через AfterModelCallback
-		AfterModelCallbacks: []llmagent.AfterModelCallback{
-			func(ctx context.Context, req *model.LLMRequest, resp *model.LLMResponse) error {
-				cacheKey := generateCacheKey(req)
-
-				// Сохраняем ответ в кэш
-				if resp.Content != nil {
-					globalResponseCache.Set(cacheKey, resp.Content, 5*time.Minute) // TTL 5 минут
-				}
-
-				// Логируем использование токенов
-				if resp.UsageMetadata != nil {
-					log.Printf("[METRICS] 📊 Tokens: prompt=%d, response=%d, total=%d",
-						resp.UsageMetadata.PromptTokenCount,
-						resp.UsageMetadata.CandidatesTokenCount,
-						resp.UsageMetadata.TotalTokenCount,
-					)
-				}
-
-				return nil
-			},
-		},
-
-		// ✨ ОПТИМИЗАЦИЯ 4: Не включать историю (экономия 50% в multi-turn)
-		// Grocery delivery - в основном single-turn запросы ("покажи вино", "есть молоко?")
-		// Cache работает максимально эффективно при стабильных промптах без истории
-		IncludeContents: llmagent.IncludeContentsNone, // Не включать всю историю
+		// ✨ OPTIMIZATION: No history for single-turn requests (saves tokens)
+		// Grocery delivery mostly has single-turn requests like "show wine", "do you have milk?"
+		IncludeContents: llmagent.IncludeContentsNone,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)

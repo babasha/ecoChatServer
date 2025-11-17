@@ -210,12 +210,13 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 		func(ctx tool.Context, input GetCategoriesInput) (CategoriesOutput, error) {
 			log.Printf("[TOOL] get_categories called")
 
-			session := ctx.Session()
+			// Get session state via Actions (ADK fork API)
+			state := ctx.Actions().State()
 
 			// ===== ШАГ 1: Проверяем SESSION CACHE =====
-			if cached, err := session.State().Get(SessionKeyCategoriesCache); err == nil {
+			if cached, err := state.Get(SessionKeyCategoriesCache); err == nil {
 				// Проверяем TTL
-				if ttl, _ := session.State().Get(SessionKeyCategoriesTTL); ttl != nil {
+				if ttl, _ := state.Get(SessionKeyCategoriesTTL); ttl != nil {
 					if time.Now().Before(ttl.(time.Time)) {
 						log.Printf("[SESSION] ✅ Categories from session cache! (saved API call)")
 						return CategoriesOutput{Result: cached.(string)}, nil
@@ -247,8 +248,8 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 			}
 
 			// ===== ШАГ 3: Сохраняем в SESSION =====
-			session.State().Set(SessionKeyCategoriesCache, result)
-			session.State().Set(SessionKeyCategoriesTTL, time.Now().Add(10*time.Minute)) // TTL 10 минут
+			state.Set(SessionKeyCategoriesCache, result)
+			state.Set(SessionKeyCategoriesTTL, time.Now().Add(10*time.Minute)) // TTL 10 минут
 
 			log.Printf("[SESSION] 💾 Cached categories for 10 minutes")
 
@@ -556,9 +557,9 @@ func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, e
 			}
 
 			// ===== TRACKING: Сохраняем интерес пользователя в SESSION =====
-			session := ctx.Session()
-			session.State().Set(SessionKeyUserInterest, input.Category)
-			session.State().Set(SessionKeyUserLastCategory, input.Category)
+			state := ctx.Actions().State()
+			state.Set(SessionKeyUserInterest, input.Category)
+			state.Set(SessionKeyUserLastCategory, input.Category)
 			log.Printf("[SESSION] 📝 Tracked user interest: %s", input.Category)
 
 			result := fmt.Sprintf("📂 Products in '%s':\n\n", input.Category)
