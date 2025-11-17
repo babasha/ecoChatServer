@@ -89,7 +89,7 @@ func CreateProductTools(storeClient *llm.StoreClient) ([]tool.Tool, error) {
 
 func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetProductsInput struct {
-		SearchQuery string `json:"searchQuery"`
+		Query string `json:"query"` // Поисковый запрос (опционально)
 	}
 	type ProductsOutput struct {
 		Result string `json:"result"`
@@ -98,12 +98,12 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products",
-			Description: "Get list of products from store. Use when customer asks about products, catalog, assortment. Can optionally filter by search query.",
+			Description: "Get list of products from store. Use when customer asks about products, catalog, assortment. Can optionally filter by 'query' parameter (product name, category, etc).",
 		},
 		func(ctx tool.Context, input GetProductsInput) (ProductsOutput, error) {
-			log.Printf("[TOOL] get_products called: query=%s", input.SearchQuery)
+			log.Printf("[TOOL] get_products called: query=%s", input.Query)
 
-			products, err := storeClient.GetAllProducts(ctx, input.SearchQuery)
+			products, err := storeClient.GetAllProducts(ctx, input.Query)
 			if err != nil {
 				return ProductsOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
@@ -206,7 +206,7 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 
 func createCheckAvailabilityTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type CheckProductAvailabilityInput struct {
-		ProductSlug string `json:"productSlug"`
+		ProductSlug string `json:"slug"` // Product slug for availability check
 	}
 	type ProductAvailabilityOutput struct {
 		Result string `json:"result"`
@@ -255,7 +255,7 @@ func createCheckAvailabilityTool(storeClient *llm.StoreClient) (tool.Tool, error
 // createCompareProductsTool - сравнение нескольких товаров
 func createCompareProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type CompareProductsInput struct {
-		ProductNames []string `json:"productNames"` // Названия товаров для сравнения
+		Products []string `json:"products"` // Product names to compare
 	}
 	type CompareProductsOutput struct {
 		Result string `json:"result"`
@@ -267,19 +267,19 @@ func createCompareProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) 
 			Description: "Compare multiple products side by side. Use when customer asks 'what's the difference between X and Y', 'compare these products', 'which is better'. Provide product names to compare.",
 		},
 		func(ctx tool.Context, input CompareProductsInput) (CompareProductsOutput, error) {
-			log.Printf("[TOOL] compare_products called: products=%v", input.ProductNames)
+			log.Printf("[TOOL] compare_products called: products=%v", input.Products)
 
-			if len(input.ProductNames) < 2 {
+			if len(input.Products) < 2 {
 				return CompareProductsOutput{Result: "Need at least 2 products to compare."}, nil
 			}
 
-			if len(input.ProductNames) > 4 {
+			if len(input.Products) > 4 {
 				return CompareProductsOutput{Result: "Can compare maximum 4 products at once."}, nil
 			}
 
 			// Собираем информацию о каждом товаре
 			var products []llm.Product
-			for _, name := range input.ProductNames {
+			for _, name := range input.Products {
 				prods, err := storeClient.GetAllProducts(ctx, name)
 				if err != nil || len(prods) == 0 {
 					log.Printf("[TOOL] Product '%s' not found", name)
@@ -394,8 +394,8 @@ func createRecommendProductsTool(storeClient *llm.StoreClient) (tool.Tool, error
 // createFindAlternativesTool - поиск аналогов товара
 func createFindAlternativesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type FindAlternativesInput struct {
-		ProductName string `json:"productName"` // Название товара
-		Criteria    string `json:"criteria"`    // Критерий: "cheaper", "premium", "similar"
+		Product  string `json:"product"`  // Product name
+		Criteria string `json:"criteria"` // Search criteria: "cheaper", "premium", "similar"
 	}
 	type FindAlternativesOutput struct {
 		Result string `json:"result"`
@@ -407,16 +407,16 @@ func createFindAlternativesTool(storeClient *llm.StoreClient) (tool.Tool, error)
 			Description: "Find alternative products similar to specified product. Use when customer asks 'show me cheaper alternatives', 'similar products', 'other options'. Criteria can be: 'cheaper' (lower price), 'premium' (higher quality), 'similar' (same category).",
 		},
 		func(ctx tool.Context, input FindAlternativesInput) (FindAlternativesOutput, error) {
-			log.Printf("[TOOL] find_alternatives called: product=%s, criteria=%s", input.ProductName, input.Criteria)
+			log.Printf("[TOOL] find_alternatives called: product=%s, criteria=%s", input.Product, input.Criteria)
 
-			if input.ProductName == "" {
+			if input.Product == "" {
 				return FindAlternativesOutput{Result: "Error: product name is required"}, nil
 			}
 
 			// Ищем исходный товар
-			originalProducts, err := storeClient.GetAllProducts(ctx, input.ProductName)
+			originalProducts, err := storeClient.GetAllProducts(ctx, input.Product)
 			if err != nil || len(originalProducts) == 0 {
-				return FindAlternativesOutput{Result: fmt.Sprintf("Product '%s' not found.", input.ProductName)}, nil
+				return FindAlternativesOutput{Result: fmt.Sprintf("Product '%s' not found.", input.Product)}, nil
 			}
 
 			original := originalProducts[0]
@@ -465,8 +465,8 @@ func createFindAlternativesTool(storeClient *llm.StoreClient) (tool.Tool, error)
 // createGetProductsByCategoryTool - получение товаров по категории
 func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetProductsByCategoryInput struct {
-		CategoryName string `json:"categoryName"` // Название категории
-		Limit        int    `json:"limit"`        // Лимит товаров
+		Category string `json:"category"` // Название категории
+		Limit    int    `json:"limit"`    // Лимит товаров
 	}
 	type GetProductsByCategoryOutput struct {
 		Result string `json:"result"`
@@ -475,12 +475,12 @@ func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, e
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products_by_category",
-			Description: "Get products from a specific category. Use when customer asks 'show me products from X category', 'what do you have in Y section'. Provide category name and optional limit.",
+			Description: "Get products from a specific category. Use when customer asks 'show me products from X category', 'what do you have in Y section'. Provide category name in 'category' parameter and optional 'limit' parameter.",
 		},
 		func(ctx tool.Context, input GetProductsByCategoryInput) (GetProductsByCategoryOutput, error) {
-			log.Printf("[TOOL] get_products_by_category called: category=%s, limit=%d", input.CategoryName, input.Limit)
+			log.Printf("[TOOL] get_products_by_category called: category=%s, limit=%d", input.Category, input.Limit)
 
-			if input.CategoryName == "" {
+			if input.Category == "" {
 				return GetProductsByCategoryOutput{Result: "Error: category name is required"}, nil
 			}
 
@@ -489,20 +489,20 @@ func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, e
 			}
 
 			// Используем поиск по названию категории
-			products, err := storeClient.GetAllProducts(ctx, input.CategoryName)
+			products, err := storeClient.GetAllProducts(ctx, input.Category)
 			if err != nil {
 				return GetProductsByCategoryOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return GetProductsByCategoryOutput{Result: fmt.Sprintf("No products found in category '%s'.", input.CategoryName)}, nil
+				return GetProductsByCategoryOutput{Result: fmt.Sprintf("No products found in category '%s'.", input.Category)}, nil
 			}
 
 			if len(products) > input.Limit {
 				products = products[:input.Limit]
 			}
 
-			result := fmt.Sprintf("📂 Products in '%s' category:\n\n", input.CategoryName)
+			result := fmt.Sprintf("📂 Products in '%s' category:\n\n", input.Category)
 			result += llm.FormatProductsList(products)
 
 			return GetProductsByCategoryOutput{Result: result}, nil

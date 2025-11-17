@@ -124,7 +124,7 @@ func createGetUserOrdersTool(storeClient *llm.StoreClient, userIDProvider *UserI
 
 func createGetOrderStatusTool(storeClient *llm.StoreClient, userIDProvider *UserIDProvider) (tool.Tool, error) {
 	type GetOrderStatusInput struct {
-		OrderID string `json:"orderId"` // ID заказа
+		OrderID string `json:"order_id"` // ID заказа
 	}
 	type OrderStatusOutput struct {
 		Result string `json:"result"`
@@ -170,7 +170,7 @@ func createGetOrderStatusTool(storeClient *llm.StoreClient, userIDProvider *User
 // createTrackOrderTool - отслеживание заказа в реальном времени
 func createTrackOrderTool(storeClient *llm.StoreClient, userIDProvider *UserIDProvider) (tool.Tool, error) {
 	type TrackOrderInput struct {
-		OrderID string `json:"orderId"` // ID заказа для отслеживания
+		OrderID string `json:"order_id"` // ID заказа для отслеживания
 	}
 	type TrackOrderOutput struct {
 		Result string `json:"result"`
@@ -386,7 +386,7 @@ func createGetRecentOrdersTool(storeClient *llm.StoreClient, userIDProvider *Use
 // createReportDeliveryIssueTool - сообщить о проблеме с доставкой
 func createReportDeliveryIssueTool(storeClient *llm.StoreClient, userIDProvider *UserIDProvider) (tool.Tool, error) {
 	type ReportDeliveryIssueInput struct {
-		OrderID     string `json:"orderId"`     // ID заказа
+		OrderID     string `json:"order_id"`     // ID заказа
 		IssueType   string `json:"issueType"`   // Тип проблемы: delay, damaged, missing, wrong
 		Description string `json:"description"` // Описание проблемы
 	}
