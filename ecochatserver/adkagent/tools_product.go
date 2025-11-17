@@ -89,7 +89,8 @@ func CreateProductTools(storeClient *llm.StoreClient) ([]tool.Tool, error) {
 
 func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetProductsInput struct {
-		Query string `json:"query"` // Поисковый запрос (опционально)
+		Query    string `json:"query,omitempty"`    // Поисковый запрос (опционально) - для Gemini/Gemma
+		Category string `json:"category,omitempty"` // Категория или поиск (опционально) - для других моделей типа gpt-oss
 	}
 	type ProductsOutput struct {
 		Result string `json:"result"`
@@ -98,12 +99,24 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products",
-			Description: "Get list of products from store. Use when customer asks about products, catalog, assortment. Can optionally filter by 'query' parameter (product name, category, etc).",
+			Description: "Get list of products from store. Use when customer asks about products, catalog, assortment. Can optionally filter by 'query' or 'category' parameter (product name, category, etc). Use 'all' to get all products.",
 		},
 		func(ctx tool.Context, input GetProductsInput) (ProductsOutput, error) {
-			log.Printf("[TOOL] get_products called: query=%s", input.Query)
+			// Поддерживаем оба параметра для совместимости с разными LLM
+			searchQuery := input.Query
+			if searchQuery == "" && input.Category != "" {
+				searchQuery = input.Category
+			}
 
-			products, err := storeClient.GetAllProducts(ctx, input.Query)
+			// Если явно указано "all", получаем все товары
+			if searchQuery == "all" {
+				searchQuery = ""
+			}
+
+			log.Printf("[TOOL] get_products called: query=%s, category=%s, effective_search=%s",
+				input.Query, input.Category, searchQuery)
+
+			products, err := storeClient.GetAllProducts(ctx, searchQuery)
 			if err != nil {
 				return ProductsOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
