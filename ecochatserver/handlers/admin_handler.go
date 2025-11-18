@@ -471,6 +471,53 @@ func UpdateAdminSettings(c *gin.Context) {
 	})
 }
 
+// GetGlobalAutoResponderStatus получает глобальный статус автоответчика
+func GetGlobalAutoResponderStatus(c *gin.Context) {
+	log.Printf("GetGlobalAutoResponderStatus: получение глобального статуса автоответчика")
+
+	// Получаем настройку из БД
+	enabled := database.GetSettingBool("ENABLE_AUTO_RESPONDER", true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"enabled": enabled,
+	})
+}
+
+// ToggleGlobalAutoResponder включает/выключает автоответчик глобально
+func ToggleGlobalAutoResponder(c *gin.Context) {
+	// Парсим тело запроса
+	var request struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		log.Printf("ToggleGlobalAutoResponder: ошибка парсинга JSON: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+		return
+	}
+
+	log.Printf("ToggleGlobalAutoResponder: обновление глобального статуса автоответчика, enabled=%t", request.Enabled)
+
+	// Сохраняем настройку в БД
+	if err := database.SetSetting("ENABLE_AUTO_RESPONDER", strconv.FormatBool(request.Enabled), "Глобальное включение/выключение автоответчика для всех чатов"); err != nil {
+		log.Printf("ToggleGlobalAutoResponder: ошибка обновления: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления настройки"})
+		return
+	}
+
+	// Инвалидируем кеш настроек
+	database.InvalidateSettingsCache()
+
+	log.Printf("ToggleGlobalAutoResponder: глобальный автоответчик успешно %s", map[bool]string{true: "включен", false: "выключен"}[request.Enabled])
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"enabled": request.Enabled,
+		"message": "Глобальный автоответчик успешно обновлен",
+	})
+}
+
 // MarkChatMessagesAsRead помечает все сообщения в чате как прочитанные
 func MarkChatMessagesAsRead(c *gin.Context) {
 	chatID, err := parseChatID(c)

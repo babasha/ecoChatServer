@@ -478,6 +478,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/admin/settings", handlers.GetAdminSettings)
 			admin.PUT("/admin/settings", handlers.UpdateAdminSettings)
 
+			// Глобальные настройки автоответчика
+			admin.GET("/admin/autoresponder/global", handlers.GetGlobalAutoResponderStatus)
+			admin.PUT("/admin/autoresponder/global", handlers.ToggleGlobalAutoResponder)
+
 			// Управление командой (supervisors и managers)
 			admin.GET("/admin/supervisors", handlers.GetAllSupervisors)
 			admin.POST("/admin/supervisors/access", handlers.AddSupervisorAccess)
