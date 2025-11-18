@@ -133,12 +133,17 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 
 			products, err := storeClient.GetAllProducts(ctx, searchQuery)
 			if err != nil {
+				log.Printf("[TOOL] get_products error: %v", err)
 				return ProductsOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return ProductsOutput{Result: "No products found."}, nil
+				log.Printf("[TOOL] get_products: found 0 products for search '%s'", searchQuery)
+				result := fmt.Sprintf("No products found for '%s'. The database does not have products matching this search.", searchQuery)
+				return ProductsOutput{Result: result}, nil
 			}
+
+			log.Printf("[TOOL] get_products: found %d products for search '%s'", len(products), searchQuery)
 
 			if len(products) > 15 {
 				products = products[:15]
@@ -237,18 +242,23 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 				return CategoriesOutput{Result: "No categories found."}, nil
 			}
 
-			// Форматируем результат
-			result := fmt.Sprintf("Store has %d categories:\n", len(categories))
+			// Форматируем результат с ID для использования в get_products_by_category
+			result := fmt.Sprintf("Store has %d categories:\n\n", len(categories))
 			for i, cat := range categories {
 				if i >= 20 {
-					result += fmt.Sprintf("\n... and %d more", len(categories)-20)
+					result += fmt.Sprintf("\n... and %d more categories", len(categories)-20)
 					break
 				}
-				result += fmt.Sprintf("• %s\n", cat.NameRu)
+				// Показываем ID и название (с родительской категорией если есть)
+				parentInfo := ""
+				if cat.ParentID != nil {
+					parentInfo = fmt.Sprintf(" (subcategory of ID %d)", *cat.ParentID)
+				}
+				result += fmt.Sprintf("• ID %d: %s%s\n", cat.ID, cat.NameRu, parentInfo)
 			}
 
 			// ВАЖНО: Добавляем явную инструкцию для модели
-			result += "\n⚠️ NOTE: This is only a list of category NAMES. To show actual products to the customer, you MUST call get_products or search_product with a specific category/query."
+			result += "\n⚠️ NOTE: To get products from a category, use get_products_by_category(category_id=X) where X is the category ID from above."
 
 			// ===== ШАГ 3: Сохраняем в SESSION =====
 			state.Set(SessionKeyCategoriesCache, result)
@@ -519,11 +529,11 @@ func createFindAlternativesTool(storeClient *llm.StoreClient) (tool.Tool, error)
 	)
 }
 
-// createGetProductsByCategoryTool - ОПТИМИЗИРОВАННАЯ версия с tracking интересов
+// createGetProductsByCategoryTool - НАДЁЖНАЯ версия с поиском по category_id (включая подкатегории)
 func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetProductsByCategoryInput struct {
-		Category string `json:"category"` // Название категории
-		Limit    int    `json:"limit"`    // Лимит товаров
+		CategoryID int `json:"category_id"` // ID категории (получить через get_categories)
+		Limit      int `json:"limit"`       // Лимит товаров
 	}
 	type GetProductsByCategoryOutput struct {
 		Result string `json:"result"`
@@ -532,40 +542,45 @@ func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, e
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products_by_category",
-			Description: "Get products from category.",
+			Description: "Get products by category ID (includes subcategories). You MUST call get_categories first to find the category_id, then use it here.",
 		},
 		func(ctx tool.Context, input GetProductsByCategoryInput) (GetProductsByCategoryOutput, error) {
-			log.Printf("[TOOL] get_products_by_category: category=%s", input.Category)
+			log.Printf("[TOOL] get_products_by_category: category_id=%d", input.CategoryID)
 
-			if input.Category == "" {
-				return GetProductsByCategoryOutput{Result: "Error: category required"}, nil
+			if input.CategoryID == 0 {
+				return GetProductsByCategoryOutput{Result: "Error: category_id required. Call get_categories first to find the category ID."}, nil
 			}
 
 			if input.Limit <= 0 {
 				input.Limit = 10
 			}
 
-			// Запрашиваем товары
-			products, err := storeClient.GetAllProducts(ctx, input.Category)
+			// Запрашиваем товары по category_id (API автоматически включит дочерние категории)
+			products, err := storeClient.GetProductsByCategoryID(ctx, input.CategoryID)
 			if err != nil {
+				log.Printf("[TOOL] get_products_by_category error: %v", err)
 				return GetProductsByCategoryOutput{Result: fmt.Sprintf("Error: %v", err)}, nil
 			}
 
 			if len(products) == 0 {
-				return GetProductsByCategoryOutput{Result: fmt.Sprintf("No products in '%s'.", input.Category)}, nil
+				log.Printf("[TOOL] get_products_by_category: found 0 products for category_id %d", input.CategoryID)
+				result := fmt.Sprintf("No products found in category ID %d (including subcategories). The database does not have products in this category yet.", input.CategoryID)
+				return GetProductsByCategoryOutput{Result: result}, nil
 			}
 
 			if len(products) > input.Limit {
 				products = products[:input.Limit]
 			}
 
+			log.Printf("[TOOL] get_products_by_category: found %d products for category_id %d", len(products), input.CategoryID)
+
 			// ===== TRACKING: Сохраняем интерес пользователя в SESSION =====
 			state := ctx.State()
-			state.Set(SessionKeyUserInterest, input.Category)
-			state.Set(SessionKeyUserLastCategory, input.Category)
-			log.Printf("[SESSION] 📝 Tracked user interest: %s", input.Category)
+			state.Set(SessionKeyUserInterest, fmt.Sprintf("category_%d", input.CategoryID))
+			state.Set(SessionKeyUserLastCategory, fmt.Sprintf("%d", input.CategoryID))
+			log.Printf("[SESSION] 📝 Tracked user interest: category_id=%d", input.CategoryID)
 
-			result := fmt.Sprintf("📂 Products in '%s':\n\n", input.Category)
+			result := fmt.Sprintf("📂 Products in category %d:\n\n", input.CategoryID)
 			result += llm.FormatProductsList(products)
 
 			return GetProductsByCategoryOutput{Result: result}, nil

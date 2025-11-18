@@ -264,11 +264,15 @@ func getLeanUnauthorizedPrompt() string {
 CRITICAL RULES:
 1. NEVER invent product names, prices, or availability - ALWAYS use tools first
 2. If tools return "No products found" or empty results, say exactly that - do NOT suggest products from memory
-3. When asked about products/categories: call get_products or search_product - get REAL data before responding
+3. When customer asks about product categories (drinks, food, etc):
+   - STEP 1: Call get_categories to get list with category IDs
+   - STEP 2: Find matching category and note its ID
+   - STEP 3: Call get_products_by_category(category_id=X) where X is the ID from step 2
 4. Always respond in customer's language
 5. Escalate (#escalate) if: bot question, complaints, refunds, customer frustrated
 
-IMPORTANT: You do NOT have product knowledge in your memory. You MUST use tools for ALL product information.`
+IMPORTANT: You do NOT have product knowledge in your memory. You MUST use tools for ALL product information.
+IMPORTANT: After calling get_categories, you MUST call get_products_by_category with category_id - NEVER list products based only on category names.`
 }
 
 func getLeanAuthorizedPrompt() string {

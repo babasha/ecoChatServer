@@ -442,6 +442,44 @@ func (sc *StoreClient) GetAllProducts(ctx context.Context, searchQuery string) (
 	return result.Products, nil
 }
 
+// GetProductsByCategoryID получает продукты по ID категории (включая дочерние категории)
+func (sc *StoreClient) GetProductsByCategoryID(ctx context.Context, categoryID int) ([]Product, error) {
+	endpoint := fmt.Sprintf("%s/products?category_id=%d", sc.baseURL, categoryID)
+
+	log.Printf("[STORE_CLIENT] Запрос продуктов по категории ID %d: %s", categoryID, endpoint)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", sc.apiKey)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; EcoChatBot/1.0)")
+
+	resp, err := sc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("store API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("store API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Products []Product `json:"products"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	log.Printf("[STORE_CLIENT] Получено %d продуктов для категории ID %d", len(result.Products), categoryID)
+	return result.Products, nil
+}
+
 // GetAllCategories получает список всех категорий товаров из магазина
 func (sc *StoreClient) GetAllCategories(ctx context.Context) ([]Category, error) {
 	endpoint := fmt.Sprintf("%s/categories", sc.baseURL)
