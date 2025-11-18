@@ -32,10 +32,28 @@ var Translator *TranslationService
 
 // InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
+	// Инициализируем Translator для перевода и определения языка клиента
+	// ВАЖНО: Переводчик работает независимо от автоответчика!
+	translatorProvider, err := llm.NewProvider(nil)
+	if err != nil {
+		log.Printf("⚠️ InitAutoResponder: не удалось создать провайдера для переводчика: %v", err)
+		log.Printf("⚠️ Переводчик будет недоступен")
+	} else {
+		// 🎯 TOON FORMAT: читаем настройку из БД (по умолчанию false для безопасности)
+		useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
+		Translator = NewTranslationServiceWithTOON(translatorProvider, WebSocketHub, useTOON)
+
+		if useTOON {
+			log.Printf("✅ Сервис перевода инициализирован с TOON форматом (экономия ~40%% токенов)")
+		} else {
+			log.Printf("✅ Сервис перевода инициализирован с JSON форматом")
+		}
+	}
+
 	// Проверяем включен ли автоответчик (из БД с fallback на ENV)
 	enabled := database.GetSettingBool("ENABLE_AUTO_RESPONDER", true)
 	if !enabled {
-		log.Println("Автоответчик отключен в настройках БД/ENV")
+		log.Println("🔇 Автоответчик отключен в настройках БД/ENV (переводчик работает)")
 		return
 	}
 	log.Println("🤖 Автоответчик включен, инициализируем...")
@@ -58,24 +76,6 @@ func InitAutoResponder() {
 
 	AutoResponder = adkAutoResponder
 	log.Printf("✅ ADK AutoResponder инициализирован с hot-swap поддержкой")
-
-	// Инициализируем Translator для перевода и определения языка клиента
-	// ВАЖНО: Используем отдельный провайдер для переводов (не блокирует автоответчик)
-	translatorProvider, err := llm.NewProvider(nil)
-	if err != nil {
-		log.Printf("⚠️ InitAutoResponder: не удалось создать провайдера для переводчика: %v", err)
-		log.Printf("⚠️ Переводчик будет недоступен (автоответчик будет отвечать на английском)")
-	} else {
-		// 🎯 TOON FORMAT: читаем настройку из БД (по умолчанию false для безопасности)
-		useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
-		Translator = NewTranslationServiceWithTOON(translatorProvider, WebSocketHub, useTOON)
-
-		if useTOON {
-			log.Printf("✅ Сервис перевода инициализирован с TOON форматом (экономия ~40%% токенов)")
-		} else {
-			log.Printf("✅ Сервис перевода инициализирован с JSON форматом")
-		}
-	}
 
 	log.Println("✅ Автоответчик успешно инициализирован")
 }
