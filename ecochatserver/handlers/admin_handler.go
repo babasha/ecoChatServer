@@ -439,7 +439,7 @@ func UpdateAdminSettings(c *gin.Context) {
 
 	// Валидируем код языка (опционально, можно расширить список)
 	validLanguages := map[string]bool{
-		"ru": true, "en": true, "pl": true, "de": true, "fr": true,
+		"ru": true, "en": true, "pt": true, "pl": true, "de": true, "fr": true,
 		"es": true, "it": true, "uk": true, "be": true, "cs": true,
 		"sk": true, "lt": true, "lv": true, "et": true,
 	}
