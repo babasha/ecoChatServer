@@ -114,7 +114,7 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products",
-			Description: "Get products. Filter by query or category.",
+			Description: "Search and get actual products from database. Use 'query' or 'category' parameter to filter (e.g., query='wine', category='напитки'). Returns real product names, prices, and availability. THIS IS THE PRIMARY TOOL FOR PRODUCT SEARCHES.",
 		},
 		func(ctx tool.Context, input GetProductsInput) (ProductsOutput, error) {
 			// Поддерживаем оба параметра для совместимости с разными LLM
@@ -205,7 +205,7 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_categories",
-			Description: "Get all categories.",
+			Description: "Get list of available category names only. WARNING: This does NOT return products - you must call get_products or search_product afterwards to get actual products.",
 		},
 		func(ctx tool.Context, input GetCategoriesInput) (CategoriesOutput, error) {
 			log.Printf("[TOOL] get_categories called")
@@ -246,6 +246,9 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 				}
 				result += fmt.Sprintf("• %s\n", cat.NameRu)
 			}
+
+			// ВАЖНО: Добавляем явную инструкцию для модели
+			result += "\n⚠️ NOTE: This is only a list of category NAMES. To show actual products to the customer, you MUST call get_products or search_product with a specific category/query."
 
 			// ===== ШАГ 3: Сохраняем в SESSION =====
 			state.Set(SessionKeyCategoriesCache, result)

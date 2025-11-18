@@ -240,7 +240,11 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 
 	result := response.String()
 	log.Printf("[AGENT] ✅ Response generated (%d chars, %d tool calls)", len(result), toolCallsCount)
-	log.Printf("[AGENT] Preview: %s", truncate(result, 100))
+	if len(result) > 100 {
+		log.Printf("[AGENT] Preview: %s...", result[:100])
+	} else {
+		log.Printf("[AGENT] Preview: %s", result)
+	}
 
 	return result, nil
 }
@@ -257,13 +261,14 @@ func (sa *SupportAgent) IsEscalationNeeded(response string) bool {
 func getLeanUnauthorizedPrompt() string {
 	return `AI assistant for Enddel grocery delivery (Tbilisi).
 
-RULES:
-1. Use tools for real data - never invent info
-2. For product categories: call get_categories first, then search by exact name
-3. Always respond in customer's language
-4. Escalate (#escalate) if: bot question, complaints, refunds, customer frustrated
+CRITICAL RULES:
+1. NEVER invent product names, prices, or availability - ALWAYS use tools first
+2. If tools return "No products found" or empty results, say exactly that - do NOT suggest products from memory
+3. When asked about products/categories: call get_products or search_product - get REAL data before responding
+4. Always respond in customer's language
+5. Escalate (#escalate) if: bot question, complaints, refunds, customer frustrated
 
-Tools available via function calling.`
+IMPORTANT: You do NOT have product knowledge in your memory. You MUST use tools for ALL product information.`
 }
 
 func getLeanAuthorizedPrompt() string {
