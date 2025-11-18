@@ -210,8 +210,8 @@ func createGetCategoriesTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 		func(ctx tool.Context, input GetCategoriesInput) (CategoriesOutput, error) {
 			log.Printf("[TOOL] get_categories called")
 
-			// Get session state via Actions (ADK fork API)
-			state := ctx.Actions().State()
+			// Get session state directly from context
+			state := ctx.State()
 
 			// ===== ШАГ 1: Проверяем SESSION CACHE =====
 			if cached, err := state.Get(SessionKeyCategoriesCache); err == nil {
@@ -557,7 +557,7 @@ func createGetProductsByCategoryTool(storeClient *llm.StoreClient) (tool.Tool, e
 			}
 
 			// ===== TRACKING: Сохраняем интерес пользователя в SESSION =====
-			state := ctx.Actions().State()
+			state := ctx.State()
 			state.Set(SessionKeyUserInterest, input.Category)
 			state.Set(SessionKeyUserLastCategory, input.Category)
 			log.Printf("[SESSION] 📝 Tracked user interest: %s", input.Category)
