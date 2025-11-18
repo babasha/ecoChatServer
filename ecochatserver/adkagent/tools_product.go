@@ -104,8 +104,7 @@ func CreateProductTools(storeClient *llm.StoreClient) ([]tool.Tool, error) {
 
 func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	type GetProductsInput struct {
-		Query    string `json:"query,omitempty"`    // Поисковый запрос (опционально) - для Gemini/Gemma
-		Category string `json:"category,omitempty"` // Категория или поиск (опционально) - для других моделей типа gpt-oss
+		Query string `json:"query"` // Поисковый запрос по названию или описанию продукта
 	}
 	type ProductsOutput struct {
 		Result string `json:"result"`
@@ -114,22 +113,17 @@ func createGetProductsTool(storeClient *llm.StoreClient) (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_products",
-			Description: "Search and get actual products from database. Use 'query' or 'category' parameter to filter (e.g., query='wine', category='напитки'). Returns real product names, prices, and availability. THIS IS THE PRIMARY TOOL FOR PRODUCT SEARCHES.",
+			Description: "Search products by name or description text (NOT by category). Use when customer asks for specific product name (e.g., 'wine', 'milk'). For category searches, use get_categories + get_products_by_category instead.",
 		},
 		func(ctx tool.Context, input GetProductsInput) (ProductsOutput, error) {
-			// Поддерживаем оба параметра для совместимости с разными LLM
 			searchQuery := input.Query
-			if searchQuery == "" && input.Category != "" {
-				searchQuery = input.Category
-			}
 
 			// Если явно указано "all", получаем все товары
 			if searchQuery == "all" {
 				searchQuery = ""
 			}
 
-			log.Printf("[TOOL] get_products called: query=%s, category=%s, effective_search=%s",
-				input.Query, input.Category, searchQuery)
+			log.Printf("[TOOL] get_products called: query=%s", input.Query)
 
 			products, err := storeClient.GetAllProducts(ctx, searchQuery)
 			if err != nil {
