@@ -217,9 +217,6 @@ func TelegramWebhook(c *gin.Context) {
 
 	log.Printf("TelegramWebhook: сообщение добавлено: ID=%s", userMsg.ID)
 
-	// Быстро обновляем время чата
-	updateChatTimestamp(chat.ID)
-
 	// Генерируем автоответ, если включено
 	var botMsg *models.Message
 	log.Printf("TelegramWebhook: проверка автоответчика - AutoResponder != nil: %v, chat.AutoResponderEnabled: %v", AutoResponder != nil, chat.AutoResponderEnabled)
@@ -275,9 +272,6 @@ func TelegramWebhook(c *gin.Context) {
 				botMsg = saved
 				log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botMsg.ID)
 
-				// Обновляем время чата
-				updateChatTimestamp(chat.ID)
-
 				// Проверяем нужна ли эскалация
 				if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok {
 					log.Printf("TelegramWebhook: проверка эскалации для чата %s: needEscalation=%v", chat.ID, needEscalation)
@@ -312,28 +306,9 @@ func TelegramWebhook(c *gin.Context) {
 
 		// Админы получают персонализированный перевод (каждый на своём языке)
 		adminsSent := WebSocketHub.SendToAllAdminsWithCallback(func(adminClient *websocket.Client) []byte {
-			// Получаем язык конкретного админа
-			adminSettings, err := settingsCache.getAdminSettings(adminClient.UserID)
-			if err != nil || adminSettings.PreferredLanguage == "" {
-				// Если не удалось получить язык - используем оригинал
-				log.Printf("TelegramWebhook: для админа %s используется оригинал (язык не найден)", adminClient.UserID)
-				return widgetNotification
-			}
-
-			// Применяем перевод на язык этого админа
-			personalizedMsg := *userMsg
-			if userMsg.Metadata != nil {
-				if translations, ok := userMsg.Metadata["translations"].(map[string]interface{}); ok {
-					if translation, exists := translations[adminSettings.PreferredLanguage]; exists {
-						if translatedText, ok := translation.(string); ok && translatedText != "" {
-							personalizedMsg.Content = translatedText
-							log.Printf("TelegramWebhook: для админа %s используется перевод на %s: '%s'", adminClient.UserID, adminSettings.PreferredLanguage, translatedText)
-						}
-					}
-				}
-			}
-
-			return createMessageNotification(chat.ID, &personalizedMsg, chatInfo)
+			adminLang := getAdminLanguage(adminClient.UserID)
+			personalizedMsg := applyTranslationForAdmin(userMsg, adminLang)
+			return createMessageNotification(chat.ID, personalizedMsg, chatInfo)
 		})
 		log.Printf("TelegramWebhook: уведомление отправлено %d админам (персонализировано)", adminsSent)
 
@@ -380,18 +355,9 @@ func createChatInfo(chat *models.Chat) map[string]interface{} {
 // createMessageNotification создает WebSocket уведомление для одного сообщения
 func createMessageNotification(chatID uuid.UUID, message *models.Message, chatInfo map[string]interface{}) []byte {
 	payload := map[string]interface{}{
-		"chatId": chatID.String(),
-		"message": map[string]interface{}{
-			"id":        message.ID.String(),
-			"chatId":    chatID.String(),
-			"content":   message.Content,
-			"sender":    message.Sender,
-			"timestamp": message.Timestamp.Format(time.RFC3339),
-			"read":      false,
-			"type":      message.Type,
-			"metadata":  message.Metadata,
-		},
-		"chat": chatInfo, // Переиспользуем созданную информацию о чате
+		"chatId":  chatID.String(),
+		"message": createMessagePayload(message, chatID),
+		"chat":    chatInfo,
 	}
 
 	msg, _ := websocket.NewMessage("new_message", payload)

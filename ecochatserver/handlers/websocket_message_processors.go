@@ -122,9 +122,6 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	// Увеличиваем счетчик реальных сообщений чата
 	WebSocketHub.IncrementChatMessage()
 
-	// Быстро обновляем время чата
-	updateChatTimestamp(chatID)
-
 	// Отправляем сообщение во внешние каналы (например, Instagram) для админов
 	if sender == "admin" {
 		go dispatchExternalMessage(chatID, message)
@@ -171,9 +168,6 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					// Увеличиваем счетчик реальных сообщений чата (включая бота)
 					WebSocketHub.IncrementChatMessage()
 
-					// Обновляем время чата
-					updateChatTimestamp(chatID)
-
 					// Обновляем lightChat перед отправкой уведомления
 					lightChat.Messages = append(lightChat.Messages, *message)
 
@@ -195,22 +189,9 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		}()
 	} else {
 		// Для админских сообщений нужно отправить перевод виджету
-		widgetMessage := *message
-
-		// Если сообщение от админа и есть перевод - используем его для виджета
-		if sender == "admin" && message.Metadata != nil {
-			if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
-				// Определяем язык клиента из чата
-				clientLang, err := database.GetClientLanguageFromChat(chatID)
-				if err == nil && clientLang != "" {
-					if translation, exists := translations[clientLang]; exists {
-						if translatedText, ok := translation.(string); ok && translatedText != "" {
-							widgetMessage.Content = translatedText
-							log.Printf("processSendMessage: для WebSocket используется перевод на %s", clientLang)
-						}
-					}
-				}
-			}
+		widgetMessage := message
+		if sender == "admin" {
+			widgetMessage = applyTranslationForWidget(message, chatID)
 		}
 
 		// Загружаем легковесную версию чата для уведомления
@@ -220,16 +201,16 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 			// Создаем минимальный объект чата
 			lightChat = &models.Chat{
 				ID:       chatID,
-				Messages: []models.Message{widgetMessage},
+				Messages: []models.Message{*widgetMessage},
 			}
 		} else {
 			// Добавляем текущее сообщение к списку
-			lightChat.Messages = append(lightChat.Messages, widgetMessage)
+			lightChat.Messages = append(lightChat.Messages, *widgetMessage)
 		}
 
 		// Отправляем сообщение (с переводом для виджета)
 		chatInfo := createChatInfo(lightChat)
-		notification := createMessageNotification(chatID, &widgetMessage, chatInfo)
+		notification := createMessageNotification(chatID, widgetMessage, chatInfo)
 		WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
 	}
 
@@ -363,10 +344,10 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 		if exists {
 			adminID, err := uuid.Parse(adminIDStr.(string))
 			if err == nil {
-				settings, err := queries.GetAdminSettings(database.DB, adminID)
-				if err == nil && settings.PreferredLanguage != "" {
-					log.Printf("processGetChatByID: перевод сообщений для админа %s (язык: %s)", adminID, settings.PreferredLanguage)
-					err = Translator.TranslateMessagesForAdmin(ginCtx.Request.Context(), chat.Messages, settings.PreferredLanguage)
+				adminLang := getAdminLanguage(adminID)
+				if adminLang != "" {
+					log.Printf("processGetChatByID: перевод сообщений для админа %s (язык: %s)", adminID, adminLang)
+					err = Translator.TranslateMessagesForAdmin(ginCtx.Request.Context(), chat.Messages, adminLang)
 					if err != nil {
 						log.Printf("processGetChatByID: ошибка перевода сообщений: %v", err)
 					}

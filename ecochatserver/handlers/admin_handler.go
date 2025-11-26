@@ -244,9 +244,6 @@ func SendMessageToChat(c *gin.Context) {
 
 	log.Printf("SendMessageToChat: сообщение сохранено: ID=%s", message.ID)
 
-	// Обновляем время чата
-	updateChatTimestamp(chatID)
-
 	// Инвалидируем Redis кеш (lastMessage изменилось)
 	database.InvalidateChatsCacheForAll()
 
@@ -254,20 +251,7 @@ func SendMessageToChat(c *gin.Context) {
 	go dispatchExternalMessage(chatID, message)
 
 	// Создаём копию сообщения для виджета с переводом на язык клиента
-	widgetMessage := *message
-	if message.Metadata != nil {
-		if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
-			clientLang, err := database.GetClientLanguageFromChat(chatID)
-			if err == nil && clientLang != "" {
-				if translation, exists := translations[clientLang]; exists {
-					if translatedText, ok := translation.(string); ok && translatedText != "" {
-						widgetMessage.Content = translatedText
-						log.Printf("SendMessageToChat: для виджета используется перевод на %s", clientLang)
-					}
-				}
-			}
-		}
-	}
+	widgetMessage := applyTranslationForWidget(message, chatID)
 
 	// Создаём копию сообщения для админов
 	// Для сообщений от USER - применяем перевод на язык админа (он уже в message.Content из TranslateUserMessage)
@@ -286,7 +270,7 @@ func SendMessageToChat(c *gin.Context) {
 	// Отправляем в виджет
 	widgetPayload := map[string]interface{}{
 		"chatId":  chatID.String(),
-		"message": createMessagePayload(&widgetMessage, chatID),
+		"message": createMessagePayload(widgetMessage, chatID),
 		"chat": map[string]interface{}{
 			"id": chatID.String(),
 		},
@@ -302,35 +286,12 @@ func SendMessageToChat(c *gin.Context) {
 		// Сообщение от пользователя - нужно перевести для каждого админа
 		log.Printf("SendMessageToChat: отправка сообщения пользователя админам с персонализацией")
 		totalAdmins := WebSocketHub.SendToAllAdminsWithCallback(func(adminClient *websocket.Client) []byte {
-			// Получаем язык конкретного админа
-			adminSettings, err := settingsCache.getAdminSettings(adminClient.UserID)
-			if err != nil || adminSettings.PreferredLanguage == "" {
-				// Если не удалось получить язык - используем оригинал
-				adminPayload := map[string]interface{}{
-					"chatId":  chatID.String(),
-					"message": createMessagePayload(message, chatID),
-					"chat":    map[string]interface{}{"id": chatID.String()},
-				}
-				adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
-				return adminWsMessage
-			}
-
-			// Применяем перевод на язык этого админа
-			personalizedMessage := *message
-			if message.Metadata != nil {
-				if translations, ok := message.Metadata["translations"].(map[string]interface{}); ok {
-					if translation, exists := translations[adminSettings.PreferredLanguage]; exists {
-						if translatedText, ok := translation.(string); ok && translatedText != "" {
-							personalizedMessage.Content = translatedText
-							log.Printf("SendMessageToChat: для админа %s используется перевод на %s", adminClient.UserID, adminSettings.PreferredLanguage)
-						}
-					}
-				}
-			}
+			adminLang := getAdminLanguage(adminClient.UserID)
+			personalizedMessage := applyTranslationForAdmin(message, adminLang)
 
 			adminPayload := map[string]interface{}{
 				"chatId":  chatID.String(),
-				"message": createMessagePayload(&personalizedMessage, chatID),
+				"message": createMessagePayload(personalizedMessage, chatID),
 				"chat":    map[string]interface{}{"id": chatID.String()},
 			}
 			adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)

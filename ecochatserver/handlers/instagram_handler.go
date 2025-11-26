@@ -819,9 +819,6 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 
 	log.Printf("handleInstagramMessage: сообщение сохранено (id=%s, chat=%s)", userMsg.ID, chat.ID)
 
-	// Быстро обновляем время чата
-	updateChatTimestamp(chat.ID)
-
 	var botMsg *models.Message
 	if AutoResponder != nil && chat.AutoResponderEnabled {
 		log.Printf("handleInstagramMessage: запуск автоответчика")
@@ -862,7 +859,6 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 			} else {
 				botMsg = saved
 				go dispatchExternalMessage(chat.ID, botMsg)
-				updateChatTimestamp(chat.ID)
 
 				if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok && needEscalation {
 					escalationNotification := createEscalationNotification(chat.ID, userMsg)
