@@ -87,4 +87,4 @@ require (
 )
 
 // Use forked ADK with OpenAI support
-replace google.golang.org/adk => github.com/babasha/adk-go_openai v0.0.0-20251116195233-6449c1bf57dc
+replace google.golang.org/adk => github.com/babasha/adk-go_openai v0.0.0-20251126061926-f175a6b25938

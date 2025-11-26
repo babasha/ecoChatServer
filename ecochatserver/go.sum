@@ -6,8 +6,8 @@ cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdB
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
-github.com/babasha/adk-go_openai v0.0.0-20251116195233-6449c1bf57dc h1:9MnSz6m/vXNaNgUukl7L/x4GSqEsNHShRIektb2pjbY=
-github.com/babasha/adk-go_openai v0.0.0-20251116195233-6449c1bf57dc/go.mod h1:NvtSLoNx7UzZIiUAI1KoJQLMmt9sG3oCgiCx1TLqKFw=
+github.com/babasha/adk-go_openai v0.0.0-20251126061926-f175a6b25938 h1:sa59fP+RhlfVIPH226+xPu/zBi3tc3LhClzQVPSdO8I=
+github.com/babasha/adk-go_openai v0.0.0-20251126061926-f175a6b25938/go.mod h1:NvtSLoNx7UzZIiUAI1KoJQLMmt9sG3oCgiCx1TLqKFw=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

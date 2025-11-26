@@ -148,17 +148,22 @@ func newOpenAIModel(ctx context.Context, config *LLMConfig) (model.LLM, error) {
 
 // newLMStudioModel создаёт LM Studio модель (через OpenAI API)
 func newLMStudioModel(ctx context.Context, config *LLMConfig) (model.LLM, error) {
+	// Включаем debug logging для разработки
+	debugMode := os.Getenv("LLM_DEBUG") == "true" || os.Getenv("ENVIRONMENT") != "production"
+
 	// LM Studio совместим с OpenAI API, используем openai.NewModel()
 	lmStudioModel, err := openai.NewModel(config.Model, &openai.Config{
-		BaseURL: config.BaseURL,
-		APIKey:  config.APIKey,
+		BaseURL:      config.BaseURL,
+		APIKey:       config.APIKey,
+		DebugLogging: debugMode,
+		Logger:       log.Default(),
 	})
 	if err != nil {
 		log.Printf("[ADK_LLM] ❌ Ошибка создания LM Studio модели: %v, fallback на Mock", err)
 		return &MockLLM{}, nil
 	}
 
-	log.Printf("[ADK_LLM] ✅ LM Studio модель инициализирована: %s (base: %s)", config.Model, config.BaseURL)
+	log.Printf("[ADK_LLM] ✅ LM Studio модель инициализирована: %s (base: %s, debug=%v)", config.Model, config.BaseURL, debugMode)
 	log.Printf("[ADK_LLM] 💡 Убедитесь что LM Studio запущен на %s", config.BaseURL)
 	return lmStudioModel, nil
 }
