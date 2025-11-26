@@ -1,7 +1,8 @@
-﻿package adkagent
+package adkagent
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -13,53 +14,124 @@ import (
 	"github.com/egor/ecochatserver/models"
 )
 
-// ADKAutoResponderV2 - ╨╛╨▒╨╜╨╛╨▓╨╗╤æ╨╜╨╜╨░╤Å ╨▓╨╡╤Ç╤ü╨╕╤Å ╤ü ╨┐╤Ç╨░╨▓╨╕╨╗╤î╨╜╤ï╨╝ ADK API
+// ADKAutoResponderV2 - обновлённая версия с правильным ADK API и мульти-агентностью
 type ADKAutoResponderV2 struct {
 	storeClient *llm.StoreClient
 	config      llm.AutoResponderConfig
 
-	// Agent cache per chatID (isolated agent for each chat)
-	// FIX: Prevents race condition with userID - each chat gets its own agent
-	agentsMu    sync.RWMutex
-	agentCache  map[string]*SupportAgent  // chatID -> agent
+	// Single-agent mode: Agent cache per chatID
+	agentsMu   sync.RWMutex
+	agentCache map[string]*SupportAgent // chatID -> agent
 
-	// ╨¡╤ü╨║╨░╨╗╨░╤å╨╕╨╕ (in-memory - ╨┐╤Ç╨╕ ╤Ç╨╡╤ü╤é╨░╤Ç╤é╨╡ ╤ü╨▒╤Ç╨░╤ü╤ï╨▓╨░╤Ä╤é╤ü╤Å)
-	// NOTE: ╨¡╤é╨╛ intentional - ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╤Å ╤ì╤é╨╛ ephemeral state.
-	// ╨ƒ╤Ç╨╕ ╤Ç╨╡╤ü╤é╨░╤Ç╤é╨╡ ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░ ╨░╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╤ü╨╜╨╛╨▓╨░ ╨╜╨░╤ç╨╜╤æ╤é ╨╛╤é╨▓╨╡╤ç╨░╤é╤î, ╤ç╤é╨╛ ╨┐╤Ç╨░╨▓╨╕╨╗╤î╨╜╨╛.
+	// Multi-agent mode: Orchestrator cache per chatID
+	orchestratorsMu   sync.RWMutex
+	orchestratorCache map[string]*OrchestratorAgent // chatID -> orchestrator
+
+	// Режим работы: true = мульти-агент, false = single-agent
+	useMultiAgent bool
+
+	// Supervisor agent для анализа запросов (опционально, для single-agent mode)
+	supervisor    *SupervisorAgent
+	useSupervisor bool
+
+	// Customer Memory Service
+	memoryService *CustomerMemoryService
+
+	// Эскалации (in-memory - при рестарте сбрасываются)
 	escalationsMu sync.RWMutex
 	escalations   map[string]*EscalationState
 }
 
-// NewADKAutoResponderV2 ╤ü╨╛╨╖╨┤╨░╤æ╤é ╨░╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨╜╨░ ╨▒╨░╨╖╨╡ ADK V2
+// NewADKAutoResponderV2 создаёт автоответчик на базе ADK V2 (single-agent mode)
 func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
 	storeClient := llm.NewStoreClient()
 
 	ar := &ADKAutoResponderV2{
-		storeClient: storeClient,
-		config:      cfg,
-		agentCache:  make(map[string]*SupportAgent),
-		escalations: make(map[string]*EscalationState),
+		storeClient:       storeClient,
+		config:            cfg,
+		agentCache:        make(map[string]*SupportAgent),
+		orchestratorCache: make(map[string]*OrchestratorAgent),
+		escalations:       make(map[string]*EscalationState),
+		useMultiAgent:     false, // По умолчанию single-agent
+		useSupervisor:     false,
+		memoryService:     NewCustomerMemoryService(),
 	}
 
-	log.Printf("[ADK_V2] ╨ÿ╨╜╨╕╤å╨╕╨░╨╗╨╕╨╖╨╕╤Ç╨╛╨▓╨░╨╜ (lazy agent creation)")
+	log.Printf("[ADK_V2] Инициализирован (single-agent mode, lazy creation)")
 	return ar, nil
 }
 
-// ProcessMessage - ╨╛╤ü╨╜╨╛╨▓╨╜╨╛╨╣ ╨╝╨╡╤é╨╛╨┤ ╨╛╨▒╤Ç╨░╨▒╨╛╤é╨║╨╕ ╤ü╨╛╨╛╨▒╤ë╨╡╨╜╨╕╤Å ╨┐╨╛╨╗╤î╨╖╨╛╨▓╨░╤é╨╡╨╗╤Å
-func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
-	log.Printf("[ADK_V2] ProcessMessage: chatID=%s", chat.ID)
+// NewADKAutoResponderV2MultiAgent создаёт автоответчик с мульти-агентной архитектурой
+func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
+	storeClient := llm.NewStoreClient()
 
-	// ╨æ╤ï╤ü╤é╤Ç╤ï╨╡ ╨┐╤Ç╨╛╨▓╨╡╤Ç╨║╨╕: ╨┤╨╛╨╗╨╢╨╡╨╜ ╨╗╨╕ ╨░╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨╛╤é╨▓╨╡╤ç╨░╤é╤î?
-	if !ar.config.Enabled ||                              // ╨É╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨▓╤ï╨║╨╗╤Ä╤ç╨╡╨╜
-		msg.Sender != "user" ||                            // ╨í╨╛╨╛╨▒╤ë╨╡╨╜╨╕╨╡ ╨╜╨╡ ╨╛╤é ╨┐╨╛╨╗╤î╨╖╨╛╨▓╨░╤é╨╡╨╗╤Å
-		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) || // ╨º╨░╤é ╨╜╨░╨╖╨╜╨░╤ç╨╡╨╜ ╨╛╨┐╨╡╤Ç╨░╤é╨╛╤Ç╤â
-		!chat.AutoResponderEnabled {                       // ╨É╨▓╤é╨╛╨╛╤é╨▓╨╡╤é╤ç╨╕╨║ ╨╛╤é╨║╨╗╤Ä╤ç╨╡╨╜ ╨┤╨╗╤Å ╤ç╨░╤é╨░
+	ar := &ADKAutoResponderV2{
+		storeClient:       storeClient,
+		config:            cfg,
+		agentCache:        make(map[string]*SupportAgent),
+		orchestratorCache: make(map[string]*OrchestratorAgent),
+		escalations:       make(map[string]*EscalationState),
+		useMultiAgent:     true, // Мульти-агентный режим
+		useSupervisor:     false,
+		memoryService:     NewCustomerMemoryService(),
+	}
+
+	log.Printf("[ADK_V2] Инициализирован (MULTI-AGENT mode, lazy creation)")
+	log.Printf("[ADK_V2] 🤖 Orchestrator → [ProductExpert, OrderManager, SupportSpecialist]")
+	return ar, nil
+}
+
+// EnableMultiAgent включает/выключает мульти-агентный режим
+func (ar *ADKAutoResponderV2) EnableMultiAgent(enabled bool) {
+	ar.useMultiAgent = enabled
+	mode := "single-agent"
+	if enabled {
+		mode = "multi-agent"
+	}
+	log.Printf("[ADK_V2] Switched to %s mode", mode)
+}
+
+// NewADKAutoResponderV2WithSupervisor создаёт автоответчик с supervisor agent
+func NewADKAutoResponderV2WithSupervisor(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
+	ar, err := NewADKAutoResponderV2(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Создаём supervisor agent
+	supervisor, err := NewSupervisorAgent(ctx)
+	if err != nil {
+		log.Printf("[ADK_V2] Warning: failed to create supervisor agent: %v (continuing without supervisor)", err)
+	} else {
+		ar.supervisor = supervisor
+		ar.useSupervisor = true
+		log.Printf("[ADK_V2] Supervisor agent enabled")
+	}
+
+	return ar, nil
+}
+
+// EnableSupervisor включает/выключает supervisor agent
+func (ar *ADKAutoResponderV2) EnableSupervisor(enabled bool) {
+	ar.useSupervisor = enabled && ar.supervisor != nil
+	log.Printf("[ADK_V2] Supervisor agent: %v", ar.useSupervisor)
+}
+
+// ProcessMessage - основной метод обработки сообщения пользователя
+func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
+	log.Printf("[ADK_V2] ProcessMessage: chatID=%s, mode=%s", chat.ID, ar.getMode())
+
+	// Быстрые проверки: должен ли автоответчик отвечать?
+	if !ar.config.Enabled || // Автоответчик выключен
+		msg.Sender != "user" || // Сообщение не от пользователя
+		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) || // Чат назначен оператору
+		!chat.AutoResponderEnabled { // Автоответчик отключен для чата
 		return nil, nil
 	}
 
 	chatKey := chat.ID.String()
 
-	// ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░ ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╨╕
+	// Проверка эскалации
 	ar.escalationsMu.RLock()
 	escalation := ar.escalations[chatKey]
 	ar.escalationsMu.RUnlock()
@@ -68,24 +140,17 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		return nil, nil
 	}
 
-	// ╨₧╨┐╤Ç╨╡╨┤╨╡╨╗╤Å╨╡╨╝ ╨░╨▓╤é╨╛╤Ç╨╕╨╖╨░╤å╨╕╤Ä
+	// Определяем авторизацию
 	userID := ar.getUserIDWithCache(ctx, chat)
 	isAuthorized := userID > 0
 	log.Printf("[ADK_V2] User context: userID=%d, authorized=%v", userID, isAuthorized)
 
-	// ╨ƒ╨╛╨╗╤â╤ç╨░╨╡╨╝ ╨░╨│╨╡╨╜╤é╨░ (╤ü ╨┐╨╛╨╗╨╜╤ï╨╝ ╨╜╨░╨▒╨╛╤Ç╨╛╨╝ ╨╕╨╖ 19 tools)
-	agent, err := ar.getOrCreateAgent(ctx, chatKey, isAuthorized)
-	if err != nil {
-		log.Printf("[ADK_V2] ╨₧╤ê╨╕╨▒╨║╨░ ╤ü╨╛╨╖╨┤╨░╨╜╨╕╤Å ╨░╨│╨╡╨╜╤é╨░: %v", err)
-		return nil, err
-	}
-
-	// ╨ù╨░╨┤╨╡╤Ç╨╢╨║╨░
+	// Задержка (если настроена)
 	if ar.config.DelaySeconds > 0 {
 		time.Sleep(time.Duration(ar.config.DelaySeconds) * time.Second)
 	}
 
-	// ╨ƒ╨╛╨╗╤â╤ç╨░╨╡╨╝ ╤Å╨╖╤ï╨║ ╨║╨╗╨╕╨╡╨╜╤é╨░ ╨╕╨╖ ╨╝╨╡╤é╨░╨┤╨░╨╜╨╜╤ï╤à ╤ü╨╛╨╛╨▒╤ë╨╡╨╜╨╕╤Å (╨╡╤ü╨╗╨╕ ╨╡╤ü╤é╤î)
+	// Получаем язык клиента из метаданных сообщения (если есть)
 	var clientLang string
 	if msg.Metadata != nil {
 		if detectedLang, ok := msg.Metadata["detectedLanguage"].(string); ok && detectedLang != "" {
@@ -94,24 +159,32 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		}
 	}
 
-	// ╨ù╨░╨┐╤â╤ü╨║ ╨░╨│╨╡╨╜╤é╨░
+	// Запуск агента с timeout
 	genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
 	defer cancel()
 
-	// ╨ƒ╨╡╤Ç╨╡╨┤╨░╤æ╨╝ ╤Å╨╖╤ï╨║ ╨║╨╗╨╕╨╡╨╜╤é╨░ ╨▓ ╨░╨│╨╡╨╜╤é╨░ (╨╡╤ü╨╗╨╕ ╨╛╨┐╤Ç╨╡╨┤╨╡╨╗╤æ╨╜)
 	var response string
-	if clientLang != "" {
-		response, err = agent.ProcessMessage(genCtx, chatKey, msg.Content, userID, clientLang)
+	var err error
+	var agentType string
+
+	// Выбираем режим работы
+	if ar.useMultiAgent {
+		// MULTI-AGENT MODE: Orchestrator → [ProductExpert, OrderManager, SupportSpecialist]
+		response, err = ar.processWithMultiAgent(genCtx, chatKey, msg.Content, userID, isAuthorized, clientLang)
+		agentType = "multi-agent"
 	} else {
-		response, err = agent.ProcessMessage(genCtx, chatKey, msg.Content, userID)
+		// SINGLE-AGENT MODE: один SupportAgent с 19 tools
+		response, err = ar.processWithSingleAgent(genCtx, chatKey, msg.Content, userID, isAuthorized, clientLang)
+		agentType = "single-agent"
 	}
+
 	if err != nil {
-		log.Printf("[ADK_V2] ╨₧╤ê╨╕╨▒╨║╨░ ╨░╨│╨╡╨╜╤é╨░: %v", err)
+		log.Printf("[ADK_V2] Agent error (%s): %v", agentType, err)
 		return nil, err
 	}
 
-	// ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░ ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╨╕
-	if agent.IsEscalationNeeded(response) {
+	// Проверка эскалации
+	if strings.Contains(response, "#escalate") {
 		ar.escalationsMu.Lock()
 		ar.escalations[chatKey] = &EscalationState{
 			EscalatedAt: time.Now(),
@@ -122,7 +195,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response = strings.TrimSpace(response)
 	}
 
-	// ╨ñ╨╛╤Ç╨╝╨╕╤Ç╤â╨╡╨╝ ╨╛╤é╨▓╨╡╤é
+	// Формируем ответ
 	botMsg := &models.Message{
 		ChatID:    chat.ID,
 		Content:   response,
@@ -135,13 +208,133 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 			"isAutoResponse": true,
 			"botName":        ar.config.BotName,
 			"provider":       "adk-v2",
+			"agentMode":      agentType,
 		},
+	}
+
+	// Добавляем информацию о режиме
+	if ar.useMultiAgent {
+		botMsg.Metadata["multiAgent"] = true
+	}
+	if ar.useSupervisor {
+		botMsg.Metadata["supervisorEnabled"] = true
 	}
 
 	return botMsg, nil
 }
 
-// ClearEscalation ╨╛╤ç╨╕╤ë╨░╨╡╤é ╤ì╤ü╨║╨░╨╗╨░╤å╨╕╤Ä
+// getMode возвращает текущий режим работы
+func (ar *ADKAutoResponderV2) getMode() string {
+	if ar.useMultiAgent {
+		return "multi-agent"
+	}
+	return "single-agent"
+}
+
+// processWithMultiAgent обрабатывает сообщение через мульти-агентную систему
+func (ar *ADKAutoResponderV2) processWithMultiAgent(ctx context.Context, chatKey, userMessage string, userID int, isAuthorized bool, clientLang string) (string, error) {
+	// Получаем или создаём Orchestrator
+	orchestrator, err := ar.getOrCreateOrchestrator(ctx, chatKey, userID, isAuthorized)
+	if err != nil {
+		return "", fmt.Errorf("failed to create orchestrator: %w", err)
+	}
+
+	// Обновляем userID если изменился
+	orchestrator.SetUserID(userID)
+
+	// Запускаем обработку
+	return orchestrator.ProcessMessage(ctx, chatKey, userMessage, clientLang)
+}
+
+// processWithSingleAgent обрабатывает сообщение через single-agent
+func (ar *ADKAutoResponderV2) processWithSingleAgent(ctx context.Context, chatKey, userMessage string, userID int, isAuthorized bool, clientLang string) (string, error) {
+	// Получаем агента (с полным набором из 19 tools)
+	agent, err := ar.getOrCreateAgent(ctx, chatKey, isAuthorized)
+	if err != nil {
+		return "", err
+	}
+
+	// Подготавливаем сообщение
+	processedMessage := userMessage
+
+	// Если supervisor включен, анализируем запрос и добавляем инструкции
+	if ar.useSupervisor && ar.supervisor != nil {
+		plan, err := ar.supervisor.AnalyzeRequest(ctx, userMessage)
+		if err != nil {
+			log.Printf("[ADK_V2] Supervisor analysis failed: %v (continuing without plan)", err)
+		} else if plan != nil && plan.RequiredTool != "" {
+			instruction := ar.formatSupervisorInstruction(plan)
+			processedMessage = instruction + "\n\n" + userMessage
+			log.Printf("[ADK_V2] Supervisor plan: intent=%s, required_tool=%s", plan.Intent, plan.RequiredTool)
+		}
+	}
+
+	// Передаём язык клиента в агента (если определён)
+	if clientLang != "" {
+		return agent.ProcessMessage(ctx, chatKey, processedMessage, userID, clientLang)
+	}
+	return agent.ProcessMessage(ctx, chatKey, processedMessage, userID)
+}
+
+// getOrCreateOrchestrator создаёт или возвращает кэшированный Orchestrator для чата
+func (ar *ADKAutoResponderV2) getOrCreateOrchestrator(ctx context.Context, chatID string, userID int, isAuthorized bool) (*OrchestratorAgent, error) {
+	// Try read lock first (fast path)
+	ar.orchestratorsMu.RLock()
+	if orch, exists := ar.orchestratorCache[chatID]; exists {
+		ar.orchestratorsMu.RUnlock()
+		return orch, nil
+	}
+	ar.orchestratorsMu.RUnlock()
+
+	// Need to create - acquire write lock
+	ar.orchestratorsMu.Lock()
+	defer ar.orchestratorsMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if orch, exists := ar.orchestratorCache[chatID]; exists {
+		return orch, nil
+	}
+
+	// Create new Orchestrator
+	orch, err := NewOrchestratorAgent(ctx, MultiAgentConfig{
+		StoreClient:  ar.storeClient,
+		IsAuthorized: isAuthorized,
+		UserID:       userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ar.orchestratorCache[chatID] = orch
+	authType := "UNAUTHORIZED"
+	if isAuthorized {
+		authType = "AUTHORIZED"
+	}
+	log.Printf("[ADK_V2] Created %s orchestrator for chat %s (total: %d)", authType, chatID, len(ar.orchestratorCache))
+
+	return orch, nil
+}
+
+// formatSupervisorInstruction форматирует инструкцию от supervisor для support agent
+func (ar *ADKAutoResponderV2) formatSupervisorInstruction(plan *ExecutionPlan) string {
+	if plan == nil || plan.RequiredTool == "" {
+		return ""
+	}
+
+	instruction := fmt.Sprintf("[SUPERVISOR INSTRUCTION]\nIntent: %s\nREQUIRED: You MUST call tool '%s' first.\n",
+		plan.Intent, plan.RequiredTool)
+
+	if len(plan.Steps) > 0 {
+		instruction += "Steps:\n"
+		for i, step := range plan.Steps {
+			instruction += fmt.Sprintf("%d. %s\n", i+1, step)
+		}
+	}
+
+	return instruction
+}
+
+// ClearEscalation очищает эскалацию
 func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
 	ar.escalationsMu.Lock()
 	defer ar.escalationsMu.Unlock()
@@ -184,9 +377,9 @@ func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, chatID strin
 	return agent, nil
 }
 
-// getUserIDWithCache ╨┐╨╛╨╗╤â╤ç╨░╨╡╤é user_id ╨╕╨╖ metadata ╨╕╨╗╨╕ ╤ç╨╡╤Ç╨╡╨╖ Store API
+// getUserIDWithCache получает user_id из metadata или через Store API
 func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *models.Chat) int {
-	// ╨ƒ╤ï╤é╨░╨╡╨╝╤ü╤Å ╨┐╨╛╨╗╤â╤ç╨╕╤é╤î ╨╕╨╖ cache (metadata)
+	// Пытаемся получить из cache (metadata)
 	if chat.Metadata != nil {
 		if userID, ok := chat.Metadata["store_user_id"].(int); ok && userID > 0 {
 			return userID
@@ -196,11 +389,11 @@ func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *mode
 		}
 	}
 
-	// ╨ò╤ü╨╗╨╕ ╨╜╨╡ ╨╖╨░╨║╨╡╤ê╨╕╤Ç╨╛╨▓╨░╨╜╨╛ - ╨┐╨╛╨╗╤â╤ç╨░╨╡╨╝ ╤ç╨╡╤Ç╨╡╨╖ Store API
+	// Если не закешировано - получаем через Store API
 	userID := llm.ExtractUserIDFromChat(ctx, ar.storeClient, chat)
 
-	// NOTE: ╨¥╨╡ ╨╝╨╛╨┤╨╕╤ä╨╕╤å╨╕╤Ç╤â╨╡╨╝ chat.Metadata ╨╖╨┤╨╡╤ü╤î - ╤ì╤é╨╛ ╨┤╨╛╨╗╨╢╨╜╨╛ ╨┤╨╡╨╗╨░╤é╤î╤ü╤Å ╨╜╨░ ╤â╤Ç╨╛╨▓╨╜╨╡ ╨▓╤ï╤ê╨╡
-	// ╨│╨┤╨╡ chat ╤ü╨╛╨╖╨┤╨░╤æ╤é╤ü╤Å/╨╖╨░╨│╤Ç╤â╨╢╨░╨╡╤é╤ü╤Å ╨╕╨╖ ╨æ╨ö, ╤ç╤é╨╛╨▒╤ï ╨╕╨╖╨▒╨╡╨╢╨░╤é╤î race conditions
+	// NOTE: Не модифицируем chat.Metadata здесь - это должно делаться на уровне выше
+	// где chat создаётся/загружается из БД, чтобы избежать race conditions
 
 	return userID
 }

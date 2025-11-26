@@ -13,7 +13,7 @@ func TestAgentCreation(t *testing.T) {
 	storeClient := llm.NewStoreClient()
 
 	// Тестируем создание неавторизованного агента
-	agent, err := NewSupportAgentV2(ctx, storeClient, false)
+	agent, err := NewSupportAgent(ctx, storeClient, false)
 	if err != nil {
 		t.Skipf("Skipping test: %v (возможно не установлен GEMINI_API_KEY)", err)
 		return

@@ -266,3 +266,123 @@ func TestADKAutoResponderSkipConditions(t *testing.T) {
 
 	t.Log("✅ Все условия пропуска работают корректно!")
 }
+
+// TestADKAutoResponderMultiAgent тестирует мульти-агентный режим
+func TestADKAutoResponderMultiAgent(t *testing.T) {
+	ctx := context.Background()
+	cfg := llm.GetDefaultConfig()
+	cfg.DelaySeconds = 0
+
+	// Создаём AutoResponder в мульти-агентном режиме
+	ar, err := NewADKAutoResponderV2MultiAgent(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create Multi-Agent AutoResponder: %v", err)
+	}
+
+	if !ar.useMultiAgent {
+		t.Fatal("Expected useMultiAgent=true")
+	}
+
+	chat := &models.Chat{
+		ID:                   uuid.New(),
+		Source:               "widget",
+		AutoResponderEnabled: true,
+		AssignedTo:           nil,
+		Metadata:             make(map[string]interface{}),
+	}
+
+	// Тест 1: Вопрос о продуктах (должен пойти в ProductExpert)
+	t.Run("ProductQuestion", func(t *testing.T) {
+		userMsg := &models.Message{
+			ID:        uuid.New(),
+			ChatID:    chat.ID,
+			Content:   "Какое вино у вас есть?",
+			Sender:    "user",
+			SenderID:  uuid.New(),
+			Timestamp: time.Now(),
+			Type:      "text",
+		}
+
+		t.Log("📨 Вопрос о продуктах:", userMsg.Content)
+
+		response, err := ar.ProcessMessage(ctx, chat, userMsg)
+		if err != nil {
+			t.Fatalf("ProcessMessage failed: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
+
+		// Проверяем режим в metadata
+		if agentMode, ok := response.Metadata["agentMode"].(string); !ok || agentMode != "multi-agent" {
+			t.Errorf("Expected agentMode='multi-agent', got '%v'", agentMode)
+		}
+
+		t.Log("✅ Ответ (multi-agent):", truncate(response.Content, 150))
+	})
+
+	// Тест 2: Вопрос о доставке (должен пойти в SupportSpecialist)
+	t.Run("SupportQuestion", func(t *testing.T) {
+		userMsg := &models.Message{
+			ID:        uuid.New(),
+			ChatID:    chat.ID,
+			Content:   "Как работает доставка?",
+			Sender:    "user",
+			SenderID:  uuid.New(),
+			Timestamp: time.Now(),
+			Type:      "text",
+		}
+
+		t.Log("📨 Вопрос о поддержке:", userMsg.Content)
+
+		response, err := ar.ProcessMessage(ctx, chat, userMsg)
+		if err != nil {
+			t.Fatalf("ProcessMessage failed: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
+
+		t.Log("✅ Ответ (multi-agent):", truncate(response.Content, 150))
+	})
+
+	t.Log("✅ Мульти-агентный режим работает!")
+}
+
+// TestADKAutoResponderModeSwitch тестирует переключение режимов
+func TestADKAutoResponderModeSwitch(t *testing.T) {
+	ctx := context.Background()
+	cfg := llm.GetDefaultConfig()
+
+	ar, err := NewADKAutoResponderV2(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Failed to create AutoResponder: %v", err)
+	}
+
+	// Изначально single-agent
+	if ar.useMultiAgent {
+		t.Error("Expected single-agent mode by default")
+	}
+	if ar.getMode() != "single-agent" {
+		t.Errorf("Expected getMode()='single-agent', got '%s'", ar.getMode())
+	}
+
+	// Переключаем на multi-agent
+	ar.EnableMultiAgent(true)
+	if !ar.useMultiAgent {
+		t.Error("Expected multi-agent mode after EnableMultiAgent(true)")
+	}
+	if ar.getMode() != "multi-agent" {
+		t.Errorf("Expected getMode()='multi-agent', got '%s'", ar.getMode())
+	}
+
+	// Переключаем обратно
+	ar.EnableMultiAgent(false)
+	if ar.useMultiAgent {
+		t.Error("Expected single-agent mode after EnableMultiAgent(false)")
+	}
+
+	t.Log("✅ Переключение режимов работает!")
+}
