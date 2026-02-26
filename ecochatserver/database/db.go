@@ -90,8 +90,8 @@ func Init() error {
 	return nil
 }
 
-// initializePartitions создает партиции заранее
-func initializePartitions() error {
+// ensurePartitions создаёт партиции на count недель вперед.
+func ensurePartitions(count int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -101,33 +101,25 @@ func initializePartitions() error {
 	}
 	defer conn.Close()
 
-	// Создаем партиции на 8 недель вперед
-	_, err = conn.ExecContext(ctx, "SELECT public.create_future_partitions(8)")
-	if err != nil {
-		return fmt.Errorf("create partitions: %w", err)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("SELECT public.create_future_partitions(%d)", count))
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return fmt.Errorf("ensure partitions: %w", err)
 	}
+	return nil
+}
 
+// initializePartitions создает партиции при старте.
+func initializePartitions() error {
+	if err := ensurePartitions(8); err != nil {
+		return err
+	}
 	log.Println("[database] Партиции успешно созданы")
 	return nil
 }
 
-// RefreshPartitions обновляет партиции
+// RefreshPartitions обновляет партиции (вызывается периодически).
 func RefreshPartitions() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	conn, err := DB.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("get conn: %w", err)
-	}
-	defer conn.Close()
-
-	_, err = conn.ExecContext(ctx, "SELECT public.create_future_partitions(8)")
-	if err != nil && !strings.Contains(err.Error(), "already exists") {
-		return fmt.Errorf("refresh partitions: %w", err)
-	}
-
-	return nil
+	return ensurePartitions(8)
 }
 
 // Close закрывает пул (вызывайте defer database.Close()).
@@ -144,15 +136,15 @@ func Close() {
 
 // ─────────────────────────────── helpers
 
-func buildDSN() string {
-	host := env("PG_HOST", "localhost")
-	port := env("PG_PORT", "5432")
-	user := env("PG_USER", "postgres")
-	password := os.Getenv("PG_PASSWORD") // может быть пустым
-	dbname := env("PG_DATABASE", "ecochat")
-	sslmode := env("PG_SSL_MODE", "disable")
+// buildPostgresDSN формирует DSN для PostgreSQL с логированием.
+func buildPostgresDSN(prefix, logName string, defaults map[string]string) string {
+	host := env(prefix+"HOST", defaults["host"])
+	port := env(prefix+"PORT", defaults["port"])
+	user := env(prefix+"USER", defaults["user"])
+	password := os.Getenv(prefix + "PASSWORD")
+	dbname := env(prefix+"DATABASE", defaults["dbname"])
+	sslmode := env(prefix+"SSL_MODE", defaults["sslmode"])
 
-	// Формируем DSN, пропуская пустой пароль
 	var dsn string
 	if password != "" {
 		dsn = fmt.Sprintf(
@@ -166,44 +158,26 @@ func buildDSN() string {
 		)
 	}
 
-	// Логируем DSN без пароля для отладки
-	log.Printf("[DB] Connecting (chats): host=%s port=%s user=%s dbname=%s sslmode=%s", host, port, user, dbname, sslmode)
-
+	log.Printf("[DB] Connecting (%s): host=%s port=%s user=%s dbname=%s sslmode=%s", logName, host, port, user, dbname, sslmode)
 	return dsn
 }
 
-// buildUsersDSN строит DSN для БД пользователей (ballast)
+func buildDSN() string {
+	return buildPostgresDSN("PG_", "chats", map[string]string{
+		"host": "localhost", "port": "5432", "user": "postgres",
+		"dbname": "ecochat", "sslmode": "disable",
+	})
+}
+
 func buildUsersDSN() string {
-	// Если переменные не заданы, возвращаем пустую строку
 	host := os.Getenv("USERS_PG_HOST")
-	log.Printf("[DB] DEBUG: USERS_PG_HOST = '%s'", host)
 	if host == "" {
-		log.Println("[DB] DEBUG: USERS_PG_HOST пустой, используем основную БД")
 		return "" // Используем основную БД
 	}
-
-	port := env("USERS_PG_PORT", "5432")
-	user := env("USERS_PG_USER", "postgres")
-	password := os.Getenv("USERS_PG_PASSWORD")
-	dbname := env("USERS_PG_DATABASE", "railway")
-	sslmode := env("USERS_PG_SSL_MODE", "require")
-
-	var dsn string
-	if password != "" {
-		dsn = fmt.Sprintf(
-			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			host, port, user, password, dbname, sslmode,
-		)
-	} else {
-		dsn = fmt.Sprintf(
-			"host=%s port=%s user=%s dbname=%s sslmode=%s",
-			host, port, user, dbname, sslmode,
-		)
-	}
-
-	log.Printf("[DB] Connecting (users): host=%s port=%s user=%s dbname=%s sslmode=%s", host, port, user, dbname, sslmode)
-
-	return dsn
+	return buildPostgresDSN("USERS_PG_", "users", map[string]string{
+		"host": host, "port": "5432", "user": "postgres",
+		"dbname": "railway", "sslmode": "require",
+	})
 }
 
 func env(k, def string) string {

@@ -443,8 +443,7 @@ Always respond: "Please log in to view your orders and order status."`
 - Handling order issues
 
 ## AVAILABLE TOOLS
-- get_user_orders - show all orders
-- get_recent_orders - last N orders
+- get_user_orders - show all orders (use limit param for recent)
 - get_order_status - specific order status
 - track_order - detailed tracking
 - get_orders_by_status - filter by status

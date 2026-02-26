@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/egor/ecochatserver/database"
-	"github.com/egor/ecochatserver/database/queries"
 	"github.com/egor/ecochatserver/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -57,13 +56,6 @@ func getAdminID(c *gin.Context) (uuid.UUID, error) {
 	}
 
 	return adminID, nil
-}
-
-// updateChatTimestamp обновляет timestamp чата с логированием ошибки
-func updateChatTimestamp(chatID uuid.UUID) {
-	if err := queries.UpdateChatTimestamp(database.DB, chatID); err != nil {
-		log.Printf("updateChatTimestamp: ошибка обновления времени чата %s: %v", chatID, err)
-	}
 }
 
 // createMessagePayload создает payload для WebSocket уведомления о сообщении

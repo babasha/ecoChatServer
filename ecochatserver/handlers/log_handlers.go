@@ -95,31 +95,24 @@ type DBLogEntry struct {
 	ClientType *string                `json:"client_type,omitempty"`
 }
 
-// buildServerLogsFilter строит WHERE условия для запросов логов
-func buildServerLogsFilter(level, source, startTime, endTime string) (string, []interface{}) {
+// filterParam описывает один фильтр: SQL условие (напр. "level =") + значение
+type filterParam struct {
+	expr  string // SQL expression, e.g. "level =", "timestamp >="
+	value string
+}
+
+// buildFilter строит WHERE условия для запросов логов
+func buildFilter(params []filterParam) (string, []interface{}) {
 	where := ""
 	args := []interface{}{}
 	argIndex := 1
 
-	if level != "" {
-		where += fmt.Sprintf(" AND level = $%d", argIndex)
-		args = append(args, level)
-		argIndex++
-	}
-	if source != "" {
-		where += fmt.Sprintf(" AND source = $%d", argIndex)
-		args = append(args, source)
-		argIndex++
-	}
-	if startTime != "" {
-		where += fmt.Sprintf(" AND timestamp >= $%d", argIndex)
-		args = append(args, startTime)
-		argIndex++
-	}
-	if endTime != "" {
-		where += fmt.Sprintf(" AND timestamp <= $%d", argIndex)
-		args = append(args, endTime)
-		argIndex++
+	for _, p := range params {
+		if p.value != "" {
+			where += fmt.Sprintf(" AND %s $%d", p.expr, argIndex)
+			args = append(args, p.value)
+			argIndex++
+		}
 	}
 	return where, args
 }
@@ -149,7 +142,12 @@ func GetServerLogsFromDB(c *gin.Context) {
 	endTime := c.Query("endTime")
 
 	// Строим WHERE условия
-	where, args := buildServerLogsFilter(level, source, startTime, endTime)
+	where, args := buildFilter([]filterParam{
+		{"level =", level},
+		{"source =", source},
+		{"timestamp >=", startTime},
+		{"timestamp <=", endTime},
+	})
 
 	// Основной запрос
 	query := "SELECT id, timestamp, level, message, source, metadata FROM server_logs WHERE 1=1" + where + " ORDER BY timestamp DESC LIMIT $" + fmt.Sprint(len(args)+1) + " OFFSET $" + fmt.Sprint(len(args)+2)
@@ -184,7 +182,12 @@ func GetServerLogsFromDB(c *gin.Context) {
 
 	// COUNT запрос - переиспользуем WHERE условия
 	var total int
-	countWhere, countArgs := buildServerLogsFilter(level, source, startTime, endTime)
+	countWhere, countArgs := buildFilter([]filterParam{
+		{"level =", level},
+		{"source =", source},
+		{"timestamp >=", startTime},
+		{"timestamp <=", endTime},
+	})
 	logsDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM server_logs WHERE 1=1"+countWhere, countArgs...).Scan(&total)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -194,25 +197,6 @@ func GetServerLogsFromDB(c *gin.Context) {
 		"page":  pageInt,
 		"limit": limitInt,
 	})
-}
-
-// buildWebSocketLogsFilter строит WHERE условия для запросов WebSocket логов
-func buildWebSocketLogsFilter(level, clientType string) (string, []interface{}) {
-	where := ""
-	args := []interface{}{}
-	argIndex := 1
-
-	if level != "" {
-		where += fmt.Sprintf(" AND level = $%d", argIndex)
-		args = append(args, level)
-		argIndex++
-	}
-	if clientType != "" {
-		where += fmt.Sprintf(" AND client_type = $%d", argIndex)
-		args = append(args, clientType)
-		argIndex++
-	}
-	return where, args
 }
 
 // GetWebSocketLogsFromDB возвращает WebSocket логи из БД
@@ -238,7 +222,10 @@ func GetWebSocketLogsFromDB(c *gin.Context) {
 	clientType := c.Query("clientType")
 
 	// Строим WHERE условия
-	where, args := buildWebSocketLogsFilter(level, clientType)
+	where, args := buildFilter([]filterParam{
+		{"level =", level},
+		{"client_type =", clientType},
+	})
 
 	// Основной запрос
 	query := "SELECT id, timestamp, level, message, source, client_id, client_type, metadata FROM websocket_logs WHERE 1=1" + where + " ORDER BY timestamp DESC LIMIT $" + fmt.Sprint(len(args)+1) + " OFFSET $" + fmt.Sprint(len(args)+2)
@@ -273,7 +260,10 @@ func GetWebSocketLogsFromDB(c *gin.Context) {
 
 	// COUNT запрос - переиспользуем WHERE условия
 	var total int
-	countWhere, countArgs := buildWebSocketLogsFilter(level, clientType)
+	countWhere, countArgs := buildFilter([]filterParam{
+		{"level =", level},
+		{"client_type =", clientType},
+	})
 	logsDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM websocket_logs WHERE 1=1"+countWhere, countArgs...).Scan(&total)
 
 	c.JSON(http.StatusOK, gin.H{

@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"google.golang.org/adk/memory"
-
 	"github.com/egor/ecochatserver/llm"
 )
 
@@ -81,60 +79,3 @@ func TestMultiAgentAuthorized(t *testing.T) {
 	t.Log("✅ Мульти-агентная система для авторизованного пользователя создана")
 }
 
-// TestCustomerMemoryService проверяет работу сервиса памяти
-func TestCustomerMemoryService(t *testing.T) {
-	cms := NewCustomerMemoryService()
-
-	if cms == nil {
-		t.Fatal("CustomerMemoryService should not be nil")
-	}
-
-	// Добавляем предпочтение
-	cms.AddPreference("user123", "category", "wine")
-	cms.AddPreference("user123", "category", "cheese")
-	cms.AddPreference("user123", "language", "ru")
-
-	// Проверяем статистику
-	totalUsers, totalMemories := cms.GetStats()
-	if totalUsers != 1 {
-		t.Errorf("Expected 1 user, got %d", totalUsers)
-	}
-	if totalMemories != 3 {
-		t.Errorf("Expected 3 memories, got %d", totalMemories)
-	}
-
-	// Получаем сводку предпочтений
-	prefs := cms.GetUserPreferences("user123")
-	if prefs == "" {
-		t.Error("Expected non-empty preferences summary")
-	}
-
-	t.Log("✅ CustomerMemoryService работает корректно")
-	t.Logf("   Users: %d, Memories: %d", totalUsers, totalMemories)
-	t.Logf("   Preferences: %s", prefs)
-}
-
-// TestCustomerMemorySearch проверяет поиск в памяти
-func TestCustomerMemorySearch(t *testing.T) {
-	ctx := context.Background()
-	cms := NewCustomerMemoryService()
-
-	// Добавляем данные
-	cms.AddPreference("user456", "product", "milk")
-	cms.AddPreference("user456", "product", "bread")
-
-	// Ищем через ADK memory.SearchRequest
-	resp, err := cms.Search(ctx, &memory.SearchRequest{
-		UserID: "user456",
-		Query:  "milk",
-	})
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-
-	if len(resp.Memories) == 0 {
-		t.Log("⚠️ Search returned 0 results (expected for simple impl)")
-	} else {
-		t.Logf("✅ Search returned %d results", len(resp.Memories))
-	}
-}

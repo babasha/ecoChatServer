@@ -3,6 +3,7 @@ package adkagent
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"google.golang.org/adk/tool"
@@ -251,7 +252,7 @@ func createSearchFAQTool() (tool.Tool, error) {
 
 				// Проверяем совпадение в вопросе
 				if strings.Contains(strings.ToLower(faq.question), query) {
-					if !contains(matches, key) {
+					if !slices.Contains(matches, key) {
 						matches = append(matches, key)
 					}
 				}
@@ -391,15 +392,3 @@ func createCheckServiceStatusTool() (tool.Tool, error) {
 	)
 }
 
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}

@@ -55,14 +55,7 @@ func CreateOrderTools(storeClient *llm.StoreClient, userIDProvider *UserIDProvid
 	}
 	tools = append(tools, getOrdersByStatusTool)
 
-	// Tool 5: Get Recent Orders - последние заказы
-	getRecentOrdersTool, err := createGetRecentOrdersTool(storeClient, userIDProvider)
-	if err != nil {
-		return nil, err
-	}
-	tools = append(tools, getRecentOrdersTool)
-
-	// Tool 6: Report Delivery Issue - сообщить о проблеме
+	// Tool 5: Report Delivery Issue - сообщить о проблеме
 	reportDeliveryIssueTool, err := createReportDeliveryIssueTool(storeClient, userIDProvider)
 	if err != nil {
 		return nil, err
@@ -88,7 +81,7 @@ func createGetUserOrdersTool(storeClient *llm.StoreClient, userIDProvider *UserI
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_user_orders",
-			Description: "Get user's order history. ONLY for authorized users. Use when customer asks 'show my orders', 'my order history', etc. Optionally provide limit for number of orders.",
+			Description: "Get user's order history or recent orders. ONLY for authorized users. Use when customer asks 'show my orders', 'my order history', 'recent purchases', 'last orders', etc. Provide limit to restrict number of orders returned.",
 		},
 		func(ctx tool.Context, input GetUserOrdersInput) (UserOrdersOutput, error) {
 			log.Printf("[TOOL] get_user_orders called: limit=%d", input.Limit)
@@ -323,62 +316,6 @@ func createGetOrdersByStatusTool(storeClient *llm.StoreClient, userIDProvider *U
 			result += llm.FormatOrdersList(orders)
 
 			return GetOrdersByStatusOutput{Result: result}, nil
-		},
-	)
-}
-
-// createGetRecentOrdersTool - получение последних заказов
-func createGetRecentOrdersTool(storeClient *llm.StoreClient, userIDProvider *UserIDProvider) (tool.Tool, error) {
-	type GetRecentOrdersInput struct {
-		Limit int `json:"limit"` // Количество последних заказов
-	}
-	type GetRecentOrdersOutput struct {
-		Result string `json:"result"`
-	}
-
-	return functiontool.New(
-		functiontool.Config{
-			Name:        "get_recent_orders",
-			Description: "Get user's most recent orders. Use when customer asks 'show my last orders', 'recent purchases', 'what did I order recently'. Provide limit for number of orders (default 3).",
-		},
-		func(ctx tool.Context, input GetRecentOrdersInput) (GetRecentOrdersOutput, error) {
-			log.Printf("[TOOL] get_recent_orders called: limit=%d", input.Limit)
-
-			if userIDProvider == nil || *userIDProvider == nil {
-				return GetRecentOrdersOutput{Result: "Error: agent not initialized"}, nil
-			}
-
-			userID := (*userIDProvider).GetUserID()
-			if userID == 0 {
-				return GetRecentOrdersOutput{Result: "⚠️ This feature is only available for registered users. Please log in."}, nil
-			}
-
-			if input.Limit <= 0 {
-				input.Limit = 3
-			}
-			if input.Limit > 10 {
-				input.Limit = 10
-			}
-
-			orders, err := storeClient.GetUserOrders(ctx, userID)
-			if err != nil {
-				log.Printf("[TOOL] Error getting recent orders: %v", err)
-				return GetRecentOrdersOutput{Result: fmt.Sprintf("Error retrieving orders: %v", err)}, nil
-			}
-
-			if len(orders) == 0 {
-				return GetRecentOrdersOutput{Result: "You don't have any orders yet."}, nil
-			}
-
-			// Берем только последние N заказов
-			if len(orders) > input.Limit {
-				orders = orders[:input.Limit]
-			}
-
-			result := fmt.Sprintf("🕐 Your %d most recent orders:\n\n", len(orders))
-			result += llm.FormatOrdersList(orders)
-
-			return GetRecentOrdersOutput{Result: result}, nil
 		},
 	)
 }

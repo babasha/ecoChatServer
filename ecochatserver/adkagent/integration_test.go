@@ -173,10 +173,7 @@ func TestADKAutoResponderEscalation(t *testing.T) {
 	t.Log("✅ Ответ агента:", truncate(response.Content, 200))
 
 	// Проверяем, была ли создана эскалация
-	ar.escalationsMu.RLock()
-	escalation := ar.escalations[chat.ID.String()]
-	ar.escalationsMu.RUnlock()
-
+	escalation, _ := ar.escalations.get(chat.ID.String())
 	if escalation != nil {
 		t.Log("✅ Эскалация создана для чата", chat.ID)
 	} else {

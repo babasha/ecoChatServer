@@ -52,10 +52,7 @@ func (c *GeminiClient) GenerateResponse(
 	}
 
 	// URL Gemini API
-	endpoint := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
-		c.apiKey,
-	)
+	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	// Создаём HTTP‑запрос
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
@@ -63,6 +60,7 @@ func (c *GeminiClient) GenerateResponse(
 		return "", fmt.Errorf("create HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", c.apiKey)
 
 	// Выполняем запрос
 	resp, err := c.client.Do(req)
@@ -98,17 +96,7 @@ func (c *GeminiClient) GenerateResponse(
 		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", candidate.FinishReason)
 	}
 
-	// Логируем использование токенов
-	if geminiResp.UsageMetadata != nil {
-		_ = LogUsage(ctx, UsageLogEntry{
-			Provider:         "gemini",
-			Model:            "gemini-2.5-flash",
-			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-			RequestType:      "chat",
-		})
-	}
+	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "chat")
 
 	// Извлекаем текст из Parts
 	if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok {
@@ -168,10 +156,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	}
 
 	// URL Gemini API
-	endpoint := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
-		c.apiKey,
-	)
+	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	// Создаём HTTP‑запрос
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
@@ -179,6 +164,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 		return "", nil, fmt.Errorf("create HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", c.apiKey)
 
 	// Выполняем запрос
 	resp, err := c.client.Do(req)
@@ -209,17 +195,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	candidateJSON, _ := json.Marshal(candidate)
 	log.Printf("[GEMINI] Candidate response: %s", string(candidateJSON))
 
-	// Логируем использование токенов
-	if geminiResp.UsageMetadata != nil {
-		_ = LogUsage(ctx, UsageLogEntry{
-			Provider:         "gemini",
-			Model:            "gemini-2.5-flash",
-			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-			RequestType:      "function_call",
-		})
-	}
+	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "function_call")
 
 	// Проверяем есть ли function call в candidate.FunctionCall (старый формат)
 	if candidate.FunctionCall != nil {
@@ -321,16 +297,14 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 		return "", fmt.Errorf("marshal request body: %w", err)
 	}
 
-	endpoint := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s",
-		c.apiKey,
-	)
+	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("create HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -358,17 +332,7 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 
 	candidate := geminiResp.Candidates[0]
 
-	// Логируем использование токенов
-	if geminiResp.UsageMetadata != nil {
-		_ = LogUsage(ctx, UsageLogEntry{
-			Provider:         "gemini",
-			Model:            "gemini-2.5-flash",
-			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-			RequestType:      "function_call",
-		})
-	}
+	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "function_call")
 
 	// Проверяем thoughtContent (Gemini 2.0 thinking mode)
 	if candidate.ThoughtContent != nil && candidate.ThoughtContent.Text != "" {

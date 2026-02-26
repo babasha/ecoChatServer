@@ -50,13 +50,14 @@ func (c *GeminiClient) DetectAndTranslateTOON(ctx context.Context, text, targetL
 			return nil, fmt.Errorf("marshal request: %w", err)
 		}
 
-		endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", c.apiKey)
+		endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		if err != nil {
 			return nil, fmt.Errorf("create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-goog-api-key", c.apiKey)
 
 		resp, err := c.client.Do(req)
 		if err != nil {
@@ -104,17 +105,7 @@ func (c *GeminiClient) DetectAndTranslateTOON(ctx context.Context, text, targetL
 			return nil, lastErr
 		}
 
-		// Логируем использование токенов
-		if geminiResp.UsageMetadata != nil {
-			_ = LogUsage(ctx, UsageLogEntry{
-				Provider:         "gemini",
-				Model:            "gemini-2.5-flash",
-				PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-				CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-				TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-				RequestType:      "translation_toon",
-			})
-		}
+		logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "translation_toon")
 
 		responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
 		if !ok {
@@ -200,13 +191,14 @@ func (c *GeminiClient) TranslateBatchTOON(ctx context.Context, texts []string, f
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", c.apiKey)
+	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -228,17 +220,7 @@ func (c *GeminiClient) TranslateBatchTOON(ctx context.Context, texts []string, f
 		return nil, fmt.Errorf("empty response from Gemini")
 	}
 
-	// Логируем использование токенов
-	if geminiResp.UsageMetadata != nil {
-		_ = LogUsage(ctx, UsageLogEntry{
-			Provider:         "gemini",
-			Model:            "gemini-2.5-flash",
-			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-			RequestType:      "translation_batch_toon",
-		})
-	}
+	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "translation_batch_toon")
 
 	responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
 	if !ok {
@@ -301,10 +283,11 @@ func (c *GeminiClient) TranslateTextTOON(ctx context.Context, text, fromLang, to
 		}
 
 		payload, _ := json.Marshal(reqBody)
-		endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", c.apiKey)
+		endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-goog-api-key", c.apiKey)
 
 		resp, err := c.client.Do(req)
 		if err != nil || resp.StatusCode != http.StatusOK {
@@ -322,17 +305,7 @@ func (c *GeminiClient) TranslateTextTOON(ctx context.Context, text, fromLang, to
 		json.NewDecoder(resp.Body).Decode(&geminiResp)
 		resp.Body.Close()
 
-		// Логируем использование токенов
-		if geminiResp.UsageMetadata != nil {
-			_ = LogUsage(ctx, UsageLogEntry{
-				Provider:         "gemini",
-				Model:            "gemini-2.5-flash",
-				PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-				CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-				TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-				RequestType:      "translation_toon",
-			})
-		}
+		logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "translation_toon")
 
 		if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
 			if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok && text != "" {

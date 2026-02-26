@@ -159,9 +159,7 @@ func SendMessageToChat(c *gin.Context) {
 		Content string `json:"content"`
 	}
 
-	if err := c.ShouldBindJSON(&request); err != nil {
-		log.Printf("SendMessageToChat: ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+	if !bindJSON(c, &request) {
 		return
 	}
 
@@ -332,9 +330,7 @@ func ToggleAutoResponder(c *gin.Context) {
 		Enabled bool `json:"enabled"`
 	}
 
-	if err := c.ShouldBindJSON(&request); err != nil {
-		log.Printf("ToggleAutoResponder: ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+	if !bindJSON(c, &request) {
 		return
 	}
 
@@ -392,9 +388,7 @@ func UpdateAdminSettings(c *gin.Context) {
 		PreferredLanguage string `json:"preferredLanguage" binding:"required"`
 	}
 
-	if err := c.ShouldBindJSON(&request); err != nil {
-		log.Printf("UpdateAdminSettings: ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+	if !bindJSON(c, &request) {
 		return
 	}
 
@@ -452,9 +446,7 @@ func ToggleGlobalAutoResponder(c *gin.Context) {
 		Enabled bool `json:"enabled"`
 	}
 
-	if err := c.ShouldBindJSON(&request); err != nil {
-		log.Printf("ToggleGlobalAutoResponder: ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных", "details": err.Error()})
+	if !bindJSON(c, &request) {
 		return
 	}
 
@@ -491,9 +483,7 @@ func MarkChatMessagesAsRead(c *gin.Context) {
 		MessageIDs []string `json:"messageIds"`
 	}
 
-	if err := c.ShouldBindJSON(&request); err != nil {
-		log.Printf("MarkChatMessagesAsRead: ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных"})
+	if !bindJSON(c, &request) {
 		return
 	}
 

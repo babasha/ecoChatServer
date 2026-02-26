@@ -1,3 +1,8 @@
+// Package queries содержит SQL-запросы к БД.
+//
+// NOTE: Некоторые хелперы (nullStringToPointer и др.) дублируются в database/helpers.go.
+// Это сделано намеренно, т.к. пакеты queries и database нельзя объединить
+// без создания circular import (queries ← database ← queries).
 package queries
 
 import (

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -89,9 +90,6 @@ func main() {
 	gin.SetMode(getEnv("GIN_MODE", gin.DebugMode))
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.Logger())
-
-	// Простой middleware для дедупликации HTTP запросов
-	r.Use(SimpleDeduplicationMiddleware())
 
 	setupCORS(r)
 
@@ -203,28 +201,6 @@ func main() {
 	logInfo("✓ Сервер остановлен успешно")
 }
 
-// SimpleDeduplicationMiddleware простой middleware для дедупликации HTTP запросов
-func SimpleDeduplicationMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Только для POST запросов
-		if c.Request.Method != http.MethodPost {
-			c.Next()
-			return
-		}
-
-		// Исключаем некоторые пути из дедупликации
-		if strings.Contains(c.Request.URL.Path, "/auth/login") ||
-			strings.Contains(c.Request.URL.Path, "/health") {
-			c.Next()
-			return
-		}
-
-		// Пропускаем дедупликацию для main.go пока функции не перенесены
-		// TODO: Перенести логику дедупликации из telegram_handler в общий пакет
-		c.Next()
-	}
-}
-
 // startStatsServer запускает отдельный сервер для статистики WebSocket
 func startStatsServer(ctx context.Context, hub *websocket.Hub) {
 	if os.Getenv("ENABLE_STATS_SERVER") != "true" {
@@ -308,7 +284,7 @@ func setupCORS(r *gin.Engine) {
 			if v := os.Getenv(key); v != "" {
 				for _, u := range strings.Split(v, ",") {
 					u = strings.TrimSpace(u)
-					if u != "" && !contains(allow, u) {
+					if u != "" && !slices.Contains(allow, u) {
 						allow = append(allow, u)
 					}
 				}
@@ -318,7 +294,7 @@ func setupCORS(r *gin.Engine) {
 		conf = cors.Config{
 			AllowOriginFunc: func(origin string) bool {
 				// Разрешаем все домены из списка
-				if contains(allow, origin) {
+				if slices.Contains(allow, origin) {
 					return true
 				}
 				// Разрешаем все Vercel preview deployments
@@ -344,15 +320,6 @@ func setupCORS(r *gin.Engine) {
 		c.Header("X-Request-ID", requestID)
 		c.Next()
 	})
-}
-
-func contains(slice []string, val string) bool {
-	for _, s := range slice {
-		if s == val {
-			return true
-		}
-	}
-	return false
 }
 
 // setupAPIRoutes регистрирует и REST, и WebSocket

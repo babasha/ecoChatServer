@@ -309,7 +309,7 @@ func getLeanAuthorizedPrompt() string {
 ## AUTHORIZED USER TOOLS
 
 MY ORDERS:
-→ get_user_orders or get_recent_orders
+→ get_user_orders (use limit parameter for recent orders)
 
 ORDER STATUS:
 → get_order_status(order_id="X") or track_order(order_id="X")

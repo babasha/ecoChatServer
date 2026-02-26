@@ -64,45 +64,43 @@ type TranslationResult struct {
 	WasTranslated    bool                   // Был ли текст переведен
 }
 
-// TranslateUserMessage переводит сообщение от пользователя ТОЛЬКО для ОНЛАЙН админов с доступом
-// ОПТИМИЗАЦИЯ: больше не переводим для оффлайн админов, экономим токены
-func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content string, chatID uuid.UUID) (*TranslationResult, error) {
-	var adminLanguages []queries.AdminLanguageInfo
-	var err error
-
+// getTargetAdminLanguages возвращает языки админов для перевода.
+// Последовательно: онлайн-админы -> первый админ с доступом -> дефолт "ru".
+func (ts *TranslationService) getTargetAdminLanguages(chatID uuid.UUID) []queries.AdminLanguageInfo {
 	// Шаг 1: Пытаемся получить языки ОНЛАЙН админов (если hub доступен)
 	if ts.hub != nil {
 		onlineAdminIDs := ts.hub.GetOnlineAdminIDs()
-		log.Printf("TranslateUserMessage: найдено %d онлайн админов", len(onlineAdminIDs))
+		log.Printf("getTargetAdminLanguages: найдено %d онлайн админов", len(onlineAdminIDs))
 
-		adminLanguages, err = queries.GetAdminLanguagesForChatOnlineOnly(ts.db, chatID, onlineAdminIDs)
+		adminLanguages, err := queries.GetAdminLanguagesForChatOnlineOnly(ts.db, chatID, onlineAdminIDs)
 		if err != nil {
-			log.Printf("TranslateUserMessage: ошибка GetAdminLanguagesForChatOnlineOnly: %v", err)
+			log.Printf("getTargetAdminLanguages: ошибка GetAdminLanguagesForChatOnlineOnly: %v", err)
 		} else if len(adminLanguages) > 0 {
-			log.Printf("TranslateUserMessage: используем языки %d онлайн админов", len(adminLanguages))
-			// Успех! Есть онлайн админы, используем их языки
-			goto processLanguages
+			log.Printf("getTargetAdminLanguages: используем языки %d онлайн админов", len(adminLanguages))
+			return adminLanguages
 		}
-		// Если нет онлайн админов или ошибка - fallback на всех админов
-		log.Printf("TranslateUserMessage: нет онлайн админов, fallback на язык первого админа с доступом")
+		log.Printf("getTargetAdminLanguages: нет онлайн админов, fallback на язык первого админа с доступом")
 	}
 
 	// Шаг 2: Fallback - получаем ВСЕХ админов с доступом
-	adminLanguages, err = queries.GetAdminLanguagesForChat(ts.db, chatID)
+	adminLanguages, err := queries.GetAdminLanguagesForChat(ts.db, chatID)
 	if err != nil {
-		log.Printf("TranslateUserMessage: ошибка GetAdminLanguagesForChat: %v, используем дефолт", err)
+		log.Printf("getTargetAdminLanguages: ошибка GetAdminLanguagesForChat: %v, используем дефолт", err)
 	} else if len(adminLanguages) > 0 {
 		// Берем только ПЕРВОГО админа для экономии токенов
-		adminLanguages = []queries.AdminLanguageInfo{adminLanguages[0]}
-		log.Printf("TranslateUserMessage: используем язык первого админа: %s", adminLanguages[0].PreferredLanguage)
-		goto processLanguages
+		log.Printf("getTargetAdminLanguages: используем язык первого админа: %s", adminLanguages[0].PreferredLanguage)
+		return []queries.AdminLanguageInfo{adminLanguages[0]}
 	}
 
 	// Шаг 3: Финальный fallback - дефолтный язык
-	log.Printf("TranslateUserMessage: нет админов с доступом, используем дефолт ru")
-	adminLanguages = []queries.AdminLanguageInfo{{PreferredLanguage: "ru"}}
+	log.Printf("getTargetAdminLanguages: нет админов с доступом, используем дефолт ru")
+	return []queries.AdminLanguageInfo{{PreferredLanguage: "ru"}}
+}
 
-processLanguages:
+// TranslateUserMessage переводит сообщение от пользователя ТОЛЬКО для ОНЛАЙН админов с доступом
+// ОПТИМИЗАЦИЯ: больше не переводим для оффлайн админов, экономим токены
+func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content string, chatID uuid.UUID) (*TranslationResult, error) {
+	adminLanguages := ts.getTargetAdminLanguages(chatID)
 
 	// Получаем уникальные языки (один админ может быть под несколькими ролями)
 	uniqueLangs := make(map[string]bool)

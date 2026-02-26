@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,12 +19,10 @@ type ADKAutoResponderV2 struct {
 	config      llm.AutoResponderConfig
 
 	// Single-agent mode: Agent cache per chatID
-	agentsMu   sync.RWMutex
-	agentCache map[string]*SupportAgent // chatID -> agent
+	agents *syncCache[*SupportAgent]
 
 	// Multi-agent mode: Orchestrator cache per chatID
-	orchestratorsMu   sync.RWMutex
-	orchestratorCache map[string]*OrchestratorAgent // chatID -> orchestrator
+	orchestrators *syncCache[*OrchestratorAgent]
 
 	// Режим работы: true = мульти-агент, false = single-agent
 	useMultiAgent bool
@@ -34,12 +31,8 @@ type ADKAutoResponderV2 struct {
 	supervisor    *SupervisorAgent
 	useSupervisor bool
 
-	// Customer Memory Service
-	memoryService *CustomerMemoryService
-
 	// Эскалации (in-memory - при рестарте сбрасываются)
-	escalationsMu sync.RWMutex
-	escalations   map[string]*EscalationState
+	escalations *syncCache[*EscalationState]
 }
 
 // NewADKAutoResponderV2 создаёт автоответчик на базе ADK V2 (single-agent mode)
@@ -47,14 +40,13 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 	storeClient := llm.NewStoreClient()
 
 	ar := &ADKAutoResponderV2{
-		storeClient:       storeClient,
-		config:            cfg,
-		agentCache:        make(map[string]*SupportAgent),
-		orchestratorCache: make(map[string]*OrchestratorAgent),
-		escalations:       make(map[string]*EscalationState),
-		useMultiAgent:     false, // По умолчанию single-agent
-		useSupervisor:     false,
-		memoryService:     NewCustomerMemoryService(),
+		storeClient:   storeClient,
+		config:        cfg,
+		agents:        newSyncCache[*SupportAgent](),
+		orchestrators: newSyncCache[*OrchestratorAgent](),
+		escalations:   newSyncCache[*EscalationState](),
+		useMultiAgent: false, // По умолчанию single-agent
+		useSupervisor: false,
 	}
 
 	log.Printf("[ADK_V2] Инициализирован (single-agent mode, lazy creation)")
@@ -66,14 +58,13 @@ func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderC
 	storeClient := llm.NewStoreClient()
 
 	ar := &ADKAutoResponderV2{
-		storeClient:       storeClient,
-		config:            cfg,
-		agentCache:        make(map[string]*SupportAgent),
-		orchestratorCache: make(map[string]*OrchestratorAgent),
-		escalations:       make(map[string]*EscalationState),
-		useMultiAgent:     true, // Мульти-агентный режим
-		useSupervisor:     false,
-		memoryService:     NewCustomerMemoryService(),
+		storeClient:   storeClient,
+		config:        cfg,
+		agents:        newSyncCache[*SupportAgent](),
+		orchestrators: newSyncCache[*OrchestratorAgent](),
+		escalations:   newSyncCache[*EscalationState](),
+		useMultiAgent: true, // Мульти-агентный режим
+		useSupervisor: false,
 	}
 
 	log.Printf("[ADK_V2] Инициализирован (MULTI-AGENT mode, lazy creation)")
@@ -132,10 +123,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	chatKey := chat.ID.String()
 
 	// Проверка эскалации
-	ar.escalationsMu.RLock()
-	escalation := ar.escalations[chatKey]
-	ar.escalationsMu.RUnlock()
-
+	escalation, _ := ar.escalations.get(chatKey)
 	if escalation != nil && escalation.ReturnedAt == nil {
 		return nil, nil
 	}
@@ -185,11 +173,9 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 
 	// Проверка эскалации
 	if strings.Contains(response, "#escalate") {
-		ar.escalationsMu.Lock()
-		ar.escalations[chatKey] = &EscalationState{
+		ar.escalations.set(chatKey, &EscalationState{
 			EscalatedAt: time.Now(),
-		}
-		ar.escalationsMu.Unlock()
+		})
 
 		response = strings.ReplaceAll(response, "#escalate", "")
 		response = strings.TrimSpace(response)
@@ -278,40 +264,22 @@ func (ar *ADKAutoResponderV2) processWithSingleAgent(ctx context.Context, chatKe
 
 // getOrCreateOrchestrator создаёт или возвращает кэшированный Orchestrator для чата
 func (ar *ADKAutoResponderV2) getOrCreateOrchestrator(ctx context.Context, chatID string, userID int, isAuthorized bool) (*OrchestratorAgent, error) {
-	// Try read lock first (fast path)
-	ar.orchestratorsMu.RLock()
-	if orch, exists := ar.orchestratorCache[chatID]; exists {
-		ar.orchestratorsMu.RUnlock()
-		return orch, nil
-	}
-	ar.orchestratorsMu.RUnlock()
-
-	// Need to create - acquire write lock
-	ar.orchestratorsMu.Lock()
-	defer ar.orchestratorsMu.Unlock()
-
-	// Double-check after acquiring write lock
-	if orch, exists := ar.orchestratorCache[chatID]; exists {
-		return orch, nil
-	}
-
-	// Create new Orchestrator
-	orch, err := NewOrchestratorAgent(ctx, MultiAgentConfig{
-		StoreClient:  ar.storeClient,
-		IsAuthorized: isAuthorized,
-		UserID:       userID,
+	orch, err := ar.orchestrators.getOrCreate(chatID, func() (*OrchestratorAgent, error) {
+		return NewOrchestratorAgent(ctx, MultiAgentConfig{
+			StoreClient:  ar.storeClient,
+			IsAuthorized: isAuthorized,
+			UserID:       userID,
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	ar.orchestratorCache[chatID] = orch
 	authType := "UNAUTHORIZED"
 	if isAuthorized {
 		authType = "AUTHORIZED"
 	}
-	log.Printf("[ADK_V2] Created %s orchestrator for chat %s (total: %d)", authType, chatID, len(ar.orchestratorCache))
-
+	log.Printf("[ADK_V2] Created/reused %s orchestrator for chat %s (total: %d)", authType, chatID, ar.orchestrators.len())
 	return orch, nil
 }
 
@@ -336,44 +304,24 @@ func (ar *ADKAutoResponderV2) formatSupervisorInstruction(plan *ExecutionPlan) s
 
 // ClearEscalation очищает эскалацию
 func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
-	ar.escalationsMu.Lock()
-	defer ar.escalationsMu.Unlock()
-	delete(ar.escalations, chatID)
+	ar.escalations.remove(chatID)
 }
 
 // getOrCreateAgent creates or returns cached agent for specific chatID
 // FIX: Each chat gets isolated agent to prevent userID race condition
 func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, chatID string, isAuthorized bool) (*SupportAgent, error) {
-	// Try read lock first (fast path)
-	ar.agentsMu.RLock()
-	if agent, exists := ar.agentCache[chatID]; exists {
-		ar.agentsMu.RUnlock()
-		return agent, nil
-	}
-	ar.agentsMu.RUnlock()
-
-	// Need to create - acquire write lock
-	ar.agentsMu.Lock()
-	defer ar.agentsMu.Unlock()
-
-	// Double-check after acquiring write lock
-	if agent, exists := ar.agentCache[chatID]; exists {
-		return agent, nil
-	}
-
-	// Create new isolated agent for this chat
-	agent, err := NewSupportAgent(ctx, ar.storeClient, isAuthorized)
+	agent, err := ar.agents.getOrCreate(chatID, func() (*SupportAgent, error) {
+		return NewSupportAgent(ctx, ar.storeClient, isAuthorized)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	ar.agentCache[chatID] = agent
 	authType := "UNAUTHORIZED"
 	if isAuthorized {
 		authType = "AUTHORIZED"
 	}
-	log.Printf("[ADK_V2] Created %s agent for chat %s (total agents: %d)", authType, chatID, len(ar.agentCache))
-
+	log.Printf("[ADK_V2] Created/reused %s agent for chat %s (total agents: %d)", authType, chatID, ar.agents.len())
 	return agent, nil
 }
 
@@ -400,34 +348,18 @@ func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *mode
 
 // RemoveAgentForChat removes cached agent for specific chat (memory cleanup)
 func (ar *ADKAutoResponderV2) RemoveAgentForChat(chatID string) {
-	ar.agentsMu.Lock()
-	defer ar.agentsMu.Unlock()
-
-	if _, exists := ar.agentCache[chatID]; exists {
-		delete(ar.agentCache, chatID)
-		log.Printf("[ADK_V2] Removed agent for chat %s (total agents: %d)", chatID, len(ar.agentCache))
+	if ar.agents.remove(chatID) {
+		log.Printf("[ADK_V2] Removed agent for chat %s (total agents: %d)", chatID, ar.agents.len())
 	}
 }
 
 // ClearAllAgents removes all cached agents (memory cleanup on restart/maintenance)
 func (ar *ADKAutoResponderV2) ClearAllAgents() {
-	ar.agentsMu.Lock()
-	defer ar.agentsMu.Unlock()
-
-	count := len(ar.agentCache)
-	ar.agentCache = make(map[string]*SupportAgent)
+	count := ar.agents.clear()
 	log.Printf("[ADK_V2] Cleared all agents (removed %d agents)", count)
 }
 
 // GetAgentCacheStats returns statistics about cached agents
 func (ar *ADKAutoResponderV2) GetAgentCacheStats() (total int, chatIDs []string) {
-	ar.agentsMu.RLock()
-	defer ar.agentsMu.RUnlock()
-
-	total = len(ar.agentCache)
-	chatIDs = make([]string, 0, total)
-	for chatID := range ar.agentCache {
-		chatIDs = append(chatIDs, chatID)
-	}
-	return total, chatIDs
+	return ar.agents.len(), ar.agents.keys()
 }

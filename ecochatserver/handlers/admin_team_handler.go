@@ -56,9 +56,7 @@ func AddSupervisorAccess(c *gin.Context) {
 	}
 
 	var req AddSupervisorAccessRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("AddSupervisorAccess: ошибка валидации: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -94,9 +92,7 @@ func RemoveSupervisorAccess(c *gin.Context) {
 	}
 
 	var req RemoveSupervisorAccessRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("RemoveSupervisorAccess: ошибка валидации: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -120,11 +116,8 @@ func RemoveSupervisorAccess(c *gin.Context) {
 // GET /api/admin/supervisors/:id/businesses
 // Для super_admin и самого supervisor
 func GetSupervisorBusinesses(c *gin.Context) {
-	supervisorIDParam := c.Param("id")
-	supervisorID, err := uuid.Parse(supervisorIDParam)
-	if err != nil {
-		log.Printf("GetSupervisorBusinesses: неверный ID supervisor: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+	supervisorID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 
@@ -242,9 +235,7 @@ func GetAllSupervisors(c *gin.Context) {
 // Для super_admin и supervisor
 func AddManager(c *gin.Context) {
 	var req AddManagerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("AddManager: ошибка валидации: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -274,11 +265,8 @@ func AddManager(c *gin.Context) {
 // DELETE /api/admin/managers/:id
 // Для super_admin и supervisor
 func RemoveManager(c *gin.Context) {
-	managerIDParam := c.Param("id")
-	managerID, err := uuid.Parse(managerIDParam)
-	if err != nil {
-		log.Printf("RemoveManager: неверный ID manager: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+	managerID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 
@@ -290,10 +278,8 @@ func RemoveManager(c *gin.Context) {
 		return
 	}
 
-	clientID, err := uuid.Parse(clientIDParam)
-	if err != nil {
-		log.Printf("RemoveManager: неверный clientId: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный clientId"})
+	clientID, ok2 := parseUUIDString(c, clientIDParam)
+	if !ok2 {
 		return
 	}
 
@@ -306,7 +292,7 @@ func RemoveManager(c *gin.Context) {
 	}
 
 	// Удаляем из admin_hierarchy
-	_, err = database.DB.Exec(`
+	_, err := database.DB.Exec(`
 		DELETE FROM admin_hierarchy
 		WHERE manager_id = $1 AND client_id = $2
 	`, managerID, clientID)
@@ -394,9 +380,7 @@ func UpdateUserRole(c *gin.Context) {
 	}
 
 	var req UpdateUserRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("UpdateUserRole: ошибка валидации: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -451,11 +435,8 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	userIDParam := c.Param("id")
-	userID, err := uuid.Parse(userIDParam)
-	if err != nil {
-		log.Printf("DeleteUser: неверный ID пользователя: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID пользователя"})
+	userID, ok := parseUUIDParam(c, "id")
+	if !ok {
 		return
 	}
 

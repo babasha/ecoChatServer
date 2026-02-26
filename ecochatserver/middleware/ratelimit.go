@@ -18,45 +18,15 @@ type RateLimiter struct {
 
 // NewRateLimiter создает новый ограничитель запросов
 func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
-	rl := &RateLimiter{
+	return &RateLimiter{
 		requests: make(map[string][]time.Time),
 		rate:     rate,
 		window:   window,
 	}
-
-	// Запускаем очистку старых записей каждую минуту
-	go rl.cleanup()
-
-	return rl
 }
 
-// cleanup периодически удаляет устаревшие записи
-func (rl *RateLimiter) cleanup() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for ip, times := range rl.requests {
-			// Удаляем записи старше окна
-			var valid []time.Time
-			for _, t := range times {
-				if now.Sub(t) < rl.window {
-					valid = append(valid, t)
-				}
-			}
-			if len(valid) == 0 {
-				delete(rl.requests, ip)
-			} else {
-				rl.requests[ip] = valid
-			}
-		}
-		rl.mu.Unlock()
-	}
-}
-
-// Allow проверяет, разрешен ли запрос для данного IP
+// Allow проверяет, разрешен ли запрос для данного IP.
+// Очистка устаревших записей происходит inline при каждом вызове.
 func (rl *RateLimiter) Allow(ip string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -74,6 +44,12 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 	// Проверяем лимит
 	if len(valid) >= rl.rate {
+		rl.requests[ip] = valid
+		return false
+	}
+
+	// Ограничение размера map: защита от DDoS с уникальными IP
+	if len(valid) == 0 && len(rl.requests) > 10000 {
 		return false
 	}
 

@@ -22,7 +22,6 @@ import (
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/models"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 type pushSubscriptionKeys struct {
@@ -70,17 +69,13 @@ func PushSubscribeHandler(c *gin.Context) {
 		return
 	}
 
-	adminID, err := uuid.Parse(adminIDStr.(string))
-	if err != nil {
-		log.Printf("PushSubscribeHandler: неверный adminID: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный adminID"})
+	adminID, ok := parseUUIDString(c, adminIDStr.(string))
+	if !ok {
 		return
 	}
 
 	var req pushSubscriptionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("PushSubscribeHandler: ошибка парсинга входных данных: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат подписки"})
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -110,17 +105,13 @@ func PushUnsubscribeHandler(c *gin.Context) {
 		return
 	}
 
-	adminID, err := uuid.Parse(adminIDStr.(string))
-	if err != nil {
-		log.Printf("PushUnsubscribeHandler: неверный adminID: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный adminID"})
+	adminID, ok := parseUUIDString(c, adminIDStr.(string))
+	if !ok {
 		return
 	}
 
 	var req pushUnsubscribeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("PushUnsubscribeHandler: ошибка парсинга входных данных: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных"})
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -144,17 +135,13 @@ func PushSendHandler(c *gin.Context) {
 		return
 	}
 
-	adminID, err := uuid.Parse(adminIDStr.(string))
-	if err != nil {
-		log.Printf("PushSendHandler: неверный adminID: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный adminID"})
+	adminID, ok := parseUUIDString(c, adminIDStr.(string))
+	if !ok {
 		return
 	}
 
 	var req pushSendRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("PushSendHandler: ошибка парсинга тела запроса: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный формат данных"})
+	if !bindJSON(c, &req) {
 		return
 	}
 

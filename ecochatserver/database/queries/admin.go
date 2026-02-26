@@ -8,14 +8,22 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
+// getAdminByField ищет админа по указанному полю (email или id).
+// field должен быть "u.email" или "u.id".
+func getAdminByField(db *sql.DB, field, value, logPrefix string) (*models.Admin, error) {
+	// Валидация допустимых полей для защиты от SQL injection
+	switch field {
+	case "u.email", "u.id":
+	default:
+		return nil, fmt.Errorf("%s: invalid field %q", logPrefix, field)
+	}
+
 	ctx, cancel := WithDBContext()
 	defer cancel()
 
 	var admin models.Admin
 
-	// Используем таблицу users с JOIN на roles
-	const q = `
+	q := fmt.Sprintf(`
         SELECT
             u.id,
             u.email,
@@ -28,11 +36,9 @@ func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
             COALESCE(r.name, 'user') as role_name
         FROM users u
         LEFT JOIN roles r ON r.id = u.role_id
-        WHERE u.email = $1 AND u.deleted_at IS NULL`
+        WHERE %s = $1 AND u.deleted_at IS NULL`, field)
 
-	fmt.Printf("[GetAdmin] Executing query for email: %s\n", email)
-
-	if err := db.QueryRowContext(ctx, q, email).Scan(
+	if err := db.QueryRowContext(ctx, q, value).Scan(
 		&admin.ID,
 		&admin.Email,
 		&admin.Name,
@@ -44,64 +50,20 @@ func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
 		&admin.Role,
 	); err != nil {
 		if err == sql.ErrNoRows {
-			fmt.Printf("[GetAdmin] No rows found for email: %s\n", email)
 			return nil, nil
 		}
-		fmt.Printf("[GetAdmin] Error: %v\n", err)
-		return nil, fmt.Errorf("GetAdmin: %w", err)
+		return nil, fmt.Errorf("%s: %w", logPrefix, err)
 	}
-
-	fmt.Printf("[GetAdmin] Found user: id=%s, email=%s, role=%s, status=%s\n", admin.ID, admin.Email, admin.Role, admin.Status)
 
 	return &admin, nil
 }
 
+func GetAdmin(db *sql.DB, email string) (*models.Admin, error) {
+	return getAdminByField(db, "u.email", email, "GetAdmin")
+}
+
 func GetAdminByID(db *sql.DB, adminID string) (*models.Admin, error) {
-	ctx, cancel := WithDBContext()
-	defer cancel()
-
-	var admin models.Admin
-
-	// Используем таблицу users с JOIN на roles
-	const q = `
-        SELECT
-            u.id,
-            u.email,
-            u.display_name,
-            u.password_hash,
-            u.avatar_url,
-            u.status,
-            u.email_verified,
-            u.role_id,
-            COALESCE(r.name, 'user') as role_name
-        FROM users u
-        LEFT JOIN roles r ON r.id = u.role_id
-        WHERE u.id = $1 AND u.deleted_at IS NULL`
-
-	fmt.Printf("[GetAdminByID] Executing query for id: %s\n", adminID)
-
-	if err := db.QueryRowContext(ctx, q, adminID).Scan(
-		&admin.ID,
-		&admin.Email,
-		&admin.Name,
-		&admin.PasswordHash,
-		&admin.Avatar,
-		&admin.Status,
-		&admin.EmailVerified,
-		&admin.RoleID,
-		&admin.Role,
-	); err != nil {
-		if err == sql.ErrNoRows {
-			fmt.Printf("[GetAdminByID] No rows found for id: %s\n", adminID)
-			return nil, nil
-		}
-		fmt.Printf("[GetAdminByID] Error: %v\n", err)
-		return nil, fmt.Errorf("GetAdminByID: %w", err)
-	}
-
-	fmt.Printf("[GetAdminByID] Found user: id=%s, email=%s, role=%s, status=%s\n", admin.ID, admin.Email, admin.Role, admin.Status)
-
-	return &admin, nil
+	return getAdminByField(db, "u.id", adminID, "GetAdminByID")
 }
 
 func VerifyPassword(pw, hash string) error {
