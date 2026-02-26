@@ -344,6 +344,7 @@ func createChatInfo(chat *models.Chat) map[string]interface{} {
 		"id":                   chat.ID.String(),
 		"user":                 chat.User,
 		"status":               chat.Status,
+		"source":               chat.Source,
 		"clientId":             chat.ClientID.String(),
 		"createdAt":            chat.CreatedAt.Format(time.RFC3339),
 		"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),

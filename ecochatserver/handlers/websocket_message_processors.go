@@ -17,19 +17,25 @@ import (
 // processSendMessage обрабатывает отправку сообщений с автоответчиком
 func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID   string                 `json:"chatID"`
-		Content  string                 `json:"content"`
-		Type     string                 `json:"type"`
-		Metadata map[string]interface{} `json:"metadata,omitempty"`
+		ChatID    string                 `json:"chatId"`
+		ChatIDOld string                 `json:"chatID"` // обратная совместимость
+		Content   string                 `json:"content"`
+		Type      string                 `json:"type"`
+		Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для sendMessage")
 		return
 	}
 
+	// Обратная совместимость: поддерживаем и chatId, и chatID
+	if p.ChatID == "" && p.ChatIDOld != "" {
+		p.ChatID = p.ChatIDOld
+	}
+
 	// Проверяем обязательные поля
 	if p.ChatID == "" || p.Content == "" {
-		client.SendError("missing_fields", "Необходимы поля chatID и content")
+		client.SendError("missing_fields", "Необходимы поля chatId и content")
 		return
 	}
 
@@ -306,13 +312,18 @@ func processGetChats(client *websocketpkg.Client, payload json.RawMessage, ginCt
 // processGetChatByID получает конкретный чат по ID
 func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID string `json:"chatID"`
-		Limit  int    `json:"limit"`
-		Before string `json:"before"`
+		ChatID    string `json:"chatId"`
+		ChatIDOld string `json:"chatID"` // обратная совместимость
+		Limit     int    `json:"limit"`
+		Before    string `json:"before"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для getChatByID")
 		return
+	}
+
+	if p.ChatID == "" && p.ChatIDOld != "" {
+		p.ChatID = p.ChatIDOld
 	}
 
 	// Устанавливаем дефолтные значения
@@ -380,12 +391,17 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 // processTypingStatus обрабатывает статус набора текста
 func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID   string `json:"chatID"`
-		IsTyping bool   `json:"isTyping"`
+		ChatID    string `json:"chatId"`
+		ChatIDOld string `json:"chatID"` // обратная совместимость
+		IsTyping  bool   `json:"isTyping"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для typing")
 		return
+	}
+
+	if p.ChatID == "" && p.ChatIDOld != "" {
+		p.ChatID = p.ChatIDOld
 	}
 
 	chatID, err := uuid.Parse(p.ChatID)
@@ -417,13 +433,18 @@ func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, g
 // processGetWidgetMessages получает сообщения виджета через WebSocket
 func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID string `json:"chatID"`
-		Limit  int    `json:"limit"`
-		Before string `json:"before"`
+		ChatID    string `json:"chatId"`
+		ChatIDOld string `json:"chatID"` // обратная совместимость
+		Limit     int    `json:"limit"`
+		Before    string `json:"before"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для getWidgetMessages")
 		return
+	}
+
+	if p.ChatID == "" && p.ChatIDOld != "" {
+		p.ChatID = p.ChatIDOld
 	}
 
 	// Устанавливаем дефолтные значения
@@ -484,13 +505,18 @@ func processGetWidgetMessages(client *websocketpkg.Client, payload json.RawMessa
 	// Преобразуем сообщения в формат для виджета
 	simplifiedMessages := make([]map[string]interface{}, 0, len(chat.Messages))
 	for _, msg := range chat.Messages {
-		simplifiedMessages = append(simplifiedMessages, map[string]interface{}{
+		m := map[string]interface{}{
 			"id":        msg.ID.String(),
 			"content":   msg.Content,
 			"sender":    msg.Sender,
 			"timestamp": msg.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
 			"type":      msg.Type,
-		})
+			"read":      msg.Read,
+		}
+		if msg.Metadata != nil {
+			m["metadata"] = msg.Metadata
+		}
+		simplifiedMessages = append(simplifiedMessages, m)
 	}
 
 	// Формируем ответ

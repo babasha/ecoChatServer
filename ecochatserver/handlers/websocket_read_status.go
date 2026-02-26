@@ -15,12 +15,17 @@ import (
 // processMarkAsRead помечает сообщения как прочитанные (от админа)
 func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, ginCtx *gin.Context) {
 	var p struct {
-		ChatID     string   `json:"chatID"`
+		ChatID     string   `json:"chatId"`
+		ChatIDOld  string   `json:"chatID"` // обратная совместимость
 		MessageIDs []string `json:"messageIds"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		client.SendError("invalid_payload", "Некорректный формат данных для markAsRead")
 		return
+	}
+
+	if p.ChatID == "" && p.ChatIDOld != "" {
+		p.ChatID = p.ChatIDOld
 	}
 
 	chatID, err := uuid.Parse(p.ChatID)
@@ -65,15 +70,15 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 			"readBy":     client.ID,
 		})
 
-		// Отправляем статус другим клиентам этого чата
-		WebSocketHub.SendToChat(chatID.String(), statusMsg)
+		// Отправляем статус клиентам чата и всем админам
+		WebSocketHub.SendToChatAndAdmins(chatID.String(), statusMsg)
 	}
 
 	// Отправляем подтверждение отправителю запроса
 	response := map[string]interface{}{
 		"type": "markAsReadConfirmed",
 		"payload": map[string]interface{}{
-			"chatID": chatID.String(),
+			"chatId": chatID.String(),
 			"status": "success",
 			"marked": markedCount,
 		},

@@ -265,13 +265,21 @@ func SendMessageToChat(c *gin.Context) {
 		log.Printf("SendMessageToChat: для админов используется оригинальное сообщение админа")
 	}
 
+	// Загружаем полную информацию о чате для WS уведомлений
+	lightChat, err := queries.GetChatLightweight(database.DB, chatID)
+	var chatInfo map[string]interface{}
+	if err != nil {
+		log.Printf("SendMessageToChat: ошибка загрузки чата для уведомления: %v, используем минимальный формат", err)
+		chatInfo = map[string]interface{}{"id": chatID.String()}
+	} else {
+		chatInfo = createChatInfo(lightChat)
+	}
+
 	// Отправляем в виджет
 	widgetPayload := map[string]interface{}{
 		"chatId":  chatID.String(),
 		"message": createMessagePayload(widgetMessage, chatID),
-		"chat": map[string]interface{}{
-			"id": chatID.String(),
-		},
+		"chat":    chatInfo,
 	}
 	widgetWsMessage, _ := websocket.NewMessage("new_message", widgetPayload)
 	WebSocketHub.SendToChat(chatID.String(), widgetWsMessage)
@@ -290,7 +298,7 @@ func SendMessageToChat(c *gin.Context) {
 			adminPayload := map[string]interface{}{
 				"chatId":  chatID.String(),
 				"message": createMessagePayload(personalizedMessage, chatID),
-				"chat":    map[string]interface{}{"id": chatID.String()},
+				"chat":    chatInfo,
 			}
 			adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
 			return adminWsMessage
@@ -302,7 +310,7 @@ func SendMessageToChat(c *gin.Context) {
 		adminPayload := map[string]interface{}{
 			"chatId":  chatID.String(),
 			"message": createMessagePayload(&adminMessage, chatID),
-			"chat":    map[string]interface{}{"id": chatID.String()},
+			"chat":    chatInfo,
 		}
 		adminWsMessage, _ := websocket.NewMessage("new_message", adminPayload)
 
