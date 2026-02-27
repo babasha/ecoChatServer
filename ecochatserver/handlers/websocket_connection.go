@@ -34,6 +34,14 @@ func checkOrigin(r *http.Request) bool {
 		return false
 	}
 
+	// Разрешаем localhost и Tauri origins для разработки и десктоп-приложения
+	if strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		origin == "tauri://localhost" ||
+		origin == "https://tauri.localhost" {
+		return true
+	}
+
 	// Получаем разрешенные origins из переменных окружения
 	allowedOrigins := []string{}
 
