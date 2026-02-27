@@ -135,6 +135,22 @@ var faqDatabase = []faqEntry{
 	{question: "Contact support?", answer: "Email: support@zefir.app (<24h). GitHub Issues. Telegram: t.me/zefirsensor. In-app: Settings → Report Bug.", category: "troubleshooting", tags: []string{"contact", "support", "help", "email", "report"}},
 }
 
+// GetFAQTags returns all unique tags from the FAQ database.
+// Used by ToolRouter to build keyword index for the support/search_faq tool.
+func GetFAQTags() []string {
+	seen := make(map[string]bool)
+	var tags []string
+	for _, faq := range faqDatabase {
+		for _, tag := range faq.tags {
+			if !seen[tag] {
+				seen[tag] = true
+				tags = append(tags, tag)
+			}
+		}
+	}
+	return tags
+}
+
 // createSearchFAQTool — search FAQ with 49 entries
 func createSearchFAQTool() (tool.Tool, error) {
 	type Input struct {

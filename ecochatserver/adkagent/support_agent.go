@@ -43,7 +43,9 @@ func (sa *SupportAgent) resetContext() {
 	sa.currentSessionID = ""
 }
 
-// NewSupportAgent creates an agent with 16 tools (6 plant + 5 device + 5 support)
+// NewSupportAgent creates an agent with dynamic tool routing via ToolRouter.
+// 16 tools (6 plant + 5 device + 5 support) are available, but only 5-8
+// relevant tools are sent per request based on user message content.
 func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAgent, error) {
 	// 1. Create LLM model
 	llmModel, err := NewLLMModel(ctx)
@@ -54,44 +56,41 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 	// 2. Create userIDProvider variable (filled after agent creation)
 	var userIDProvider ZefirUserIDProvider
 
-	// 3. Create all tools
-	var allTools []tool.Tool
-
-	// Plant Tools (6 static tools)
+	// 3. Create all tools in groups
 	plantTools, err := CreatePlantTools()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create plant tools: %w", err)
 	}
-	allTools = append(allTools, plantTools...)
-	log.Printf("[AGENT] Added %d plant tools", len(plantTools))
+	log.Printf("[AGENT] Created %d plant tools", len(plantTools))
 
-	// Device Tools (2 API + 3 static)
 	deviceTools, err := CreateDeviceTools(zefirClient, &userIDProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create device tools: %w", err)
 	}
-	allTools = append(allTools, deviceTools...)
-	log.Printf("[AGENT] Added %d device tools", len(deviceTools))
+	log.Printf("[AGENT] Created %d device tools", len(deviceTools))
 
-	// Support Tools (5 static tools)
 	supportTools, err := CreateSupportTools()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create support tools: %w", err)
 	}
-	allTools = append(allTools, supportTools...)
-	log.Printf("[AGENT] Added %d support tools", len(supportTools))
+	log.Printf("[AGENT] Created %d support tools", len(supportTools))
 
-	// 4. System prompt
+	totalTools := len(plantTools) + len(deviceTools) + len(supportTools)
+
+	// 4. Create ToolRouter for dynamic per-request tool selection
+	toolRouter := NewToolRouter(plantTools, deviceTools, supportTools)
+
+	// 5. System prompt
 	systemPrompt := getZefirPrompt()
-	log.Printf("[AGENT] Creating Zefir support agent with %d tools", len(allTools))
+	log.Printf("[AGENT] Creating Zefir support agent with ToolRouter (%d tools available)", totalTools)
 
-	// 5. Create ADK agent
+	// 6. Create ADK agent with Toolsets (dynamic) instead of Tools (static)
 	adkAgent, err := llmagent.New(llmagent.Config{
 		Name:        "zefir_support",
 		Model:       llmModel,
 		Description: "AI-powered assistant for Zefir IoT plant moisture monitoring system with plant database, device management, and support capabilities",
 		Instruction: systemPrompt,
-		Tools:       allTools,
+		Toolsets:    []tool.Toolset{toolRouter},
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
 			MaxOutputTokens: 200,
@@ -119,7 +118,7 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 		return nil, fmt.Errorf("failed to create runner: %w", err)
 	}
 
-	log.Printf("[AGENT] Zefir agent created with %d tools", len(allTools))
+	log.Printf("[AGENT] Zefir agent created with ToolRouter (%d tools available)", totalTools)
 	log.Printf("[AGENT] Breakdown: Plants=%d, Devices=%d, Support=%d",
 		len(plantTools), len(deviceTools), len(supportTools))
 
