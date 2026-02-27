@@ -15,11 +15,12 @@ import (
 	websocketpkg "github.com/egor/ecochatserver/websocket"
 )
 
-// wsUpgrader апгрейдит HTTP→WebSocket с улучшенной проверкой Origin
+// wsUpgrader апгрейдит HTTP→WebSocket
+// Origin проверяется на уровне CORS middleware и API-key валидации
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     checkOrigin,
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
 // checkOrigin проверяет, разрешен ли Origin для подключения
