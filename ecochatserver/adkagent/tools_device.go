@@ -77,7 +77,7 @@ func createGetUserDevicesTool(zefirClient *ZefirClient, userIDProvider *ZefirUse
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_user_devices",
-			Description: "Get user's Zefir sensor devices with status, battery, plant assignment. Use when user asks 'show my devices', 'my sensors', 'device list', 'what sensors do I have'. Optional format: 'short' for names only, 'detailed' (default) for full info.",
+			Description: "List user's sensor devices with status and battery.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_user_devices called")
@@ -118,7 +118,7 @@ func createGetSensorReadingTool(zefirClient *ZefirClient, userIDProvider *ZefirU
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_sensor_reading",
-			Description: "Get latest sensor reading for a device: soil humidity, temperature, battery, signal strength. Use when user asks 'what's the moisture level', 'check my sensor', 'how is my plant doing'. Requires deviceID.",
+			Description: "Get latest sensor reading: humidity, temperature, battery. Requires deviceID.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_sensor_reading called: deviceID=%s", input.DeviceID)
@@ -298,7 +298,7 @@ Reading frequency:
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_setup_guide",
-			Description: "Get step-by-step setup guide for Zefir sensor. Steps: 'overview', 'unboxing', 'ble_pairing', 'wifi_config', 'mesh_setup', 'plant_assign', 'first_reading'. Use when user asks about setting up sensors, pairing, WiFi config, etc.",
+			Description: "Setup guide. Steps: overview/unboxing/ble_pairing/wifi_config/mesh_setup/plant_assign/first_reading.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_setup_guide called: step=%s", input.Step)
@@ -591,7 +591,7 @@ If sensor is bricked after failed update:
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "troubleshoot_device",
-			Description: "Troubleshoot common Zefir sensor issues. Issues: 'not_connecting', 'no_readings', 'wrong_values', 'battery_drain', 'offline', 'led_error', 'wifi_lost', 'mesh_disconnect', 'app_crash', 'firmware_update'. Use when user reports sensor problems.",
+			Description: "Troubleshoot sensor issues: not_connecting/no_readings/wrong_values/battery_drain/offline/wifi_lost/mesh_disconnect.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] troubleshoot_device called: issue=%s", input.Issue)
@@ -787,7 +787,7 @@ Common mesh issues:
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_mesh_info",
-			Description: "Get information about Zefir mesh networking: ESP-NOW protocol, ROOT/NODE roles, topology, range. Topics: 'overview', 'root_node', 'esp_now', 'topology', 'range', 'troubleshooting'. Use when user asks about mesh, network setup, signal, range.",
+			Description: "Mesh network info. Topics: overview/root_node/esp_now/topology/range/troubleshooting.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_mesh_info called: topic=%s", input.Topic)

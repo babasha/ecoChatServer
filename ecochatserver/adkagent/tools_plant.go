@@ -204,7 +204,7 @@ func createSearchPlantTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "search_plant",
-			Description: "Search plant species by name, scientific name, or tag. Use when user asks about a specific plant like 'monstera', 'aloe vera', 'basil'. Returns matching plants with humidity thresholds and care info.",
+			Description: "Search plant by name/tag. Returns matches with humidity thresholds.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] search_plant called: query=%s", input.Query)
@@ -252,7 +252,7 @@ func createGetPlantCategoriesTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_plant_categories",
-			Description: "Get list of plant categories with species count. Use when user asks 'what plants do you have', 'show categories', 'what types of plants'. Returns 5 categories: tropical, succulent, herb, vegetable, flowering.",
+			Description: "List 5 plant categories with species count.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_plant_categories called")
@@ -285,7 +285,7 @@ func createGetPlantsByCategoryTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_plants_by_category",
-			Description: "Get all plants in a category. Category must be one of: 'tropical', 'succulent', 'herb', 'vegetable', 'flowering'. Returns plant names with key stats.",
+			Description: "Get plants in category: tropical/succulent/herb/vegetable/flowering.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_plants_by_category called: category=%s", input.Category)
@@ -304,10 +304,17 @@ func createGetPlantsByCategoryTool() (tool.Tool, error) {
 			}
 
 			result := fmt.Sprintf("%s (%d species):\n\n", catName, len(plants))
-			for _, p := range plants {
-				result += fmt.Sprintf("  %s (%s)\n", p.Name, p.Scientific)
-				result += fmt.Sprintf("    Moisture: %d-%d%% | Temp: %.0f-%.0f C | %s | %s\n",
-					p.HumidityMin, p.HumidityMax, p.TempMin, p.TempMax, p.Light, p.Difficulty)
+			// Limit output to first 10 plants to save tokens
+			showCount := len(plants)
+			if showCount > 10 {
+				showCount = 10
+			}
+			for _, p := range plants[:showCount] {
+				result += fmt.Sprintf("  %s — moisture %d-%d%%, %s\n",
+					p.Name, p.HumidityMin, p.HumidityMax, p.Difficulty)
+			}
+			if len(plants) > 10 {
+				result += fmt.Sprintf("\n  ... and %d more. Use search_plant(query) for specific plant.\n", len(plants)-10)
 			}
 
 			return Output{Result: result}, nil
@@ -327,7 +334,7 @@ func createGetPlantCareTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_plant_care",
-			Description: "Get detailed care guide for a specific plant: humidity thresholds for Zefir sensor, temperature range, light needs, watering schedule. Use when user asks 'how to care for monstera', 'what humidity does aloe need', 'watering schedule for basil'.",
+			Description: "Get care guide for a plant: humidity, temperature, light, watering.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_plant_care called: plantName=%s", input.PlantName)
@@ -373,7 +380,7 @@ func createComparePlantsTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "compare_plants",
-			Description: "Compare 2-4 plants side by side: humidity ranges, temperature, light, difficulty. Use when user asks 'compare monstera and pothos', 'which needs more water, aloe or cactus'.",
+			Description: "Compare 2-4 plants side by side: humidity, temp, difficulty.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] compare_plants called: plants=%v", input.Plants)
@@ -463,7 +470,7 @@ func createRecommendPlantsTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "recommend_plants",
-			Description: "Recommend plants by criteria: 'beginner' (easy care), 'edible' (herbs/vegs), 'tropical', 'low-light', 'drought-tolerant', 'flowering', 'air-purifier', 'compact', 'pet-safe'. Use when user asks 'suggest easy plants', 'best plants for beginners', 'what can I eat'.",
+			Description: "Recommend plants by criteria: beginner/edible/tropical/low-light/drought-tolerant/flowering/pet-safe.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] recommend_plants called: criteria=%s", input.Criteria)

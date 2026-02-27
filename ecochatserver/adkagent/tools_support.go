@@ -147,7 +147,7 @@ func createSearchFAQTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "search_faq",
-			Description: "Search Zefir FAQ knowledge base (49 entries in 8 categories). Use when user asks common questions about Zefir, sensors, setup, plants, notifications, data, security, or troubleshooting.",
+			Description: "Search FAQ (49 entries). Covers: general, sensors, setup, plants, notifications, data, security.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] search_faq called: query=%s", input.Query)
@@ -219,7 +219,7 @@ func createGetAppInfoTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_app_info",
-			Description: "Get Zefir app information: platforms, languages, tech stack, license, system requirements. Use when user asks 'what platforms', 'system requirements', 'is it open source', 'tech stack'.",
+			Description: "App info: platforms/languages/tech/license/requirements.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_app_info called: infoType=%s", input.InfoType)
@@ -287,7 +287,7 @@ func createGetContactInfoTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_contact_info",
-			Description: "Get Zefir contact information: email, phone, social media, office address. Use when user asks 'how to contact', 'support email', 'phone number', 'social media'.",
+			Description: "Contact info: email/phone/social/address.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_contact_info called: type=%s", input.ContactType)
@@ -467,7 +467,7 @@ MQTT alternative:
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_feature_guide",
-			Description: "Get guide for Zefir features: 'plant_passport', 'predictions', 'notifications', 'maps', 'home_assistant'. Use when user asks about specific app features, how predictions work, Home Assistant integration, etc.",
+			Description: "Feature guide: plant_passport/predictions/notifications/maps/home_assistant.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_feature_guide called: feature=%s", input.Feature)
@@ -499,7 +499,7 @@ func createGetSecurityInfoTool() (tool.Tool, error) {
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_security_info",
-			Description: "Get Zefir security and privacy information: data privacy, encryption, storage, app permissions. Use when user asks about privacy, security, data protection, permissions.",
+			Description: "Security info: privacy/encryption/data_storage/permissions.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_security_info called: topic=%s", input.Topic)
