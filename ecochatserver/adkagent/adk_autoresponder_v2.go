@@ -120,11 +120,21 @@ func (ar *ADKAutoResponderV2) EnableSupervisor(enabled bool) {
 func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
 	log.Printf("[ADK_V2] ProcessMessage: chatID=%s, mode=%s", chat.ID, ar.getMode())
 
-	// Quick checks
-	if !ar.config.Enabled ||
-		msg.Sender != "user" ||
-		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) ||
-		!chat.AutoResponderEnabled {
+	// Quick checks with logging
+	if !ar.config.Enabled {
+		log.Printf("[ADK_V2] SKIP: auto-responder disabled")
+		return nil, nil
+	}
+	if msg.Sender != "user" {
+		log.Printf("[ADK_V2] SKIP: sender=%s (not user)", msg.Sender)
+		return nil, nil
+	}
+	if chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil {
+		log.Printf("[ADK_V2] SKIP: chat assigned to %s", chat.AssignedTo)
+		return nil, nil
+	}
+	if !chat.AutoResponderEnabled {
+		log.Printf("[ADK_V2] SKIP: chat.AutoResponderEnabled=false")
 		return nil, nil
 	}
 
@@ -137,6 +147,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	// Input validation: reject empty messages
 	trimmedContent := strings.TrimSpace(msg.Content)
 	if trimmedContent == "" {
+		log.Printf("[ADK_V2] SKIP: empty message")
 		return nil, nil
 	}
 
@@ -145,6 +156,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	// Check escalation
 	escalation, _ := ar.escalations.get(chatKey)
 	if escalation != nil && escalation.ReturnedAt == nil {
+		log.Printf("[ADK_V2] SKIP: active escalation for chat %s", chatKey)
 		return nil, nil
 	}
 
@@ -196,6 +208,14 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response = strings.ReplaceAll(response, "#escalate", "")
 		response = strings.TrimSpace(response)
 	}
+
+	// Fallback for empty response
+	if strings.TrimSpace(response) == "" {
+		log.Printf("[ADK_V2] WARNING: empty response from %s agent, using fallback", agentType)
+		response = "Sorry, I couldn't generate a response. Please try rephrasing your question or contact support@zefir.app"
+	}
+
+	log.Printf("[ADK_V2] Response ready: %d chars, mode=%s", len(response), agentType)
 
 	// Build response message
 	botMsg := &models.Message{

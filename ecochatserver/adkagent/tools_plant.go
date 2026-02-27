@@ -242,7 +242,9 @@ func createSearchPlantTool() (tool.Tool, error) {
 
 // createGetPlantCategoriesTool — list 5 categories with counts
 func createGetPlantCategoriesTool() (tool.Tool, error) {
-	type Input struct{}
+	type Input struct {
+		IncludeCounts bool `json:"includeCounts,omitempty"` // optional: include species count per category (default: true)
+	}
 	type Output struct {
 		Result string `json:"result"`
 	}

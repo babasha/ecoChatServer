@@ -67,7 +67,9 @@ func CreateDeviceTools(zefirClient *ZefirClient, userIDProvider *ZefirUserIDProv
 // ============================================================================
 
 func createGetUserDevicesTool(zefirClient *ZefirClient, userIDProvider *ZefirUserIDProvider) (tool.Tool, error) {
-	type Input struct{}
+	type Input struct {
+		Format string `json:"format,omitempty"` // optional: "short" or "detailed" (default: detailed)
+	}
 	type Output struct {
 		Result string `json:"result"`
 	}
@@ -75,7 +77,7 @@ func createGetUserDevicesTool(zefirClient *ZefirClient, userIDProvider *ZefirUse
 	return functiontool.New(
 		functiontool.Config{
 			Name:        "get_user_devices",
-			Description: "Get user's Zefir sensor devices with status, battery, plant assignment. Use when user asks 'show my devices', 'my sensors', 'device list', 'what sensors do I have'.",
+			Description: "Get user's Zefir sensor devices with status, battery, plant assignment. Use when user asks 'show my devices', 'my sensors', 'device list', 'what sensors do I have'. Optional format: 'short' for names only, 'detailed' (default) for full info.",
 		},
 		func(ctx tool.Context, input Input) (Output, error) {
 			log.Printf("[TOOL] get_user_devices called")

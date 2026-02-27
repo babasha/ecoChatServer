@@ -238,8 +238,9 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 
 	result := response.String()
 
-	// If tool limit hit and no useful response, provide fallback
-	if toolCallLimitHit && strings.TrimSpace(result) == "" {
+	// Fallback for empty response (tool limit, timeout, or LLM returned only tool calls)
+	if strings.TrimSpace(result) == "" {
+		log.Printf("[AGENT] WARNING: empty response (toolCalls=%d, limitHit=%v)", toolCallsCount, toolCallLimitHit)
 		result = "I'm having trouble processing your request. Please try rephrasing your question, or contact support@zefir.app for help."
 	}
 
