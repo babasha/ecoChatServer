@@ -39,8 +39,15 @@ func InitAutoResponder() {
 		log.Printf("⚠️ InitAutoResponder: не удалось создать провайдера для переводчика: %v", err)
 		log.Printf("⚠️ Переводчик будет недоступен")
 	} else {
-		// 🎯 TOON FORMAT: читаем настройку из БД (по умолчанию false для безопасности)
+		// 🎯 TOON FORMAT: читаем настройку из БД
+		// Для LM Studio/Ollama (локальные модели) — включаем TOON автоматически,
+		// т.к. маленькие модели гораздо стабильнее с key:value чем с JSON
 		useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
+		providerType := database.GetSetting("LLM_PROVIDER", "gemini")
+		if providerType == "lmstudio" || providerType == "ollama" {
+			useTOON = true
+			log.Printf("🎯 TOON автоматически включен для локального провайдера: %s", providerType)
+		}
 		Translator = NewTranslationServiceWithTOON(translatorProvider, WebSocketHub, useTOON)
 
 		if useTOON {

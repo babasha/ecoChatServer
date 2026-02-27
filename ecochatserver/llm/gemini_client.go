@@ -9,7 +9,21 @@ import (
 // GeminiClient представляет клиента для взаимодействия с Google Gemini API
 type GeminiClient struct {
 	apiKey string
+	model  string // Название модели (по умолчанию gemini-2.5-flash)
 	client *http.Client
+}
+
+// getModelName возвращает название модели (с fallback на дефолт)
+func (c *GeminiClient) getModelName() string {
+	if c.model != "" {
+		return c.model
+	}
+	return "gemini-2.5-flash"
+}
+
+// getEndpoint возвращает URL для Gemini API с учётом настроенной модели
+func (c *GeminiClient) getEndpoint() string {
+	return "https://generativelanguage.googleapis.com/v1beta/models/" + c.getModelName() + ":generateContent"
 }
 
 // GeminiMessage представляет сообщение в формате Gemini

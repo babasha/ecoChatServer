@@ -249,7 +249,8 @@ func SendMessageToChat(c *gin.Context) {
 	go dispatchExternalMessage(chatID, message)
 
 	// Создаём копию сообщения для виджета с переводом на язык клиента
-	widgetMessage := applyTranslationForWidget(message, chatID)
+	clientLang, _ := database.GetClientLanguageFromChat(chatID)
+	widgetMessage := applyTranslationForWidget(message, chatID, clientLang)
 
 	// Создаём копию сообщения для админов
 	// Для сообщений от USER - применяем перевод на язык админа (он уже в message.Content из TranslateUserMessage)

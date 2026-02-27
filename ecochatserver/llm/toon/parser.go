@@ -85,10 +85,14 @@ func ParseSimpleList(toonStr string) ([]string, error) {
 		line = strings.TrimPrefix(line, "*")
 		line = strings.TrimPrefix(line, "•")
 
-		// Убираем номера вида "1. ", "2) ", etc
-		if len(line) > 2 && line[1] == '.' || line[1] == ')' {
-			if line[0] >= '0' && line[0] <= '9' {
-				line = strings.TrimSpace(line[2:])
+		// Убираем номера вида "1. ", "2) ", "10. ", "12) " etc
+		if len(line) > 1 {
+			numEnd := 0
+			for numEnd < len(line) && line[numEnd] >= '0' && line[numEnd] <= '9' {
+				numEnd++
+			}
+			if numEnd > 0 && numEnd < len(line) && (line[numEnd] == '.' || line[numEnd] == ')') {
+				line = strings.TrimSpace(line[numEnd+1:])
 			}
 		}
 

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
@@ -23,7 +25,7 @@ type TranslationService struct {
 	provider llm.Provider // Используем универсальный провайдер вместо старого LLM интерфейса
 	db       *sql.DB
 	hub      HubInterface // Hub для получения списка онлайн админов
-	useTOON  bool         // Использовать TOON формат (экономия ~40% токенов)
+	useTOON  atomic.Bool  // Использовать TOON формат (экономия ~40% токенов), atomic для thread-safety
 }
 
 // NewTranslationService создает новый TranslationService
@@ -32,23 +34,23 @@ func NewTranslationService(provider llm.Provider, hub HubInterface) *Translation
 		provider: provider,
 		db:       database.DB,
 		hub:      hub,
-		useTOON:  false, // по умолчанию выключен для обратной совместимости
 	}
 }
 
 // NewTranslationServiceWithTOON создает TranslationService с опциональным TOON форматом
 func NewTranslationServiceWithTOON(provider llm.Provider, hub HubInterface, useTOON bool) *TranslationService {
-	return &TranslationService{
+	ts := &TranslationService{
 		provider: provider,
 		db:       database.DB,
 		hub:      hub,
-		useTOON:  useTOON,
 	}
+	ts.useTOON.Store(useTOON)
+	return ts
 }
 
-// SetTOONEnabled включает/выключает TOON формат
+// SetTOONEnabled включает/выключает TOON формат (thread-safe)
 func (ts *TranslationService) SetTOONEnabled(enabled bool) {
-	ts.useTOON = enabled
+	ts.useTOON.Store(enabled)
 	if enabled {
 		log.Printf("🎯 TOON формат ВКЛЮЧЕН - ожидаемая экономия ~40%% токенов")
 	} else {
@@ -103,19 +105,28 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 	adminLanguages := ts.getTargetAdminLanguages(chatID)
 
 	// Получаем уникальные языки (один админ может быть под несколькими ролями)
-	uniqueLangs := make(map[string]bool)
+	uniqueLangsSet := make(map[string]bool)
 	for _, al := range adminLanguages {
-		uniqueLangs[al.PreferredLanguage] = true
+		uniqueLangsSet[al.PreferredLanguage] = true
 	}
 
-	log.Printf("TranslateUserMessage: нужно перевести на %d уникальных языков для ОНЛАЙН админов: %v", len(uniqueLangs), uniqueLangs)
+	// Сортируем языки для детерминированного порядка —
+	// первый язык используется для DetectAndTranslate (определение + перевод за 1 запрос)
+	sortedLangs := make([]string, 0, len(uniqueLangsSet))
+	for lang := range uniqueLangsSet {
+		sortedLangs = append(sortedLangs, lang)
+	}
+	sort.Strings(sortedLangs)
+
+	log.Printf("TranslateUserMessage: нужно перевести на %d уникальных языков для ОНЛАЙН админов: %v", len(sortedLangs), sortedLangs)
 
 	// Определяем язык оригинала с помощью первого перевода
 	var detectedLang string
 	translations := make(map[string]interface{})
+	wasTranslated := false
 	firstLang := true
 
-	for targetLang := range uniqueLangs {
+	for _, targetLang := range sortedLangs {
 		if firstLang {
 			// Первый запрос: определяем язык И переводим
 			log.Printf("TranslateUserMessage: определение языка И перевод на %s", targetLang)
@@ -124,7 +135,7 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 			var result *llm.TranslationResult
 			var err error
 
-			if ts.useTOON {
+			if ts.useTOON.Load() {
 				// Проверяем поддерживает ли провайдер TOON
 				if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
 					result, err = providerWithTOON.DetectAndTranslateTOON(ctx, content, targetLang)
@@ -156,6 +167,7 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 				translations[targetLang] = content
 			} else {
 				translations[targetLang] = result.Translation
+				wasTranslated = true
 			}
 			firstLang = false
 			continue
@@ -174,7 +186,7 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 		var translatedText string
 		var err error
 
-		if ts.useTOON {
+		if ts.useTOON.Load() {
 			// Проверяем поддерживает ли провайдер TOON
 			if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
 				translatedText, err = providerWithTOON.TranslateTextTOON(ctx, content, detectedLang, targetLang)
@@ -192,10 +204,11 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 		}
 
 		translations[targetLang] = translatedText
+		wasTranslated = true
 		log.Printf("TranslateUserMessage: перевод на %s успешен", targetLang)
 	}
 
-	log.Printf("TranslateUserMessage: создано %d переводов", len(translations))
+	log.Printf("TranslateUserMessage: создано %d переводов, wasTranslated=%v", len(translations), wasTranslated)
 
 	return &TranslationResult{
 		Metadata: map[string]interface{}{
@@ -203,7 +216,7 @@ func (ts *TranslationService) TranslateUserMessage(ctx context.Context, content 
 			"translations":     translations,
 		},
 		DetectedLanguage: detectedLang,
-		WasTranslated:    len(translations) > 0,
+		WasTranslated:    wasTranslated,
 	}, nil
 }
 
@@ -283,7 +296,7 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 	var translated string
 	var translateErr error
 
-	if ts.useTOON {
+	if ts.useTOON.Load() {
 		// Проверяем поддерживает ли провайдер TOON
 		if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
 			translated, translateErr = providerWithTOON.TranslateTextTOON(ctx, content, sourceLang, clientLang)

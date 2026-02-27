@@ -38,6 +38,7 @@ func (a *GeminiAdapter) Initialize() error {
 	// Создаём Gemini клиент вручную (не используем NewGeminiClient, чтобы использовать свою конфигурацию)
 	a.client = &GeminiClient{
 		apiKey: a.apiKey,
+		model:  a.model,
 		client: httpClient,
 	}
 
@@ -173,6 +174,25 @@ func (a *GeminiAdapter) DetectAndTranslate(ctx context.Context, text, targetLang
 // TranslateBatch переводит несколько текстов
 func (a *GeminiAdapter) TranslateBatch(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error) {
 	return a.client.TranslateBatch(ctx, texts, fromLang, toLang)
+}
+
+// ============================================================================
+// TOON METHODS - ProviderWithTOON interface implementation
+// ============================================================================
+
+// DetectAndTranslateTOON делегирует TOON версию DetectAndTranslate в GeminiClient
+func (a *GeminiAdapter) DetectAndTranslateTOON(ctx context.Context, text, targetLang string) (*TranslationResult, error) {
+	return a.client.DetectAndTranslateTOON(ctx, text, targetLang)
+}
+
+// TranslateBatchTOON делегирует TOON версию TranslateBatch в GeminiClient
+func (a *GeminiAdapter) TranslateBatchTOON(ctx context.Context, texts []string, fromLang, toLang string) ([]string, error) {
+	return a.client.TranslateBatchTOON(ctx, texts, fromLang, toLang)
+}
+
+// TranslateTextTOON делегирует TOON версию TranslateText в GeminiClient
+func (a *GeminiAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, toLang string) (string, error) {
+	return a.client.TranslateTextTOON(ctx, text, fromLang, toLang)
 }
 
 // ============================================================================

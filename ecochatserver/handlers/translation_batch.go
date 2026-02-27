@@ -36,7 +36,7 @@ func (ts *TranslationService) TranslateBatch(ctx context.Context, texts []string
 	var translations []string
 	var err error
 
-	if ts.useTOON {
+	if ts.useTOON.Load() {
 		// Проверяем поддерживает ли провайдер TOON
 		if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
 			translations, err = providerWithTOON.TranslateBatchTOON(ctx, texts, fromLang, toLang)

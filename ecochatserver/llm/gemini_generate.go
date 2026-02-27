@@ -52,7 +52,7 @@ func (c *GeminiClient) GenerateResponse(
 	}
 
 	// URL Gemini API
-	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+	endpoint := c.getEndpoint()
 
 	// Создаём HTTP‑запрос
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
@@ -96,7 +96,7 @@ func (c *GeminiClient) GenerateResponse(
 		return "", fmt.Errorf("Gemini API returned empty content (finishReason: %s)", candidate.FinishReason)
 	}
 
-	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "chat")
+	logGeminiUsage(ctx, &geminiResp, c.getModelName(),"chat")
 
 	// Извлекаем текст из Parts
 	if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok {
@@ -156,7 +156,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	}
 
 	// URL Gemini API
-	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+	endpoint := c.getEndpoint()
 
 	// Создаём HTTP‑запрос
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
@@ -195,7 +195,7 @@ func (c *GeminiClient) GenerateResponseWithTools(
 	candidateJSON, _ := json.Marshal(candidate)
 	log.Printf("[GEMINI] Candidate response: %s", string(candidateJSON))
 
-	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "function_call")
+	logGeminiUsage(ctx, &geminiResp, c.getModelName(),"function_call")
 
 	// Проверяем есть ли function call в candidate.FunctionCall (старый формат)
 	if candidate.FunctionCall != nil {
@@ -297,7 +297,7 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 		return "", fmt.Errorf("marshal request body: %w", err)
 	}
 
-	endpoint := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+	endpoint := c.getEndpoint()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
@@ -332,7 +332,7 @@ func (c *GeminiClient) ContinueWithFunctionResult(
 
 	candidate := geminiResp.Candidates[0]
 
-	logGeminiUsage(ctx, &geminiResp, "gemini-2.5-flash", "function_call")
+	logGeminiUsage(ctx, &geminiResp, c.getModelName(),"function_call")
 
 	// Проверяем thoughtContent (Gemini 2.0 thinking mode)
 	if candidate.ThoughtContent != nil && candidate.ThoughtContent.Text != "" {

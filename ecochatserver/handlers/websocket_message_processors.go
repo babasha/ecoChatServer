@@ -197,7 +197,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		// Для админских сообщений нужно отправить перевод виджету
 		widgetMessage := message
 		if sender == "admin" {
-			widgetMessage = applyTranslationForWidget(message, chatID)
+			clientLang, _ := database.GetClientLanguageFromChat(chatID)
+			widgetMessage = applyTranslationForWidget(message, chatID, clientLang)
 		}
 
 		// Загружаем легковесную версию чата для уведомления

@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -102,14 +101,10 @@ func getTranslation(metadata map[string]interface{}, lang string) (string, bool)
 
 // applyTranslationForWidget создаёт копию сообщения с переводом для виджета.
 // Если перевод на язык клиента существует, заменяет content.
-func applyTranslationForWidget(message *models.Message, chatID uuid.UUID) *models.Message {
+// clientLang передаётся вызывающим кодом для избежания повторных DB запросов.
+func applyTranslationForWidget(message *models.Message, chatID uuid.UUID, clientLang string) *models.Message {
 	widgetMessage := *message
-	if message.Metadata == nil {
-		return &widgetMessage
-	}
-
-	clientLang, err := database.GetClientLanguageFromChat(chatID)
-	if err != nil || clientLang == "" {
+	if message.Metadata == nil || clientLang == "" {
 		return &widgetMessage
 	}
 
