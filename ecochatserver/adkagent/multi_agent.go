@@ -223,7 +223,7 @@ func (oa *OrchestratorAgent) createOrchestrator() (agent.Agent, error) {
 		Tools:       agentTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.1),
-			MaxOutputTokens: 100,
+			MaxOutputTokens: 30,
 		},
 	})
 	if err != nil {

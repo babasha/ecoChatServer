@@ -94,7 +94,7 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 		Tools:       allTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
-			MaxOutputTokens: 400,
+			MaxOutputTokens: 200,
 			CandidateCount:  1,
 			TopP:            ptrFloat32(0.9),
 			TopK:            ptrFloat32(40),
@@ -172,29 +172,12 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// 2. Prepare message with optional language instruction
+	// 2. Prepare message with optional language tag
 	userMessage := message
 	if len(clientLanguage) > 0 && clientLanguage[0] != "" {
 		lang := clientLanguage[0]
-		var langInstruction string
-		switch lang {
-		case "ru":
-			langInstruction = "[IMPORTANT: Respond ONLY in Russian language]"
-		case "en":
-			langInstruction = "[IMPORTANT: Respond ONLY in English language]"
-		case "de":
-			langInstruction = "[IMPORTANT: Respond ONLY in German language]"
-		case "es":
-			langInstruction = "[IMPORTANT: Respond ONLY in Spanish language]"
-		case "pt":
-			langInstruction = "[IMPORTANT: Respond ONLY in Portuguese language]"
-		case "zh":
-			langInstruction = "[IMPORTANT: Respond ONLY in Chinese language]"
-		default:
-			langInstruction = fmt.Sprintf("[IMPORTANT: Respond ONLY in %s language]", lang)
-		}
-		userMessage = langInstruction + "\n\n" + message
-		log.Printf("[AGENT] Client language detected: %s", lang)
+		userMessage = fmt.Sprintf("[lang:%s] %s", lang, message)
+		log.Printf("[AGENT] Client language: %s", lang)
 	}
 
 	userMsg := genai.NewContentFromText(userMessage, genai.RoleUser)

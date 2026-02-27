@@ -69,70 +69,70 @@ type faqEntry struct {
 }
 
 var faqDatabase = []faqEntry{
-	// ===== GENERAL (7) =====
-	{question: "What is Zefir?", answer: "Zefir is an IoT plant moisture monitoring system. It uses ESP32-C3 sensors to measure soil humidity, temperature, and environmental conditions. Data is sent to the Zefir cloud and displayed in a cross-platform app built with Tauri + Preact.", category: "general", tags: []string{"zefir", "what", "about", "overview"}},
-	{question: "Is Zefir free?", answer: "Zefir is an open-source project (MIT license). The app and firmware are free. You need to purchase or build the ESP32-C3 sensor hardware. Cloud service is free for up to 10 devices per account.", category: "general", tags: []string{"free", "cost", "price", "open-source"}},
-	{question: "What platforms does Zefir support?", answer: "Zefir app runs on Windows, macOS, Linux (via Tauri desktop), iOS, and Android. The web version works in any modern browser at zefir.app.", category: "general", tags: []string{"platform", "ios", "android", "windows", "mac", "linux"}},
-	{question: "How many plants can I monitor?", answer: "Each Zefir sensor monitors one plant. You can have up to 10 sensors per mesh network and unlimited sensors per account (across multiple mesh networks).", category: "general", tags: []string{"plants", "limit", "how many", "sensors"}},
-	{question: "What languages does Zefir support?", answer: "Zefir app is available in 6 languages: Russian (ru), English (en), German (de), Spanish (es), Portuguese (pt), and Chinese (zh).", category: "general", tags: []string{"language", "russian", "english", "german", "spanish"}},
-	{question: "Do I need internet for Zefir?", answer: "Internet is needed for cloud sync and remote monitoring. However, sensors store readings locally and sync when connection restores. The mesh network works without internet — only the ROOT node needs WiFi for cloud access.", category: "general", tags: []string{"internet", "offline", "wifi", "cloud"}},
-	{question: "Can I use Zefir outdoors?", answer: "Zefir sensors are designed for indoor use. They are not waterproof (IP rating: IP44 splash-proof only). For outdoor use, you'd need a weatherproof enclosure. The sensor probe itself is water-resistant.", category: "general", tags: []string{"outdoor", "waterproof", "garden", "outside"}},
+	// GENERAL (7)
+	{question: "What is Zefir?", answer: "Open-source IoT plant monitoring: ESP32-C3 sensors measure soil moisture + temp, mesh network, cross-platform app (Tauri+Preact).", category: "general", tags: []string{"zefir", "what", "about", "overview"}},
+	{question: "Is Zefir free?", answer: "Open-source (MIT). App + firmware free. Buy/build ESP32-C3 sensor. Cloud free for ≤10 devices.", category: "general", tags: []string{"free", "cost", "price", "open-source"}},
+	{question: "What platforms?", answer: "Windows, macOS, Linux (Tauri), iOS, Android. Web: zefir.app.", category: "general", tags: []string{"platform", "ios", "android", "windows", "mac", "linux"}},
+	{question: "How many plants?", answer: "1 sensor = 1 plant. Up to 10 per mesh, unlimited per account.", category: "general", tags: []string{"plants", "limit", "how many", "sensors"}},
+	{question: "Languages?", answer: "6: Russian, English, German, Spanish, Portuguese, Chinese.", category: "general", tags: []string{"language", "russian", "english", "german", "spanish"}},
+	{question: "Need internet?", answer: "For cloud sync yes. Sensors store locally ~7 days, sync when back online. Mesh works offline, only ROOT needs WiFi.", category: "general", tags: []string{"internet", "offline", "wifi", "cloud"}},
+	{question: "Outdoor use?", answer: "Indoor only (IP44 splash-proof). Outdoor needs weatherproof enclosure. Probe is water-resistant.", category: "general", tags: []string{"outdoor", "waterproof", "garden", "outside"}},
 
-	// ===== SENSORS (8) =====
-	{question: "What sensor does Zefir use?", answer: "Zefir uses the ESP32-C3 microcontroller with a capacitive soil moisture sensor. The ESP32-C3 has built-in WiFi and Bluetooth LE, RISC-V processor, and ultra-low power modes.", category: "sensors", tags: []string{"sensor", "esp32", "hardware", "chip"}},
-	{question: "How accurate is the moisture sensor?", answer: "The capacitive moisture sensor has ±3% accuracy in typical soil conditions. It measures relative moisture (0-100%). For best accuracy, calibrate in your specific soil type via Device Settings → Calibrate.", category: "sensors", tags: []string{"accuracy", "precision", "moisture", "calibrate"}},
-	{question: "How long does the battery last?", answer: "Battery life depends on reading interval: 15 min = ~2 months, 30 min (default) = ~4 months, 1 hour = ~6 months. ROOT nodes use more power (~2 months). Cold temperatures reduce battery life.", category: "sensors", tags: []string{"battery", "life", "charge", "power"}},
-	{question: "How do I charge the sensor?", answer: "Connect a USB-C cable. White LED = charging. Green LED = fully charged. Full charge takes about 2 hours. You can use any USB-C charger (5V).", category: "sensors", tags: []string{"charge", "usb", "power", "cable"}},
-	{question: "Can I build my own sensor?", answer: "Yes! Zefir is open-source. Hardware designs and firmware are on GitHub. You need: ESP32-C3 dev board, capacitive soil sensor, 3.7V LiPo battery, and a 3D-printed case (STL files provided).", category: "sensors", tags: []string{"diy", "build", "custom", "open-source", "hardware"}},
-	{question: "What is the sensor reading interval?", answer: "Default is every 30 minutes. Configurable from 15 minutes to 6 hours in Device Settings → Reading Interval. More frequent readings use more battery.", category: "sensors", tags: []string{"interval", "frequency", "reading", "schedule"}},
-	{question: "Does the sensor measure air humidity?", answer: "No, the standard Zefir sensor measures SOIL moisture and SOIL temperature. Air humidity/temperature requires an additional DHT22 or BME280 module (optional add-on, see DIY guide).", category: "sensors", tags: []string{"air", "humidity", "temperature", "soil"}},
-	{question: "Can the sensor measure light?", answer: "The standard sensor does not include a light sensor. However, an optional BH1750 light sensor module can be added (DIY add-on). The app supports light readings if the module is detected.", category: "sensors", tags: []string{"light", "lux", "sensor", "module"}},
+	// SENSORS (8)
+	{question: "What sensor?", answer: "ESP32-C3 + capacitive soil moisture sensor. WiFi + BLE, RISC-V, ultra-low power.", category: "sensors", tags: []string{"sensor", "esp32", "hardware", "chip"}},
+	{question: "Accuracy?", answer: "±3% moisture in typical soil. Calibrate for your soil: Device Settings → Calibrate.", category: "sensors", tags: []string{"accuracy", "precision", "moisture", "calibrate"}},
+	{question: "Battery life?", answer: "15min=2mo, 30min(default)=4mo, 1hr=6mo. ROOT ~2mo. Cold reduces life.", category: "sensors", tags: []string{"battery", "life", "charge", "power"}},
+	{question: "How to charge?", answer: "USB-C. White LED=charging, green=full. ~2 hours. Any 5V charger.", category: "sensors", tags: []string{"charge", "usb", "power", "cable"}},
+	{question: "DIY sensor?", answer: "Yes, open-source on GitHub. Need: ESP32-C3 board, capacitive sensor, LiPo battery, 3D case (STL provided).", category: "sensors", tags: []string{"diy", "build", "custom", "open-source", "hardware"}},
+	{question: "Reading interval?", answer: "Default 30min. Configurable 15min–6hr in Device Settings. More frequent = more drain.", category: "sensors", tags: []string{"interval", "frequency", "reading", "schedule"}},
+	{question: "Air humidity?", answer: "No, measures SOIL only. Air needs DHT22/BME280 add-on (DIY).", category: "sensors", tags: []string{"air", "humidity", "temperature", "soil"}},
+	{question: "Light sensor?", answer: "Not included. Optional BH1750 add-on (DIY). App supports it if detected.", category: "sensors", tags: []string{"light", "lux", "sensor", "module"}},
 
-	// ===== SETUP (6) =====
-	{question: "How do I set up my first sensor?", answer: "1) Download Zefir app, 2) Open 'Add Device', 3) Hold sensor button 3 sec for BLE pairing, 4) Configure WiFi in the app, 5) Assign a plant, 6) Insert probe into soil. Full guide: use get_setup_guide tool.", category: "setup", tags: []string{"setup", "first", "start", "install", "begin"}},
-	{question: "My sensor won't pair via Bluetooth", answer: "Ensure: 1) Sensor battery is charged (green LED on button press), 2) Bluetooth is ON on your phone, 3) Hold sensor button 3 sec for BLUE blink, 4) Phone is within 1 meter. Android users: grant Location permission. iOS users: check Zefir Bluetooth permission.", category: "setup", tags: []string{"bluetooth", "ble", "pair", "connect", "not found"}},
-	{question: "WiFi setup failed", answer: "ESP32-C3 supports ONLY 2.4GHz WiFi (not 5GHz). Check: 1) Correct password, 2) 2.4GHz band enabled on router, 3) Sensor is within WiFi range, 4) Not using WEP (only WPA2/WPA3 supported). If your router merges bands, try disabling band steering.", category: "setup", tags: []string{"wifi", "network", "connect", "fail", "password"}},
-	{question: "How do I add a second sensor?", answer: "Same process as first sensor. The second sensor automatically joins the mesh network as a NODE (first sensor is ROOT). Place within 10m of any existing sensor. The app guides you through mesh auto-discovery.", category: "setup", tags: []string{"second", "add", "another", "new", "mesh"}},
-	{question: "How do I factory reset?", answer: "Hold the sensor button for 10 seconds until all LEDs flash. This erases WiFi credentials, mesh config, and plant assignments. The sensor returns to factory defaults and needs fresh setup.", category: "setup", tags: []string{"reset", "factory", "default", "erase", "clear"}},
-	{question: "Can I move a sensor to a different plant?", answer: "Yes! In the app: tap device → Edit → Change Plant. Select a new plant from the database. Sensor thresholds auto-update to match the new plant's needs.", category: "setup", tags: []string{"move", "change", "plant", "reassign", "different"}},
+	// SETUP (6)
+	{question: "First setup?", answer: "1)Download app 2)Add Device 3)Hold button 3s for BLE 4)WiFi config 5)Assign plant 6)Insert probe.", category: "setup", tags: []string{"setup", "first", "start", "install", "begin"}},
+	{question: "BLE won't pair?", answer: "Charge sensor, BT ON, hold 3s→BLUE blink, <1m distance. Android: Location permission. iOS: BLE permission.", category: "setup", tags: []string{"bluetooth", "ble", "pair", "connect", "not found"}},
+	{question: "WiFi failed?", answer: "2.4GHz ONLY (no 5GHz). Check password, WPA2/3. Dual-band: disable band steering.", category: "setup", tags: []string{"wifi", "network", "connect", "fail", "password"}},
+	{question: "Add second sensor?", answer: "Same process. Auto-joins mesh as NODE. Place within 10m of existing sensor.", category: "setup", tags: []string{"second", "add", "another", "new", "mesh"}},
+	{question: "Factory reset?", answer: "Hold button 10s → all LEDs flash. Erases WiFi, mesh, plant config.", category: "setup", tags: []string{"reset", "factory", "default", "erase", "clear"}},
+	{question: "Move sensor?", answer: "App: device → Edit → Change Plant. Thresholds auto-update.", category: "setup", tags: []string{"move", "change", "plant", "reassign", "different"}},
 
-	// ===== PLANTS (6) =====
-	{question: "How many plants are in the database?", answer: "Zefir has 89 plant species in 5 categories: Tropical (25), Succulents (20), Herbs (15), Vegetables (14), Flowering (15). Each has pre-configured moisture and temperature thresholds for your Zefir sensor.", category: "plants", tags: []string{"database", "species", "how many", "plants", "list"}},
-	{question: "Can I add a custom plant?", answer: "Yes! When assigning a plant, tap 'Custom Plant'. Enter name, set moisture thresholds (min/max %), temperature range, and optionally add a photo. Custom plants work exactly like database plants for alerts.", category: "plants", tags: []string{"custom", "add", "new", "plant", "own"}},
-	{question: "What are moisture thresholds?", answer: "Each plant has min and max soil moisture percentages. Below min → 'Too dry' alert (water needed). Above max → 'Too wet' alert (overwatering risk). Zefir pre-configures these from the plant database, but you can customize them.", category: "plants", tags: []string{"threshold", "moisture", "min", "max", "alert"}},
-	{question: "How do watering predictions work?", answer: "Zefir tracks moisture trends over time. Using the drying rate (how fast moisture drops), it predicts when the plant will need water next. Predictions improve with more data — usually accurate after 3-5 watering cycles.", category: "plants", tags: []string{"prediction", "watering", "forecast", "when", "water"}},
-	{question: "What does the plant passport show?", answer: "The Plant Passport displays: species info, optimal conditions (moisture, temp, light), your sensor's current readings vs. ideal range, watering history, growth notes, and a health score (0-100%).", category: "plants", tags: []string{"passport", "info", "details", "health", "score"}},
-	{question: "Can Zefir detect plant diseases?", answer: "Zefir monitors environmental conditions (moisture, temperature) that correlate with disease risk. It can warn about conditions favorable for root rot (too wet) or stress (too dry, too cold). It does not directly diagnose diseases.", category: "plants", tags: []string{"disease", "health", "detect", "sick", "diagnosis"}},
+	// PLANTS (6)
+	{question: "Plant database size?", answer: "89 species in 5 categories: Tropical(25), Succulent(20), Herb(15), Vegetable(14), Flowering(15). Pre-configured thresholds.", category: "plants", tags: []string{"database", "species", "how many", "plants", "list"}},
+	{question: "Custom plant?", answer: "Yes: 'Custom Plant' → set name, moisture min/max, temp range, photo. Works like DB plants.", category: "plants", tags: []string{"custom", "add", "new", "plant", "own"}},
+	{question: "Moisture thresholds?", answer: "Min/max soil moisture %. Below min=too dry alert, above max=too wet. Pre-configured per species, customizable.", category: "plants", tags: []string{"threshold", "moisture", "min", "max", "alert"}},
+	{question: "Watering predictions?", answer: "Tracks moisture drying rate → predicts next watering. Accurate after 3-5 cycles.", category: "plants", tags: []string{"prediction", "watering", "forecast", "when", "water"}},
+	{question: "Plant passport?", answer: "Shows: species, optimal conditions, current vs ideal readings, watering history, health score (0-100%).", category: "plants", tags: []string{"passport", "info", "details", "health", "score"}},
+	{question: "Disease detection?", answer: "Monitors conditions correlated with disease (root rot=too wet, stress=too dry/cold). No direct diagnosis.", category: "plants", tags: []string{"disease", "health", "detect", "sick", "diagnosis"}},
 
-	// ===== NOTIFICATIONS (5) =====
-	{question: "How do notifications work?", answer: "Zefir sends push notifications when: soil moisture drops below min threshold, moisture exceeds max, battery is low (<15%), sensor goes offline, or based on watering predictions. Configure per-device in Device Settings → Notifications.", category: "notifications", tags: []string{"notification", "alert", "push", "warning"}},
-	{question: "Can I set custom alert thresholds?", answer: "Yes! Go to Device Settings → Thresholds. Set custom moisture min/max and temperature min/max. You can also set quiet hours (no notifications) and choose alert severity levels.", category: "notifications", tags: []string{"custom", "threshold", "alert", "set", "configure"}},
-	{question: "Can I get email notifications?", answer: "Currently Zefir supports push notifications (mobile/desktop) only. Email notifications are on the roadmap. You can also integrate with Home Assistant for advanced notification routing.", category: "notifications", tags: []string{"email", "notification", "send", "mail"}},
-	{question: "How do I turn off notifications?", answer: "Per device: Device Settings → Notifications → toggle OFF. All notifications: App Settings → Notifications → Disable All. Quiet hours: App Settings → Notifications → Quiet Hours.", category: "notifications", tags: []string{"off", "disable", "silence", "mute", "notifications"}},
-	{question: "I'm not getting notifications", answer: "Check: 1) Notifications enabled in Zefir app settings, 2) Phone notification permissions for Zefir, 3) Battery saver not blocking Zefir, 4) Internet connection, 5) Device thresholds properly set (not too wide). On Android, exclude Zefir from battery optimization.", category: "notifications", tags: []string{"no", "not", "missing", "notifications", "broken"}},
+	// NOTIFICATIONS (5)
+	{question: "Notifications?", answer: "Push alerts: moisture below/above threshold, low battery, offline, watering prediction. Configure per device.", category: "notifications", tags: []string{"notification", "alert", "push", "warning"}},
+	{question: "Custom thresholds?", answer: "Device Settings → Thresholds: moisture min/max, temp min/max, quiet hours, severity.", category: "notifications", tags: []string{"custom", "threshold", "alert", "set", "configure"}},
+	{question: "Email notifications?", answer: "Push only for now. Email on roadmap. Can integrate Home Assistant for routing.", category: "notifications", tags: []string{"email", "notification", "send", "mail"}},
+	{question: "Turn off notifications?", answer: "Per device: Settings→Notifications→OFF. All: App Settings→Disable All. Quiet hours available.", category: "notifications", tags: []string{"off", "disable", "silence", "mute", "notifications"}},
+	{question: "Not getting notifications?", answer: "Check: app settings, phone permissions, battery saver, internet, threshold width. Android: exclude from battery optimization.", category: "notifications", tags: []string{"no", "not", "missing", "notifications", "broken"}},
 
-	// ===== HISTORY & DATA (5) =====
-	{question: "How long is data stored?", answer: "Cloud storage: 12 months of readings for free accounts. Sensor local storage: ~7 days of readings (syncs to cloud when connected). You can export data as CSV anytime from the app.", category: "history", tags: []string{"data", "storage", "history", "retention", "how long"}},
-	{question: "Can I export my data?", answer: "Yes! In the app: Device → History → Export (CSV or JSON). Exports include all readings with timestamps. API access also available for developers (see API docs at docs.zefir.app).", category: "history", tags: []string{"export", "csv", "download", "data", "backup"}},
-	{question: "How do I view historical charts?", answer: "In the app: tap a device → History tab. View moisture, temperature, and battery charts. Time ranges: 24h, 7d, 30d, 90d, 1y. Pinch to zoom on mobile. Tap data points for exact values.", category: "history", tags: []string{"chart", "graph", "history", "view", "trend"}},
-	{question: "Can I compare multiple sensors?", answer: "Yes! In the app: Dashboard → tap 'Compare' icon. Select 2-4 sensors to overlay their moisture/temperature charts. Useful for plants in different locations or comparing soil types.", category: "history", tags: []string{"compare", "multiple", "sensors", "overlay", "chart"}},
-	{question: "Is there an API?", answer: "Yes! Zefir has a REST API for developers. Docs at docs.zefir.app/api. Endpoints for devices, readings, user data. Authenticated via API key (generate in Account Settings). Rate limit: 100 req/min.", category: "history", tags: []string{"api", "developer", "rest", "integration", "endpoint"}},
+	// HISTORY & DATA (5)
+	{question: "Data retention?", answer: "Cloud: 12 months free. Sensor local: ~7 days. Export CSV anytime.", category: "history", tags: []string{"data", "storage", "history", "retention", "how long"}},
+	{question: "Export data?", answer: "Device → History → Export (CSV/JSON). API: docs.zefir.app.", category: "history", tags: []string{"export", "csv", "download", "data", "backup"}},
+	{question: "Charts?", answer: "Device → History: moisture/temp/battery. Ranges: 24h/7d/30d/90d/1y. Zoom + tap for values.", category: "history", tags: []string{"chart", "graph", "history", "view", "trend"}},
+	{question: "Compare sensors?", answer: "Dashboard → Compare: overlay 2-4 sensors' charts.", category: "history", tags: []string{"compare", "multiple", "sensors", "overlay", "chart"}},
+	{question: "API?", answer: "REST API at docs.zefir.app/api. Auth via API key. 100 req/min.", category: "history", tags: []string{"api", "developer", "rest", "integration", "endpoint"}},
 
-	// ===== SECURITY (5) =====
-	{question: "Is my data private?", answer: "Yes. Zefir collects only sensor data (moisture, temperature, battery) and device metadata. No personal data beyond your email for account. Data is encrypted in transit (TLS) and at rest. We never sell data to third parties.", category: "security", tags: []string{"privacy", "data", "private", "personal"}},
-	{question: "How is data encrypted?", answer: "All data: TLS 1.3 in transit (sensor→cloud, app→cloud). Mesh: ESP-NOW uses CCMP encryption (same as WPA2). Cloud: AES-256 encryption at rest. BLE pairing: Secure Simple Pairing (SSP).", category: "security", tags: []string{"encrypt", "tls", "security", "protection"}},
-	{question: "Where is data stored?", answer: "Zefir cloud runs on Railway (EU servers). Sensor data is stored in PostgreSQL with encryption at rest. Backups are encrypted and stored separately. You can delete all your data at any time from Account Settings.", category: "security", tags: []string{"storage", "server", "where", "cloud", "database"}},
-	{question: "Can others see my sensors?", answer: "No. Each account has private devices. Sharing features: you can generate a read-only share link for specific devices (e.g., for a plant sitter). Shared users cannot modify settings or access your account.", category: "security", tags: []string{"share", "access", "private", "others", "see"}},
-	{question: "What permissions does the app need?", answer: "Bluetooth: for sensor pairing and local communication. Location (Android only): required by OS for BLE scanning (not used for tracking). Internet: for cloud sync. Notifications: for plant alerts. Camera (optional): for plant photos.", category: "security", tags: []string{"permission", "bluetooth", "location", "camera", "access"}},
+	// SECURITY (5)
+	{question: "Data private?", answer: "Only sensor data collected. TLS encrypted. No data sold. Email only for account.", category: "security", tags: []string{"privacy", "data", "private", "personal"}},
+	{question: "Encryption?", answer: "TLS 1.3 transit, CCMP mesh, AES-256 at rest, SSP for BLE.", category: "security", tags: []string{"encrypt", "tls", "security", "protection"}},
+	{question: "Data location?", answer: "Railway EU servers, PostgreSQL encrypted. Delete anytime in Account Settings.", category: "security", tags: []string{"storage", "server", "where", "cloud", "database"}},
+	{question: "Others see sensors?", answer: "No, private. Optional read-only share links for specific devices.", category: "security", tags: []string{"share", "access", "private", "others", "see"}},
+	{question: "App permissions?", answer: "BLE: pairing. Location(Android): OS req for BLE scan. Internet: sync. Camera: optional photos.", category: "security", tags: []string{"permission", "bluetooth", "location", "camera", "access"}},
 
-	// ===== TROUBLESHOOTING (7) =====
-	{question: "Sensor shows offline", answer: "Check: 1) Battery (press button for LED), 2) WiFi status (ROOT) or mesh connection (NODE), 3) Distance to router/other sensors. If battery dead, charge 30 min then retry. If WiFi password changed, factory reset and re-setup.", category: "troubleshooting", tags: []string{"offline", "disconnected", "not working", "down"}},
-	{question: "Moisture reading seems wrong", answer: "Capacitive sensors need 5 min to stabilize after insertion. Different soil types give different baseline readings. Recalibrate: Device Settings → Calibrate. If reading is always 0 or 100, check probe connection.", category: "troubleshooting", tags: []string{"wrong", "incorrect", "reading", "moisture", "calibrate"}},
-	{question: "Battery drains too fast", answer: "Normal: 3-6 months at 30-min interval. Causes of fast drain: reading interval too frequent, weak WiFi signal (causes retries), cold temperatures, mesh relay duty. Increase interval or use mesh to reduce WiFi usage.", category: "troubleshooting", tags: []string{"battery", "drain", "fast", "power", "life"}},
-	{question: "App is slow or laggy", answer: "Try: 1) Close and reopen app, 2) Clear app cache, 3) Check internet connection, 4) Update app to latest version. Desktop app: close other Tauri/Electron apps if memory is low. If persistent, report bug via app.", category: "troubleshooting", tags: []string{"slow", "lag", "freeze", "app", "performance"}},
-	{question: "I lost my sensor", answer: "Check the app: Dashboard shows last known location (if GPS was enabled on phone during setup). The sensor's MAC address is also on the sticker inside the case. If truly lost, you can remove it from your account and set up a new one.", category: "troubleshooting", tags: []string{"lost", "find", "missing", "sensor", "location"}},
-	{question: "Sensor fell into water", answer: "The sensor is NOT waterproof (IP44 only). If it fell in water: 1) Remove immediately, 2) Disconnect battery if possible, 3) Let it dry for 48 hours (rice helps), 4) Do NOT try to charge while wet, 5) Test after fully dry. The probe itself is water-resistant.", category: "troubleshooting", tags: []string{"water", "wet", "dropped", "waterproof", "damage"}},
-	{question: "How do I contact support?", answer: "Email: support@zefir.app (response < 24h). GitHub Issues: for bugs and feature requests. Telegram: t.me/zefirsensor. In-app: Settings → Report Bug. For hardware issues, include your sensor MAC address.", category: "troubleshooting", tags: []string{"contact", "support", "help", "email", "report"}},
+	// TROUBLESHOOTING (7)
+	{question: "Sensor offline?", answer: "Check battery (press button), WiFi/mesh status, distance. Dead battery: charge 30min. Password changed: factory reset.", category: "troubleshooting", tags: []string{"offline", "disconnected", "not working", "down"}},
+	{question: "Wrong moisture?", answer: "Wait 5min to stabilize. Soil type affects readings. Recalibrate: Device Settings. Always 0/100: check probe.", category: "troubleshooting", tags: []string{"wrong", "incorrect", "reading", "moisture", "calibrate"}},
+	{question: "Battery drain?", answer: "Normal 3-6mo at 30min. Fast drain: reduce interval, weak WiFi, cold, mesh relay.", category: "troubleshooting", tags: []string{"battery", "drain", "fast", "power", "life"}},
+	{question: "App slow?", answer: "Restart app, clear cache, update, check internet.", category: "troubleshooting", tags: []string{"slow", "lag", "freeze", "app", "performance"}},
+	{question: "Lost sensor?", answer: "App shows last location. MAC on sticker inside case. Remove from account if lost.", category: "troubleshooting", tags: []string{"lost", "find", "missing", "sensor", "location"}},
+	{question: "Sensor in water?", answer: "NOT waterproof (IP44). Remove, dry 48h, don't charge wet. Probe is water-resistant.", category: "troubleshooting", tags: []string{"water", "wet", "dropped", "waterproof", "damage"}},
+	{question: "Contact support?", answer: "Email: support@zefir.app (<24h). GitHub Issues. Telegram: t.me/zefirsensor. In-app: Settings → Report Bug.", category: "troubleshooting", tags: []string{"contact", "support", "help", "email", "report"}},
 }
 
 // createSearchFAQTool — search FAQ with 49 entries
@@ -229,45 +229,26 @@ func createGetAppInfoTool() (tool.Tool, error) {
 				infoType = "all"
 			}
 
-			result := "ZEFIR APP INFO\n\n"
+			result := ""
 
 			if infoType == "all" || infoType == "platforms" {
-				result += "PLATFORMS:\n"
-				result += "  Desktop: Windows, macOS, Linux (Tauri)\n"
-				result += "  Mobile: iOS, Android (Tauri Mobile)\n"
-				result += "  Web: zefir.app (any modern browser)\n\n"
+				result += "PLATFORMS: Windows/macOS/Linux (Tauri), iOS/Android, Web: zefir.app.\n"
 			}
 
 			if infoType == "all" || infoType == "languages" {
-				result += "LANGUAGES:\n"
-				result += "  Russian (ru), English (en), German (de)\n"
-				result += "  Spanish (es), Portuguese (pt), Chinese (zh)\n\n"
+				result += "LANGUAGES: ru, en, de, es, pt, zh.\n"
 			}
 
 			if infoType == "all" || infoType == "tech" {
-				result += "TECH STACK:\n"
-				result += "  App: Tauri v2 + Preact + TypeScript\n"
-				result += "  Firmware: ESP-IDF (C) for ESP32-C3\n"
-				result += "  Backend: Go + PostgreSQL\n"
-				result += "  Protocols: ESP-NOW mesh, BLE, WiFi 2.4GHz\n"
-				result += "  Cloud: Railway (EU)\n\n"
+				result += "TECH: Tauri v2+Preact+TS, ESP-IDF(C), Go+PostgreSQL, ESP-NOW/BLE/WiFi, Railway EU.\n"
 			}
 
 			if infoType == "all" || infoType == "license" {
-				result += "LICENSE:\n"
-				result += "  MIT License (open-source)\n"
-				result += "  Free for personal and commercial use\n"
-				result += "  Source code on GitHub\n\n"
+				result += "LICENSE: MIT, free for personal/commercial, source on GitHub.\n"
 			}
 
 			if infoType == "all" || infoType == "requirements" {
-				result += "REQUIREMENTS:\n"
-				result += "  iOS: 15.0+\n"
-				result += "  Android: 8.0+ (API 26)\n"
-				result += "  Windows: 10+\n"
-				result += "  macOS: 11+\n"
-				result += "  Linux: Ubuntu 20.04+ (or equivalent)\n"
-				result += "  Browser: Chrome 80+, Firefox 78+, Safari 14+\n"
+				result += "REQUIREMENTS: iOS 15+, Android 8+, Win 10+, macOS 11+, Ubuntu 20.04+, Chrome 80+/Firefox 78+/Safari 14+.\n"
 			}
 
 			return Output{Result: result}, nil
@@ -297,37 +278,25 @@ func createGetContactInfoTool() (tool.Tool, error) {
 				contactType = "all"
 			}
 
-			result := "CONTACT INFORMATION\n\n"
+			result := ""
 
 			if contactType == "all" || contactType == "phone" {
-				result += "PHONE:\n"
-				result += "  Main: +995 XXX XXX XXX\n"
-				result += "  WhatsApp: +995 XXX XXX XXX\n"
-				result += "  Available: 9:00-22:00 daily\n\n"
+				result += "PHONE: +995 XXX XXX XXX (also WhatsApp), 9:00-22:00 daily.\n"
 			}
 
 			if contactType == "all" || contactType == "email" {
-				result += "EMAIL:\n"
-				result += "  Support: support@zefir.app\n"
-				result += "  Business: business@zefir.app\n"
-				result += "  Response time: < 24 hours\n\n"
+				result += "EMAIL: support@zefir.app (<24h), business@zefir.app.\n"
 			}
 
 			if contactType == "all" || contactType == "social" {
-				result += "SOCIAL & COMMUNITY:\n"
-				result += "  Telegram: t.me/zefirsensor\n"
-				result += "  GitHub: github.com/zefir-sensor\n"
-				result += "  Instagram: @zefirsensor\n"
-				result += "  Facebook: facebook.com/zefirsensor\n\n"
+				result += "SOCIAL: Telegram t.me/zefirsensor, GitHub github.com/zefir-sensor, Instagram @zefirsensor.\n"
 			}
 
 			if contactType == "all" || contactType == "address" {
-				result += "OFFICE:\n"
-				result += "  Tbilisi, Georgia\n"
-				result += "  Business hours: Mon-Fri 10:00-18:00\n"
+				result += "OFFICE: Tbilisi, Georgia. Mon-Fri 10:00-18:00.\n"
 			}
 
-			result += "\nFor bugs: use in-app 'Report Bug' or GitHub Issues."
+			result += "Bugs: in-app 'Report Bug' or GitHub Issues."
 
 			return Output{Result: result}, nil
 		},
@@ -344,124 +313,27 @@ func createGetFeatureGuideTool() (tool.Tool, error) {
 	}
 
 	featureGuides := map[string]string{
-		"plant_passport": `PLANT PASSPORT
+		"plant_passport": `Plant's digital ID: species, optimal conditions, current vs ideal readings, health score (0-100%), watering history (30d chart), notes.
+Access: tap device → "Plant Passport" tab, or Plants → tap name.
+Score: 90-100=excellent, 70-89=good, 50-69=fair, <50=action needed.`,
 
-The Plant Passport is your plant's digital identity card:
+		"predictions": `Tracks moisture drying rate → predicts next watering.
+Accuracy: week 1 ±2 days, 3-5 cycles ±12h, 1 month ±6h.
+Shows "Water in ~N days" on card + push notification.
+Tips: keep sensor in place, don't change soil without recalibrating.`,
 
-What it shows:
-- Species info (common name, scientific name, origin)
-- Optimal conditions (moisture, temperature, light)
-- Current readings vs. ideal ranges
-- Health score (0-100% based on how close readings are to optimal)
-- Watering history (last 30 days chart)
-- Growth notes (add your own observations)
-- Sensor assignment and device info
+		"notifications": `Types: moisture low/high, battery <15%, offline >1h, watering prediction, temp out of range.
+Per device: Device Settings → Notifications → toggle/thresholds/priority.
+Global: App Settings → quiet hours, daily summary, sound/vibration.`,
 
-How to access:
-- Tap any device on dashboard → "Plant Passport" tab
-- Or: Plants section → tap plant name
+		"maps": `Dashboard → Map icon → upload floor plan → drag sensors → save.
+Color dots: green=ok, yellow=attention, red=alert. Tap for reading.
+Shows mesh lines + signal strength. Multiple maps for rooms/floors.`,
 
-Health Score calculation:
-- 90-100%: Excellent — conditions are optimal
-- 70-89%: Good — minor deviations
-- 50-69%: Fair — some conditions need attention
-- <50%: Poor — immediate action needed`,
-
-		"predictions": `WATERING PREDICTIONS
-
-Zefir learns your plant's water consumption pattern:
-
-How it works:
-1. Tracks moisture level over time
-2. Calculates drying rate (% per hour)
-3. Considers: soil type, plant species, season, temperature
-4. Predicts when moisture will drop below threshold
-
-Accuracy:
-- First week: rough estimates (~±2 days)
-- After 3-5 cycles: good accuracy (~±12 hours)
-- After 1 month: very accurate (~±6 hours)
-
-What you see:
-- "Water in ~2 days" on device card
-- Push notification when predicted time is near
-- Timeline visualization in Plant Passport
-
-Tips for better predictions:
-- Keep sensor in same spot
-- Don't change soil or pot without recalibrating
-- Consistent watering helps the algorithm learn faster`,
-
-		"notifications": `NOTIFICATIONS GUIDE
-
-Types of notifications:
-1. Moisture Low: soil below min threshold → water needed
-2. Moisture High: soil above max threshold → overwatering risk
-3. Low Battery: sensor battery < 15%
-4. Offline: sensor lost connection for > 1 hour
-5. Watering Prediction: reminder based on prediction
-6. Temperature: outside plant's comfort range
-
-Configuration (per device):
-- Device Settings → Notifications
-- Toggle each type ON/OFF
-- Set custom thresholds (override plant defaults)
-- Set priority: normal / urgent / silent
-
-Global settings:
-- App Settings → Notifications
-- Quiet hours (no notifications during sleep)
-- Daily summary (one notification per day with all plants)
-- Sound / vibration preferences`,
-
-		"maps": `SENSOR MAP / FLOOR PLAN
-
-The Map feature helps visualize sensor locations:
-
-Setup:
-1. Dashboard → Map view (top-right icon)
-2. Upload floor plan or room photo
-3. Drag sensor icons onto the map
-4. Save layout
-
-Features:
-- Color-coded sensor dots (green=ok, yellow=attention, red=alert)
-- Tap dot for quick reading popup
-- Mesh network lines shown between sensors
-- Signal strength indicator on connections
-- Multiple maps for different rooms/floors
-
-Tips:
-- Take a top-down photo of each room
-- Use the grid overlay for precise placement
-- Great for visualizing mesh network coverage`,
-
-		"home_assistant": `HOME ASSISTANT INTEGRATION
-
-Zefir integrates with Home Assistant for smart home automation:
-
-Setup:
-1. Install Zefir integration from HACS
-2. In HA: Settings → Integrations → Add → Zefir
-3. Enter your Zefir API key (from Account Settings)
-4. Sensors appear automatically as HA entities
-
-Available entities:
-- sensor.zefir_[name]_moisture (%)
-- sensor.zefir_[name]_temperature (°C)
-- sensor.zefir_[name]_battery (%)
-- binary_sensor.zefir_[name]_online (on/off)
-
-Automation examples:
-- Turn on grow light when moisture is low
-- Send Telegram message when plant needs water
-- Log all readings to InfluxDB/Grafana
-- Control smart irrigation valve based on moisture
-
-MQTT alternative:
-- Zefir also supports MQTT output
-- Configure in Account Settings → MQTT
-- Topic format: zefir/[device_id]/[reading_type]`,
+		"home_assistant": `Setup: HACS → install Zefir → HA Settings → Integrations → Add Zefir → enter API key.
+Entities: sensor.zefir_[name]_moisture/temperature/battery, binary_sensor online.
+Automations: grow light, Telegram alerts, InfluxDB logging, smart irrigation.
+MQTT: Account Settings → MQTT, topic: zefir/[device_id]/[type].`,
 	}
 
 	return functiontool.New(
@@ -509,44 +381,22 @@ func createGetSecurityInfoTool() (tool.Tool, error) {
 				topic = "all"
 			}
 
-			result := "ZEFIR SECURITY & PRIVACY\n\n"
+			result := ""
 
 			if topic == "all" || topic == "privacy" {
-				result += "PRIVACY:\n"
-				result += "  We collect: sensor data (moisture, temp, battery)\n"
-				result += "  We store: email (for account), device metadata\n"
-				result += "  We DON'T collect: location, contacts, browsing history\n"
-				result += "  We NEVER sell data to third parties\n"
-				result += "  GDPR compliant — request data deletion anytime\n\n"
+				result += "PRIVACY: Only sensor data collected. Email for account. No location/contacts/browsing. Never sell data. GDPR compliant, delete anytime.\n"
 			}
 
 			if topic == "all" || topic == "encryption" {
-				result += "ENCRYPTION:\n"
-				result += "  In transit: TLS 1.3 (sensor to cloud, app to cloud)\n"
-				result += "  Mesh: ESP-NOW CCMP encryption (WPA2-level)\n"
-				result += "  At rest: AES-256 (cloud database)\n"
-				result += "  BLE: Secure Simple Pairing (SSP)\n"
-				result += "  API: HTTPS only, API key authentication\n\n"
+				result += "ENCRYPTION: TLS 1.3 transit, CCMP mesh, AES-256 at rest, SSP for BLE, HTTPS+API key.\n"
 			}
 
 			if topic == "all" || topic == "data_storage" {
-				result += "DATA STORAGE:\n"
-				result += "  Cloud: Railway platform (EU servers)\n"
-				result += "  Database: PostgreSQL with encryption\n"
-				result += "  Retention: 12 months (free), longer for paid\n"
-				result += "  Backups: daily, encrypted, geo-redundant\n"
-				result += "  Local: sensor stores ~7 days of readings\n"
-				result += "  Export: CSV/JSON anytime from app\n\n"
+				result += "STORAGE: Railway EU, PostgreSQL encrypted, 12mo free retention, daily backups. Sensor: ~7 days local. Export CSV/JSON.\n"
 			}
 
 			if topic == "all" || topic == "permissions" {
-				result += "APP PERMISSIONS:\n"
-				result += "  Bluetooth: sensor pairing and communication\n"
-				result += "  Location (Android): required by OS for BLE scanning\n"
-				result += "  Internet: cloud sync and remote monitoring\n"
-				result += "  Notifications: plant alerts and reminders\n"
-				result += "  Camera (optional): plant photos only\n"
-				result += "  Storage (optional): data export\n"
+				result += "PERMISSIONS: BLE=pairing, Location(Android)=BLE scan req, Internet=sync, Notifications=alerts, Camera/Storage=optional.\n"
 			}
 
 			return Output{Result: result}, nil
