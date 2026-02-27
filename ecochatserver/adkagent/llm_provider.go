@@ -56,21 +56,18 @@ func LoadLLMConfig() *LLMConfig {
 		log.Printf("[ADK_LLM] Загружена конфигурация OpenAI: model=%s, baseURL=%s", config.Model, config.BaseURL)
 
 	case ProviderLMStudio:
-		// LM Studio: локально через http://127.0.0.1:1234 или через ngrok
-		isDev := os.Getenv("ENVIRONMENT") != "production"
-
-		if isDev {
-			// Разработка - локальный LM Studio
-			config.BaseURL = database.GetSetting("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
-			log.Printf("[ADK_LLM] 🏠 Режим разработки: использую локальный LM Studio")
-		} else {
-			// Продакшен - ngrok туннель
-			config.BaseURL = database.GetSetting("LMSTUDIO_NGROK_URL", "https://bc3dc5beb47a.ngrok-free.app/v1")
-			log.Printf("[ADK_LLM] ☁️ Режим продакшена: использую ngrok туннель")
-		}
-
+		// LM Studio: единый ключ LMSTUDIO_BASE_URL для dev и prod
+		// В dev — http://127.0.0.1:1234/v1, в prod — ngrok URL (настраивается через админку)
+		config.BaseURL = database.GetSetting("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
 		config.APIKey = database.GetSetting("LMSTUDIO_API_KEY", "not-needed") // LM Studio не требует ключ
 		config.Model = database.GetSetting("LMSTUDIO_MODEL", "local-model")
+
+		isDev := os.Getenv("ENVIRONMENT") != "production"
+		if isDev {
+			log.Printf("[ADK_LLM] 🏠 Режим разработки: LM Studio")
+		} else {
+			log.Printf("[ADK_LLM] ☁️ Режим продакшена: LM Studio через %s", config.BaseURL)
+		}
 		log.Printf("[ADK_LLM] Загружена конфигурация LM Studio: model=%s, baseURL=%s", config.Model, config.BaseURL)
 
 	default:

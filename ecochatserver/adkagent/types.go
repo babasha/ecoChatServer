@@ -2,14 +2,14 @@ package adkagent
 
 import "time"
 
-// EscalationState хранит состояние эскалации для чата
+// EscalationState tracks escalation status for a chat
 type EscalationState struct {
 	EscalatedAt   time.Time
 	AdminNotified bool
 	ReturnedAt    *time.Time
 }
 
-// truncate обрезает строку до указанной длины
+// truncate truncates a string to maxLen
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

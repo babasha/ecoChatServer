@@ -7,15 +7,14 @@ import (
 	"github.com/egor/ecochatserver/llm"
 )
 
-// TestAgentCreation проверяет создание агента
+// TestAgentCreation tests creating a Zefir support agent
 func TestAgentCreation(t *testing.T) {
 	ctx := context.Background()
-	storeClient := llm.NewStoreClient()
+	zefirClient := NewZefirClient()
 
-	// Тестируем создание неавторизованного агента
-	agent, err := NewSupportAgent(ctx, storeClient, false)
+	agent, err := NewSupportAgent(ctx, zefirClient)
 	if err != nil {
-		t.Skipf("Skipping test: %v (возможно не установлен GEMINI_API_KEY)", err)
+		t.Skipf("Skipping test: %v (LLM provider may not be configured)", err)
 		return
 	}
 
@@ -23,10 +22,10 @@ func TestAgentCreation(t *testing.T) {
 		t.Fatal("Agent should not be nil")
 	}
 
-	t.Log("✅ Агент успешно создан")
+	t.Log("Zefir agent created successfully")
 }
 
-// TestADKAutoResponderCreation проверяет создание AutoResponder на базе ADK
+// TestADKAutoResponderCreation tests creating the AutoResponder
 func TestADKAutoResponderCreation(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
@@ -40,31 +39,25 @@ func TestADKAutoResponderCreation(t *testing.T) {
 		t.Fatal("ADK AutoResponder should not be nil")
 	}
 
-	if ar.storeClient == nil {
-		t.Fatal("StoreClient should not be nil")
+	if ar.zefirClient == nil {
+		t.Fatal("ZefirClient should not be nil")
 	}
 
-	t.Log("✅ ADK AutoResponder успешно создан")
+	t.Log("Zefir ADK AutoResponder created successfully")
 	t.Logf("   Config: enabled=%v, botName=%s", ar.config.Enabled, ar.config.BotName)
 }
 
-// TestToolsCreation temporarily disabled (will add tools later)
-// func TestToolsCreation(t *testing.T) {
-// 	// Will implement after adding tools
-// }
-
-// Example_simpleAgent демонстрирует простое использование
+// Example_simpleAgent demonstrates basic usage
 func Example_simpleAgent() {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
 
-	// Создаём ADK AutoResponder
+	// Create Zefir ADK AutoResponder
 	ar, err := NewADKAutoResponderV2(ctx, cfg)
 	if err != nil {
 		panic(err)
 	}
 
-	// Используем как обычный AutoResponder
 	_ = ar
 
 	// Output:

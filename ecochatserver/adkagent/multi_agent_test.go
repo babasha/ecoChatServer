@@ -3,24 +3,21 @@ package adkagent
 import (
 	"context"
 	"testing"
-
-	"github.com/egor/ecochatserver/llm"
 )
 
-// TestMultiAgentCreation проверяет создание мульти-агентной системы
+// TestMultiAgentCreation tests creation of the multi-agent system
 func TestMultiAgentCreation(t *testing.T) {
 	ctx := context.Background()
-	storeClient := llm.NewStoreClient()
+	zefirClient := NewZefirClient()
 
 	cfg := MultiAgentConfig{
-		StoreClient:  storeClient,
-		IsAuthorized: false,
-		UserID:       0,
+		ZefirClient: zefirClient,
+		ZefirUserID: "",
 	}
 
 	oa, err := NewOrchestratorAgent(ctx, cfg)
 	if err != nil {
-		t.Skipf("Skipping test: %v (возможно не настроен LLM провайдер)", err)
+		t.Skipf("Skipping test: %v (LLM provider may not be configured)", err)
 		return
 	}
 
@@ -32,50 +29,44 @@ func TestMultiAgentCreation(t *testing.T) {
 		t.Fatal("Orchestrator agent should not be nil")
 	}
 
-	if oa.productAgent == nil {
-		t.Fatal("Product agent should not be nil")
+	if oa.plantAgent == nil {
+		t.Fatal("Plant agent should not be nil")
 	}
 
-	if oa.orderAgent == nil {
-		t.Fatal("Order agent should not be nil")
+	if oa.deviceAgent == nil {
+		t.Fatal("Device agent should not be nil")
 	}
 
 	if oa.supportAgent == nil {
 		t.Fatal("Support agent should not be nil")
 	}
 
-	t.Log("✅ Мульти-агентная система успешно создана")
+	t.Log("Multi-agent system created successfully")
 	t.Logf("   Orchestrator: %s", oa.orchestrator.Name())
-	t.Logf("   ProductAgent: %s", oa.productAgent.Name())
-	t.Logf("   OrderAgent: %s", oa.orderAgent.Name())
+	t.Logf("   PlantAgent: %s", oa.plantAgent.Name())
+	t.Logf("   DeviceAgent: %s", oa.deviceAgent.Name())
 	t.Logf("   SupportAgent: %s", oa.supportAgent.Name())
 }
 
-// TestMultiAgentAuthorized проверяет создание системы для авторизованного пользователя
-func TestMultiAgentAuthorized(t *testing.T) {
+// TestMultiAgentWithUser tests creation for a user with Zefir account
+func TestMultiAgentWithUser(t *testing.T) {
 	ctx := context.Background()
-	storeClient := llm.NewStoreClient()
+	zefirClient := NewZefirClient()
 
 	cfg := MultiAgentConfig{
-		StoreClient:  storeClient,
-		IsAuthorized: true,
-		UserID:       12345,
+		ZefirClient: zefirClient,
+		ZefirUserID: "user-abc-123",
 	}
 
 	oa, err := NewOrchestratorAgent(ctx, cfg)
 	if err != nil {
-		t.Skipf("Skipping test: %v (возможно не настроен LLM провайдер)", err)
+		t.Skipf("Skipping test: %v (LLM provider may not be configured)", err)
 		return
 	}
 
-	if oa.GetUserID() != 12345 {
-		t.Errorf("Expected userID 12345, got %d", oa.GetUserID())
+	if oa.GetZefirUserID() != "user-abc-123" {
+		t.Errorf("Expected zefirUserID 'user-abc-123', got '%s'", oa.GetZefirUserID())
 	}
 
-	if !oa.isAuthorized {
-		t.Error("Expected isAuthorized to be true")
-	}
-
-	t.Log("✅ Мульти-агентная система для авторизованного пользователя создана")
+	t.Log("Multi-agent system for Zefir user created successfully")
 }
-

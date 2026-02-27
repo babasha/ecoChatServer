@@ -13,9 +13,18 @@ import (
 	"github.com/egor/ecochatserver/models"
 )
 
-// ADKAutoResponderV2 - обновлённая версия с правильным ADK API и мульти-агентностью
+const (
+	// agentTTL — agent cache TTL (30 minutes)
+	agentTTL = 30 * time.Minute
+	// agentEvictInterval — cache eviction check interval
+	agentEvictInterval = 5 * time.Minute
+	// maxMessageLength — max input message length (10KB)
+	maxMessageLength = 10_000
+)
+
+// ADKAutoResponderV2 — Zefir IoT support auto-responder
 type ADKAutoResponderV2 struct {
-	storeClient *llm.StoreClient
+	zefirClient *ZefirClient
 	config      llm.AutoResponderConfig
 
 	// Single-agent mode: Agent cache per chatID
@@ -24,55 +33,55 @@ type ADKAutoResponderV2 struct {
 	// Multi-agent mode: Orchestrator cache per chatID
 	orchestrators *syncCache[*OrchestratorAgent]
 
-	// Режим работы: true = мульти-агент, false = single-agent
+	// Mode: true = multi-agent, false = single-agent
 	useMultiAgent bool
 
-	// Supervisor agent для анализа запросов (опционально, для single-agent mode)
+	// Supervisor agent (optional, for single-agent mode)
 	supervisor    *SupervisorAgent
 	useSupervisor bool
 
-	// Эскалации (in-memory - при рестарте сбрасываются)
+	// Escalations (in-memory — reset on restart)
 	escalations *syncCache[*EscalationState]
 }
 
-// NewADKAutoResponderV2 создаёт автоответчик на базе ADK V2 (single-agent mode)
+// NewADKAutoResponderV2 creates auto-responder (single-agent mode)
 func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
-	storeClient := llm.NewStoreClient()
+	zefirClient := NewZefirClient()
 
 	ar := &ADKAutoResponderV2{
-		storeClient:   storeClient,
+		zefirClient:   zefirClient,
 		config:        cfg,
-		agents:        newSyncCache[*SupportAgent](),
-		orchestrators: newSyncCache[*OrchestratorAgent](),
+		agents:        newSyncCacheWithTTL[*SupportAgent]("AGENT", agentTTL, agentEvictInterval),
+		orchestrators: newSyncCacheWithTTL[*OrchestratorAgent]("ORCHESTRATOR", agentTTL, agentEvictInterval),
 		escalations:   newSyncCache[*EscalationState](),
-		useMultiAgent: false, // По умолчанию single-agent
+		useMultiAgent: false,
 		useSupervisor: false,
 	}
 
-	log.Printf("[ADK_V2] Инициализирован (single-agent mode, lazy creation)")
+	log.Printf("[ADK_V2] Initialized Zefir auto-responder (single-agent mode, TTL=%v)", agentTTL)
 	return ar, nil
 }
 
-// NewADKAutoResponderV2MultiAgent создаёт автоответчик с мульти-агентной архитектурой
+// NewADKAutoResponderV2MultiAgent creates auto-responder with multi-agent architecture
 func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
-	storeClient := llm.NewStoreClient()
+	zefirClient := NewZefirClient()
 
 	ar := &ADKAutoResponderV2{
-		storeClient:   storeClient,
+		zefirClient:   zefirClient,
 		config:        cfg,
-		agents:        newSyncCache[*SupportAgent](),
-		orchestrators: newSyncCache[*OrchestratorAgent](),
+		agents:        newSyncCacheWithTTL[*SupportAgent]("AGENT", agentTTL, agentEvictInterval),
+		orchestrators: newSyncCacheWithTTL[*OrchestratorAgent]("ORCHESTRATOR", agentTTL, agentEvictInterval),
 		escalations:   newSyncCache[*EscalationState](),
-		useMultiAgent: true, // Мульти-агентный режим
+		useMultiAgent: true,
 		useSupervisor: false,
 	}
 
-	log.Printf("[ADK_V2] Инициализирован (MULTI-AGENT mode, lazy creation)")
-	log.Printf("[ADK_V2] 🤖 Orchestrator → [ProductExpert, OrderManager, SupportSpecialist]")
+	log.Printf("[ADK_V2] Initialized Zefir auto-responder (MULTI-AGENT mode, TTL=%v)", agentTTL)
+	log.Printf("[ADK_V2] Orchestrator -> [PlantExpert, DeviceSpecialist, SupportSpecialist]")
 	return ar, nil
 }
 
-// EnableMultiAgent включает/выключает мульти-агентный режим
+// EnableMultiAgent switches between single-agent and multi-agent mode
 func (ar *ADKAutoResponderV2) EnableMultiAgent(enabled bool) {
 	ar.useMultiAgent = enabled
 	mode := "single-agent"
@@ -82,17 +91,16 @@ func (ar *ADKAutoResponderV2) EnableMultiAgent(enabled bool) {
 	log.Printf("[ADK_V2] Switched to %s mode", mode)
 }
 
-// NewADKAutoResponderV2WithSupervisor создаёт автоответчик с supervisor agent
+// NewADKAutoResponderV2WithSupervisor creates auto-responder with supervisor agent
 func NewADKAutoResponderV2WithSupervisor(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
 	ar, err := NewADKAutoResponderV2(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Создаём supervisor agent
 	supervisor, err := NewSupervisorAgent(ctx)
 	if err != nil {
-		log.Printf("[ADK_V2] Warning: failed to create supervisor agent: %v (continuing without supervisor)", err)
+		log.Printf("[ADK_V2] Warning: failed to create supervisor agent: %v (continuing without)", err)
 	} else {
 		ar.supervisor = supervisor
 		ar.useSupervisor = true
@@ -102,52 +110,63 @@ func NewADKAutoResponderV2WithSupervisor(ctx context.Context, cfg llm.AutoRespon
 	return ar, nil
 }
 
-// EnableSupervisor включает/выключает supervisor agent
+// EnableSupervisor enables/disables supervisor agent
 func (ar *ADKAutoResponderV2) EnableSupervisor(enabled bool) {
 	ar.useSupervisor = enabled && ar.supervisor != nil
 	log.Printf("[ADK_V2] Supervisor agent: %v", ar.useSupervisor)
 }
 
-// ProcessMessage - основной метод обработки сообщения пользователя
+// ProcessMessage — main message processing method
 func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.Chat, msg *models.Message) (*models.Message, error) {
 	log.Printf("[ADK_V2] ProcessMessage: chatID=%s, mode=%s", chat.ID, ar.getMode())
 
-	// Быстрые проверки: должен ли автоответчик отвечать?
-	if !ar.config.Enabled || // Автоответчик выключен
-		msg.Sender != "user" || // Сообщение не от пользователя
-		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) || // Чат назначен оператору
-		!chat.AutoResponderEnabled { // Автоответчик отключен для чата
+	// Quick checks
+	if !ar.config.Enabled ||
+		msg.Sender != "user" ||
+		(chat.AssignedTo != nil && *chat.AssignedTo != uuid.Nil) ||
+		!chat.AutoResponderEnabled {
+		return nil, nil
+	}
+
+	// Input validation: truncate overly long messages
+	if len(msg.Content) > maxMessageLength {
+		log.Printf("[ADK_V2] Message truncated: %d → %d chars", len(msg.Content), maxMessageLength)
+		msg.Content = msg.Content[:maxMessageLength]
+	}
+
+	// Input validation: reject empty messages
+	trimmedContent := strings.TrimSpace(msg.Content)
+	if trimmedContent == "" {
 		return nil, nil
 	}
 
 	chatKey := chat.ID.String()
 
-	// Проверка эскалации
+	// Check escalation
 	escalation, _ := ar.escalations.get(chatKey)
 	if escalation != nil && escalation.ReturnedAt == nil {
 		return nil, nil
 	}
 
-	// Определяем авторизацию
-	userID := ar.getUserIDWithCache(ctx, chat)
-	isAuthorized := userID > 0
-	log.Printf("[ADK_V2] User context: userID=%d, authorized=%v", userID, isAuthorized)
+	// Get Zefir user ID from chat metadata
+	zefirUserID := ar.getZefirUserID(chat)
+	log.Printf("[ADK_V2] User context: zefirUserID=%s", zefirUserID)
 
-	// Задержка (если настроена)
+	// Delay (if configured)
 	if ar.config.DelaySeconds > 0 {
 		time.Sleep(time.Duration(ar.config.DelaySeconds) * time.Second)
 	}
 
-	// Получаем язык клиента из метаданных сообщения (если есть)
+	// Get client language from message metadata
 	var clientLang string
 	if msg.Metadata != nil {
 		if detectedLang, ok := msg.Metadata["detectedLanguage"].(string); ok && detectedLang != "" {
 			clientLang = detectedLang
-			log.Printf("[ADK_V2] Client language detected from metadata: %s", clientLang)
+			log.Printf("[ADK_V2] Client language: %s", clientLang)
 		}
 	}
 
-	// Запуск агента с timeout
+	// Run agent with timeout
 	genCtx, cancel := context.WithTimeout(ctx, time.Duration(ar.config.IdleTimeMinutes)*time.Minute)
 	defer cancel()
 
@@ -155,14 +174,11 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	var err error
 	var agentType string
 
-	// Выбираем режим работы
 	if ar.useMultiAgent {
-		// MULTI-AGENT MODE: Orchestrator → [ProductExpert, OrderManager, SupportSpecialist]
-		response, err = ar.processWithMultiAgent(genCtx, chatKey, msg.Content, userID, isAuthorized, clientLang)
+		response, err = ar.processWithMultiAgent(genCtx, chatKey, msg.Content, zefirUserID, clientLang)
 		agentType = "multi-agent"
 	} else {
-		// SINGLE-AGENT MODE: один SupportAgent с 19 tools
-		response, err = ar.processWithSingleAgent(genCtx, chatKey, msg.Content, userID, isAuthorized, clientLang)
+		response, err = ar.processWithSingleAgent(genCtx, chatKey, msg.Content, zefirUserID, clientLang)
 		agentType = "single-agent"
 	}
 
@@ -171,7 +187,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		return nil, err
 	}
 
-	// Проверка эскалации
+	// Check escalation
 	if strings.Contains(response, "#escalate") {
 		ar.escalations.set(chatKey, &EscalationState{
 			EscalatedAt: time.Now(),
@@ -181,7 +197,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response = strings.TrimSpace(response)
 	}
 
-	// Формируем ответ
+	// Build response message
 	botMsg := &models.Message{
 		ChatID:    chat.ID,
 		Content:   response,
@@ -198,7 +214,6 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		},
 	}
 
-	// Добавляем информацию о режиме
 	if ar.useMultiAgent {
 		botMsg.Metadata["multiAgent"] = true
 	}
@@ -209,7 +224,7 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 	return botMsg, nil
 }
 
-// getMode возвращает текущий режим работы
+// getMode returns current mode string
 func (ar *ADKAutoResponderV2) getMode() string {
 	if ar.useMultiAgent {
 		return "multi-agent"
@@ -217,33 +232,27 @@ func (ar *ADKAutoResponderV2) getMode() string {
 	return "single-agent"
 }
 
-// processWithMultiAgent обрабатывает сообщение через мульти-агентную систему
-func (ar *ADKAutoResponderV2) processWithMultiAgent(ctx context.Context, chatKey, userMessage string, userID int, isAuthorized bool, clientLang string) (string, error) {
-	// Получаем или создаём Orchestrator
-	orchestrator, err := ar.getOrCreateOrchestrator(ctx, chatKey, userID, isAuthorized)
+// processWithMultiAgent processes through multi-agent system
+func (ar *ADKAutoResponderV2) processWithMultiAgent(ctx context.Context, chatKey, userMessage, zefirUserID, clientLang string) (string, error) {
+	orchestrator, err := ar.getOrCreateOrchestrator(ctx, chatKey, zefirUserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to create orchestrator: %w", err)
 	}
 
-	// Обновляем userID если изменился
-	orchestrator.SetUserID(userID)
-
-	// Запускаем обработку
+	orchestrator.SetZefirUserID(zefirUserID)
 	return orchestrator.ProcessMessage(ctx, chatKey, userMessage, clientLang)
 }
 
-// processWithSingleAgent обрабатывает сообщение через single-agent
-func (ar *ADKAutoResponderV2) processWithSingleAgent(ctx context.Context, chatKey, userMessage string, userID int, isAuthorized bool, clientLang string) (string, error) {
-	// Получаем агента (с полным набором из 19 tools)
-	agent, err := ar.getOrCreateAgent(ctx, chatKey, isAuthorized)
+// processWithSingleAgent processes through single agent
+func (ar *ADKAutoResponderV2) processWithSingleAgent(ctx context.Context, chatKey, userMessage, zefirUserID, clientLang string) (string, error) {
+	agnt, err := ar.getOrCreateAgent(ctx, chatKey)
 	if err != nil {
 		return "", err
 	}
 
-	// Подготавливаем сообщение
 	processedMessage := userMessage
 
-	// Если supervisor включен, анализируем запрос и добавляем инструкции
+	// Supervisor analysis (optional)
 	if ar.useSupervisor && ar.supervisor != nil {
 		plan, err := ar.supervisor.AnalyzeRequest(ctx, userMessage)
 		if err != nil {
@@ -255,35 +264,29 @@ func (ar *ADKAutoResponderV2) processWithSingleAgent(ctx context.Context, chatKe
 		}
 	}
 
-	// Передаём язык клиента в агента (если определён)
 	if clientLang != "" {
-		return agent.ProcessMessage(ctx, chatKey, processedMessage, userID, clientLang)
+		return agnt.ProcessMessage(ctx, chatKey, processedMessage, zefirUserID, clientLang)
 	}
-	return agent.ProcessMessage(ctx, chatKey, processedMessage, userID)
+	return agnt.ProcessMessage(ctx, chatKey, processedMessage, zefirUserID)
 }
 
-// getOrCreateOrchestrator создаёт или возвращает кэшированный Orchestrator для чата
-func (ar *ADKAutoResponderV2) getOrCreateOrchestrator(ctx context.Context, chatID string, userID int, isAuthorized bool) (*OrchestratorAgent, error) {
+// getOrCreateOrchestrator creates or returns cached Orchestrator
+func (ar *ADKAutoResponderV2) getOrCreateOrchestrator(ctx context.Context, chatID, zefirUserID string) (*OrchestratorAgent, error) {
 	orch, err := ar.orchestrators.getOrCreate(chatID, func() (*OrchestratorAgent, error) {
 		return NewOrchestratorAgent(ctx, MultiAgentConfig{
-			StoreClient:  ar.storeClient,
-			IsAuthorized: isAuthorized,
-			UserID:       userID,
+			ZefirClient: ar.zefirClient,
+			ZefirUserID: zefirUserID,
 		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	authType := "UNAUTHORIZED"
-	if isAuthorized {
-		authType = "AUTHORIZED"
-	}
-	log.Printf("[ADK_V2] Created/reused %s orchestrator for chat %s (total: %d)", authType, chatID, ar.orchestrators.len())
+	log.Printf("[ADK_V2] Created/reused orchestrator for chat %s (total: %d)", chatID, ar.orchestrators.len())
 	return orch, nil
 }
 
-// formatSupervisorInstruction форматирует инструкцию от supervisor для support agent
+// formatSupervisorInstruction formats supervisor instruction for the agent
 func (ar *ADKAutoResponderV2) formatSupervisorInstruction(plan *ExecutionPlan) string {
 	if plan == nil || plan.RequiredTool == "" {
 		return ""
@@ -302,58 +305,42 @@ func (ar *ADKAutoResponderV2) formatSupervisorInstruction(plan *ExecutionPlan) s
 	return instruction
 }
 
-// ClearEscalation очищает эскалацию
+// ClearEscalation clears escalation state
 func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
 	ar.escalations.remove(chatID)
 }
 
 // getOrCreateAgent creates or returns cached agent for specific chatID
-// FIX: Each chat gets isolated agent to prevent userID race condition
-func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, chatID string, isAuthorized bool) (*SupportAgent, error) {
-	agent, err := ar.agents.getOrCreate(chatID, func() (*SupportAgent, error) {
-		return NewSupportAgent(ctx, ar.storeClient, isAuthorized)
+func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, chatID string) (*SupportAgent, error) {
+	agnt, err := ar.agents.getOrCreate(chatID, func() (*SupportAgent, error) {
+		return NewSupportAgent(ctx, ar.zefirClient)
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	authType := "UNAUTHORIZED"
-	if isAuthorized {
-		authType = "AUTHORIZED"
-	}
-	log.Printf("[ADK_V2] Created/reused %s agent for chat %s (total agents: %d)", authType, chatID, ar.agents.len())
-	return agent, nil
+	log.Printf("[ADK_V2] Created/reused agent for chat %s (total agents: %d)", chatID, ar.agents.len())
+	return agnt, nil
 }
 
-// getUserIDWithCache получает user_id из metadata или через Store API
-func (ar *ADKAutoResponderV2) getUserIDWithCache(ctx context.Context, chat *models.Chat) int {
-	// Пытаемся получить из cache (metadata)
+// getZefirUserID extracts Zefir user ID from chat metadata
+func (ar *ADKAutoResponderV2) getZefirUserID(chat *models.Chat) string {
 	if chat.Metadata != nil {
-		if userID, ok := chat.Metadata["store_user_id"].(int); ok && userID > 0 {
-			return userID
-		}
-		if userID, ok := chat.Metadata["store_user_id"].(float64); ok && userID > 0 {
-			return int(userID)
+		if zefirUID, ok := chat.Metadata["zefir_user_id"].(string); ok && zefirUID != "" {
+			return zefirUID
 		}
 	}
-
-	// Если не закешировано - получаем через Store API
-	userID := llm.ExtractUserIDFromChat(ctx, ar.storeClient, chat)
-
-	// NOTE: Не модифицируем chat.Metadata здесь - это должно делаться на уровне выше
-	// где chat создаётся/загружается из БД, чтобы избежать race conditions
-
-	return userID
+	return ""
 }
 
-// RemoveAgentForChat removes cached agent for specific chat (memory cleanup)
+// RemoveAgentForChat removes cached agent for specific chat
 func (ar *ADKAutoResponderV2) RemoveAgentForChat(chatID string) {
 	if ar.agents.remove(chatID) {
 		log.Printf("[ADK_V2] Removed agent for chat %s (total agents: %d)", chatID, ar.agents.len())
 	}
 }
 
-// ClearAllAgents removes all cached agents (memory cleanup on restart/maintenance)
+// ClearAllAgents removes all cached agents
 func (ar *ADKAutoResponderV2) ClearAllAgents() {
 	count := ar.agents.clear()
 	log.Printf("[ADK_V2] Cleared all agents (removed %d agents)", count)

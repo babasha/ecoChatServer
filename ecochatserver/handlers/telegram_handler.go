@@ -57,20 +57,25 @@ func InitAutoResponder() {
 		}
 	}
 
+	// При hot-swap: очищаем кэш агентов старого автоответчика,
+	// чтобы новые агенты создались с актуальным LLM провайдером
+	if AutoResponder != nil {
+		if adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2); ok {
+			count, _ := adkAR.GetAgentCacheStats()
+			adkAR.ClearAllAgents()
+			log.Printf("🔄 Hot-swap: очищен кэш агентов (%d удалено)", count)
+		}
+	}
+
 	// Проверяем включен ли автоответчик (из БД с fallback на ENV)
 	enabled := database.GetSettingBool("ENABLE_AUTO_RESPONDER", true)
 	if !enabled {
 		log.Println("🔇 Автоответчик отключен в настройках БД/ENV (переводчик работает)")
+		AutoResponder = nil
 		return
 	}
 	log.Println("🤖 Автоответчик включен, инициализируем...")
 
-	// 🎯 ВЫБОР РЕАЛИЗАЦИИ: Используем ADK агента (вместо старого автоответчика)
-	// Преимущества ADK:
-	// - Multi-turn reasoning (ReAct pattern)
-	// - Hot-swap LLM провайдеров через БД
-	// - Поддержка LM Studio (локальный + ngrok)
-	// - Встроенная телеметрия
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
 

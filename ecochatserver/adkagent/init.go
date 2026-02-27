@@ -8,10 +8,9 @@ import (
 	"github.com/egor/ecochatserver/llm"
 )
 
-// InitADKAutoResponder создаёт AutoResponder на базе ADK V2
-// Можно использовать вместо llm.NewAutoResponderWithConfig()
+// InitADKAutoResponder creates an ADK V2 AutoResponder for Zefir
 func InitADKAutoResponder(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
-	log.Printf("[AGENT] Инициализация ADK AutoResponder V2")
+	log.Printf("[AGENT] Initializing Zefir ADK AutoResponder V2")
 	log.Printf("[AGENT] Config: enabled=%v, botName=%s, delaySeconds=%d",
 		cfg.Enabled, cfg.BotName, cfg.DelaySeconds)
 
@@ -20,12 +19,11 @@ func InitADKAutoResponder(ctx context.Context, cfg llm.AutoResponderConfig) (*AD
 		return nil, err
 	}
 
-	log.Printf("[AGENT] ADK AutoResponder V2 успешно инициализирован")
+	log.Printf("[AGENT] Zefir ADK AutoResponder V2 initialized successfully")
 	return ar, nil
 }
 
-// ShouldUseADK проверяет нужно ли использовать ADK агента
-// (можно управлять через переменную окружения)
+// ShouldUseADK checks whether to use ADK agent
 func ShouldUseADK() bool {
 	useADK := os.Getenv("USE_ADK_AGENT")
 	return useADK == "true" || useADK == "1"

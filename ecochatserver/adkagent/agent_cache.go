@@ -1,23 +1,65 @@
 package adkagent
 
-import "sync"
+import (
+	"log"
+	"sync"
+	"time"
+)
 
 // syncCache — generic thread-safe cache with double-checked locking for getOrCreate.
-// Used to deduplicate agent/orchestrator/escalation caching logic.
+// Supports optional TTL-based eviction to prevent unbounded memory growth.
 type syncCache[T any] struct {
-	mu    sync.RWMutex
-	items map[string]T
+	mu         sync.RWMutex
+	items      map[string]T
+	lastAccess map[string]time.Time // трекинг последнего доступа для TTL eviction
+	ttl        time.Duration        // 0 = без TTL (бесконечный кэш)
+	name       string               // имя кэша для логирования
 }
 
 func newSyncCache[T any]() *syncCache[T] {
-	return &syncCache[T]{items: make(map[string]T)}
+	return &syncCache[T]{
+		items:      make(map[string]T),
+		lastAccess: make(map[string]time.Time),
+	}
 }
 
-// get returns the value for key (if present).
+// newSyncCacheWithTTL создаёт кэш с автоматической очисткой по TTL.
+// evictInterval — как часто проверять на устаревшие записи.
+func newSyncCacheWithTTL[T any](name string, ttl, evictInterval time.Duration) *syncCache[T] {
+	c := &syncCache[T]{
+		items:      make(map[string]T),
+		lastAccess: make(map[string]time.Time),
+		ttl:        ttl,
+		name:       name,
+	}
+
+	// Фоновая горутина для периодической очистки
+	go func() {
+		ticker := time.NewTicker(evictInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			evicted := c.evictStale()
+			if evicted > 0 {
+				log.Printf("[%s_CACHE] TTL eviction: удалено %d записей, осталось %d", c.name, evicted, c.len())
+			}
+		}
+	}()
+
+	return c
+}
+
+// get returns the value for key (if present) and updates last access time.
 func (c *syncCache[T]) get(key string) (T, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	v, ok := c.items[key]
+	c.mu.RUnlock()
+
+	if ok && c.ttl > 0 {
+		c.mu.Lock()
+		c.lastAccess[key] = time.Now()
+		c.mu.Unlock()
+	}
+
 	return v, ok
 }
 
@@ -26,6 +68,7 @@ func (c *syncCache[T]) set(key string, value T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.items[key] = value
+	c.lastAccess[key] = time.Now()
 }
 
 // getOrCreate returns existing value or creates one using create func.
@@ -35,6 +78,12 @@ func (c *syncCache[T]) getOrCreate(key string, create func() (T, error)) (T, err
 	c.mu.RLock()
 	if v, ok := c.items[key]; ok {
 		c.mu.RUnlock()
+		// Update access time outside read lock
+		if c.ttl > 0 {
+			c.mu.Lock()
+			c.lastAccess[key] = time.Now()
+			c.mu.Unlock()
+		}
 		return v, nil
 	}
 	c.mu.RUnlock()
@@ -45,6 +94,7 @@ func (c *syncCache[T]) getOrCreate(key string, create func() (T, error)) (T, err
 
 	// Double-check after acquiring write lock
 	if v, ok := c.items[key]; ok {
+		c.lastAccess[key] = time.Now()
 		return v, nil
 	}
 
@@ -54,6 +104,7 @@ func (c *syncCache[T]) getOrCreate(key string, create func() (T, error)) (T, err
 		return zero, err
 	}
 	c.items[key] = v
+	c.lastAccess[key] = time.Now()
 	return v, nil
 }
 
@@ -63,6 +114,7 @@ func (c *syncCache[T]) remove(key string) bool {
 	defer c.mu.Unlock()
 	_, existed := c.items[key]
 	delete(c.items, key)
+	delete(c.lastAccess, key)
 	return existed
 }
 
@@ -72,6 +124,7 @@ func (c *syncCache[T]) clear() int {
 	defer c.mu.Unlock()
 	n := len(c.items)
 	c.items = make(map[string]T)
+	c.lastAccess = make(map[string]time.Time)
 	return n
 }
 
@@ -91,4 +144,27 @@ func (c *syncCache[T]) keys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// evictStale удаляет записи, к которым не обращались дольше TTL.
+func (c *syncCache[T]) evictStale() int {
+	if c.ttl == 0 {
+		return 0
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	cutoff := time.Now().Add(-c.ttl)
+	evicted := 0
+
+	for key, lastAccess := range c.lastAccess {
+		if lastAccess.Before(cutoff) {
+			delete(c.items, key)
+			delete(c.lastAccess, key)
+			evicted++
+		}
+	}
+
+	return evicted
 }

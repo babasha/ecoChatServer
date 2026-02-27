@@ -10,18 +10,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestADKAutoResponderIntegration тестирует полный flow AutoResponder
+// TestADKAutoResponderIntegration tests the full AutoResponder flow
 func TestADKAutoResponderIntegration(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
-	cfg.DelaySeconds = 0 // Без задержки для тестов
+	cfg.DelaySeconds = 0
 
 	ar, err := NewADKAutoResponderV2(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create ADK AutoResponder: %v", err)
 	}
 
-	// Создаём тестовый чат
 	chat := &models.Chat{
 		ID:                   uuid.New(),
 		Source:               "telegram",
@@ -30,26 +29,24 @@ func TestADKAutoResponderIntegration(t *testing.T) {
 		Metadata:             make(map[string]interface{}),
 	}
 
-	// Создаём тестовое сообщение от пользователя
+	// Zefir-specific question
 	userMsg := &models.Message{
 		ID:        uuid.New(),
 		ChatID:    chat.ID,
-		Content:   "Привет! Расскажи о доставке",
+		Content:   "What humidity does a monstera need?",
 		Sender:    "user",
 		SenderID:  uuid.New(),
 		Timestamp: time.Now(),
 		Type:      "text",
 	}
 
-	t.Log("📨 Отправляем сообщение агенту:", userMsg.Content)
+	t.Log("Sending message:", userMsg.Content)
 
-	// Обрабатываем сообщение
 	response, err := ar.ProcessMessage(ctx, chat, userMsg)
 	if err != nil {
 		t.Fatalf("ProcessMessage failed: %v", err)
 	}
 
-	// Проверяем ответ
 	if response == nil {
 		t.Fatal("Expected response, got nil")
 	}
@@ -75,11 +72,11 @@ func TestADKAutoResponderIntegration(t *testing.T) {
 		t.Errorf("Expected provider='adk-v2', got '%v'", provider)
 	}
 
-	t.Log("✅ Агент ответил:", truncate(response.Content, 100))
-	t.Log("✅ Интеграционный тест прошёл успешно!")
+	t.Log("Agent response:", truncate(response.Content, 100))
+	t.Log("Integration test passed!")
 }
 
-// TestADKAutoResponderToolUsage тестирует использование инструментов
+// TestADKAutoResponderToolUsage tests that tools are invoked
 func TestADKAutoResponderToolUsage(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
@@ -98,18 +95,18 @@ func TestADKAutoResponderToolUsage(t *testing.T) {
 		Metadata:             make(map[string]interface{}),
 	}
 
-	// Сообщение которое должно вызвать использование инструмента get_store_info
+	// Question that should trigger search_faq tool
 	userMsg := &models.Message{
 		ID:        uuid.New(),
 		ChatID:    chat.ID,
-		Content:   "Какая стоимость доставки?",
+		Content:   "Is Zefir free?",
 		Sender:    "user",
 		SenderID:  uuid.New(),
 		Timestamp: time.Now(),
 		Type:      "text",
 	}
 
-	t.Log("📨 Вопрос о доставке:", userMsg.Content)
+	t.Log("FAQ question:", userMsg.Content)
 
 	response, err := ar.ProcessMessage(ctx, chat, userMsg)
 	if err != nil {
@@ -120,16 +117,14 @@ func TestADKAutoResponderToolUsage(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	t.Log("✅ Ответ агента:", truncate(response.Content, 200))
+	t.Log("Agent response:", truncate(response.Content, 200))
 
-	// Проверяем, что ответ содержит информацию о доставке
-	// (это базовый тест, для полной проверки нужен настоящий API ключ)
 	if response.Content == "" {
-		t.Error("Expected non-empty response about delivery")
+		t.Error("Expected non-empty response about Zefir pricing")
 	}
 }
 
-// TestADKAutoResponderEscalation тестирует механизм эскалации
+// TestADKAutoResponderEscalation tests the escalation mechanism
 func TestADKAutoResponderEscalation(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
@@ -148,18 +143,18 @@ func TestADKAutoResponderEscalation(t *testing.T) {
 		Metadata:             make(map[string]interface{}),
 	}
 
-	// Сообщение которое может вызвать эскалацию (жалоба)
+	// Complaint that might trigger escalation
 	userMsg := &models.Message{
 		ID:        uuid.New(),
 		ChatID:    chat.ID,
-		Content:   "Я очень недоволен качеством продуктов! Хочу вернуть деньги!",
+		Content:   "My sensor broke and I want a refund! This is unacceptable!",
 		Sender:    "user",
 		SenderID:  uuid.New(),
 		Timestamp: time.Now(),
 		Type:      "text",
 	}
 
-	t.Log("📨 Жалоба пользователя:", userMsg.Content)
+	t.Log("Complaint:", userMsg.Content)
 
 	response, err := ar.ProcessMessage(ctx, chat, userMsg)
 	if err != nil {
@@ -170,28 +165,26 @@ func TestADKAutoResponderEscalation(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	t.Log("✅ Ответ агента:", truncate(response.Content, 200))
+	t.Log("Agent response:", truncate(response.Content, 200))
 
-	// Проверяем, была ли создана эскалация
 	escalation, _ := ar.escalations.get(chat.ID.String())
 	if escalation != nil {
-		t.Log("✅ Эскалация создана для чата", chat.ID)
+		t.Log("Escalation created for chat", chat.ID)
 	} else {
-		t.Log("ℹ️  Эскалация не создана (зависит от ответа LLM)")
+		t.Log("No escalation (depends on LLM response)")
 	}
 }
 
-// TestADKAutoResponderSkipConditions тестирует условия пропуска обработки
+// TestADKAutoResponderSkipConditions tests message skip conditions
 func TestADKAutoResponderSkipConditions(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
 
 	ar, err := NewADKAutoResponderV2(ctx, cfg)
 	if err != nil {
-		t.Fatalf("Failed to create ADK AutoResponder: %v", err)
+		t.Fatalf("Failed to create AutoResponder: %v", err)
 	}
 
-	// Тест 1: Disabled AutoResponder
 	t.Run("Disabled", func(t *testing.T) {
 		ar.config.Enabled = false
 		chat := &models.Chat{ID: uuid.New(), AutoResponderEnabled: true}
@@ -204,11 +197,10 @@ func TestADKAutoResponderSkipConditions(t *testing.T) {
 		if response != nil {
 			t.Error("Should return nil when disabled")
 		}
-		ar.config.Enabled = true // Restore
-		t.Log("✅ Пропуск при disabled работает")
+		ar.config.Enabled = true
+		t.Log("Skip when disabled works")
 	})
 
-	// Тест 2: Admin message
 	t.Run("AdminMessage", func(t *testing.T) {
 		chat := &models.Chat{ID: uuid.New(), AutoResponderEnabled: true}
 		msg := &models.Message{Sender: "admin", Content: "Test"}
@@ -220,10 +212,9 @@ func TestADKAutoResponderSkipConditions(t *testing.T) {
 		if response != nil {
 			t.Error("Should return nil for admin messages")
 		}
-		t.Log("✅ Пропуск сообщений от admin работает")
+		t.Log("Skip admin messages works")
 	})
 
-	// Тест 3: Assigned chat
 	t.Run("AssignedChat", func(t *testing.T) {
 		assignedID := uuid.New()
 		chat := &models.Chat{
@@ -240,10 +231,9 @@ func TestADKAutoResponderSkipConditions(t *testing.T) {
 		if response != nil {
 			t.Error("Should return nil for assigned chats")
 		}
-		t.Log("✅ Пропуск назначенных чатов работает")
+		t.Log("Skip assigned chats works")
 	})
 
-	// Тест 4: AutoResponder disabled for chat
 	t.Run("ChatAutoResponderDisabled", func(t *testing.T) {
 		chat := &models.Chat{
 			ID:                   uuid.New(),
@@ -258,19 +248,18 @@ func TestADKAutoResponderSkipConditions(t *testing.T) {
 		if response != nil {
 			t.Error("Should return nil when chat autoresponder disabled")
 		}
-		t.Log("✅ Пропуск при отключенном автоответчике для чата работает")
+		t.Log("Skip disabled chat autoresponder works")
 	})
 
-	t.Log("✅ Все условия пропуска работают корректно!")
+	t.Log("All skip conditions work correctly!")
 }
 
-// TestADKAutoResponderMultiAgent тестирует мульти-агентный режим
+// TestADKAutoResponderMultiAgent tests multi-agent mode
 func TestADKAutoResponderMultiAgent(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
 	cfg.DelaySeconds = 0
 
-	// Создаём AutoResponder в мульти-агентном режиме
 	ar, err := NewADKAutoResponderV2MultiAgent(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Failed to create Multi-Agent AutoResponder: %v", err)
@@ -288,19 +277,19 @@ func TestADKAutoResponderMultiAgent(t *testing.T) {
 		Metadata:             make(map[string]interface{}),
 	}
 
-	// Тест 1: Вопрос о продуктах (должен пойти в ProductExpert)
-	t.Run("ProductQuestion", func(t *testing.T) {
+	// Plant question → should route to PlantExpert
+	t.Run("PlantQuestion", func(t *testing.T) {
 		userMsg := &models.Message{
 			ID:        uuid.New(),
 			ChatID:    chat.ID,
-			Content:   "Какое вино у вас есть?",
+			Content:   "What humidity does a monstera need?",
 			Sender:    "user",
 			SenderID:  uuid.New(),
 			Timestamp: time.Now(),
 			Type:      "text",
 		}
 
-		t.Log("📨 Вопрос о продуктах:", userMsg.Content)
+		t.Log("Plant question:", userMsg.Content)
 
 		response, err := ar.ProcessMessage(ctx, chat, userMsg)
 		if err != nil {
@@ -311,27 +300,26 @@ func TestADKAutoResponderMultiAgent(t *testing.T) {
 			t.Fatal("Expected response, got nil")
 		}
 
-		// Проверяем режим в metadata
 		if agentMode, ok := response.Metadata["agentMode"].(string); !ok || agentMode != "multi-agent" {
 			t.Errorf("Expected agentMode='multi-agent', got '%v'", agentMode)
 		}
 
-		t.Log("✅ Ответ (multi-agent):", truncate(response.Content, 150))
+		t.Log("Response (multi-agent):", truncate(response.Content, 150))
 	})
 
-	// Тест 2: Вопрос о доставке (должен пойти в SupportSpecialist)
-	t.Run("SupportQuestion", func(t *testing.T) {
+	// Device question → should route to DeviceSpecialist
+	t.Run("DeviceQuestion", func(t *testing.T) {
 		userMsg := &models.Message{
 			ID:        uuid.New(),
 			ChatID:    chat.ID,
-			Content:   "Как работает доставка?",
+			Content:   "My sensor won't connect via Bluetooth",
 			Sender:    "user",
 			SenderID:  uuid.New(),
 			Timestamp: time.Now(),
 			Type:      "text",
 		}
 
-		t.Log("📨 Вопрос о поддержке:", userMsg.Content)
+		t.Log("Device question:", userMsg.Content)
 
 		response, err := ar.ProcessMessage(ctx, chat, userMsg)
 		if err != nil {
@@ -342,13 +330,13 @@ func TestADKAutoResponderMultiAgent(t *testing.T) {
 			t.Fatal("Expected response, got nil")
 		}
 
-		t.Log("✅ Ответ (multi-agent):", truncate(response.Content, 150))
+		t.Log("Response (multi-agent):", truncate(response.Content, 150))
 	})
 
-	t.Log("✅ Мульти-агентный режим работает!")
+	t.Log("Multi-agent mode works!")
 }
 
-// TestADKAutoResponderModeSwitch тестирует переключение режимов
+// TestADKAutoResponderModeSwitch tests switching between modes
 func TestADKAutoResponderModeSwitch(t *testing.T) {
 	ctx := context.Background()
 	cfg := llm.GetDefaultConfig()
@@ -358,7 +346,6 @@ func TestADKAutoResponderModeSwitch(t *testing.T) {
 		t.Fatalf("Failed to create AutoResponder: %v", err)
 	}
 
-	// Изначально single-agent
 	if ar.useMultiAgent {
 		t.Error("Expected single-agent mode by default")
 	}
@@ -366,7 +353,6 @@ func TestADKAutoResponderModeSwitch(t *testing.T) {
 		t.Errorf("Expected getMode()='single-agent', got '%s'", ar.getMode())
 	}
 
-	// Переключаем на multi-agent
 	ar.EnableMultiAgent(true)
 	if !ar.useMultiAgent {
 		t.Error("Expected multi-agent mode after EnableMultiAgent(true)")
@@ -375,11 +361,10 @@ func TestADKAutoResponderModeSwitch(t *testing.T) {
 		t.Errorf("Expected getMode()='multi-agent', got '%s'", ar.getMode())
 	}
 
-	// Переключаем обратно
 	ar.EnableMultiAgent(false)
 	if ar.useMultiAgent {
 		t.Error("Expected single-agent mode after EnableMultiAgent(false)")
 	}
 
-	t.Log("✅ Переключение режимов работает!")
+	t.Log("Mode switching works!")
 }
