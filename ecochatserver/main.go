@@ -277,7 +277,7 @@ func setupCORS(r *gin.Engine) {
 		logWarning("ВНИМАНИЕ: Разрешены все источники CORS (ALLOW_ALL_ORIGINS=true)")
 	} else {
 		// Разрешаем только указанные домены
-		allow := []string{"http://localhost:3000"}
+		allow := []string{"http://localhost:3000", "http://localhost:1420"}
 
 		// Добавляем адреса из переменных окружения
 		for _, key := range []string{"FRONTEND_URL", "ADDITIONAL_ALLOWED_ORIGINS"} {
