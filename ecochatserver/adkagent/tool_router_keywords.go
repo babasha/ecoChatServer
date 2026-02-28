@@ -74,6 +74,9 @@ var synonyms = map[string]string{
 	"безопасность": "security",
 	"конфиденциальность": "privacy",
 	"шифрование":   "encryption",
+	"чип":          "chip",
+	"процессор":    "chip",
+	"характеристики": "specs",
 	"уведомление":  "notification",
 	"уведомления":  "notification",
 	"оповещение":   "notification",
@@ -211,6 +214,8 @@ var synonyms = map[string]string{
 	"支持":   "support",
 	"帮助":   "help",
 	"安全":   "security",
+	"芯片":   "chip",
+	"规格":   "specs",
 	"通知":   "notification",
 	"免费":   "free",
 	"功能":   "feature",
@@ -302,6 +307,9 @@ var toolParamKeywords = map[string][]string{
 	},
 	"get_security_info": {
 		"privacy", "encryption", "data_storage", "permissions",
+	},
+	"get_hardware_specs": {
+		"chip", "sensor", "battery", "pins", "wireless",
 	},
 	"get_plants_by_category": {
 		"tropical", "succulent", "herb", "vegetable", "flowering",

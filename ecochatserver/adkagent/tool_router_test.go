@@ -74,6 +74,7 @@ func createTestRouter() *ToolRouter {
 		mockTool("get_setup_guide", "Setup guide: overview/unboxing/ble_pairing/wifi_config"),
 		mockTool("troubleshoot_device", "Troubleshoot sensor issues"),
 		mockTool("get_mesh_info", "Mesh network info: overview/root_node/esp_now/topology"),
+		mockTool("get_hardware_specs", "Hardware specs: chip/sensor/battery/pins/wireless"),
 	}
 
 	supportTools := []tool.Tool{
@@ -131,9 +132,9 @@ func TestToolRouterPlantMessageEN(t *testing.T) {
 	if !hasToolNamed(tools, "search_faq") {
 		t.Error("expected search_faq tool (always included)")
 	}
-	// Should NOT include all 16 tools
-	if len(tools) >= 16 {
-		t.Errorf("expected fewer than 16 tools, got %d: %v", len(tools), toolNames(tools))
+	// Should NOT include all 17 tools
+	if len(tools) >= 17 {
+		t.Errorf("expected fewer than 17 tools, got %d: %v", len(tools), toolNames(tools))
 	}
 	t.Logf("Plant query selected %d tools: %v", len(tools), toolNames(tools))
 }
@@ -154,9 +155,9 @@ func TestToolRouterDeviceMessageRU(t *testing.T) {
 	if !hasToolNamed(tools, "get_user_devices") {
 		t.Error("expected get_user_devices tool for device query in Russian")
 	}
-	// Should NOT include all 16 tools
-	if len(tools) >= 16 {
-		t.Errorf("expected fewer than 16 tools, got %d: %v", len(tools), toolNames(tools))
+	// Should NOT include all 17 tools
+	if len(tools) >= 17 {
+		t.Errorf("expected fewer than 17 tools, got %d: %v", len(tools), toolNames(tools))
 	}
 	t.Logf("Device query (RU) selected %d tools: %v", len(tools), toolNames(tools))
 }
@@ -174,9 +175,9 @@ func TestToolRouterSupportMessage(t *testing.T) {
 	if !hasToolNamed(tools, "search_faq") {
 		t.Error("expected search_faq tool for support query")
 	}
-	// Should NOT include all 16 tools
-	if len(tools) >= 16 {
-		t.Errorf("expected fewer than 16 tools, got %d: %v", len(tools), toolNames(tools))
+	// Should NOT include all 17 tools
+	if len(tools) >= 17 {
+		t.Errorf("expected fewer than 17 tools, got %d: %v", len(tools), toolNames(tools))
 	}
 	t.Logf("Support query selected %d tools: %v", len(tools), toolNames(tools))
 }
@@ -191,8 +192,8 @@ func TestToolRouterFallbackAmbiguous(t *testing.T) {
 	}
 
 	// "привет" is a stop word → no keywords match → fallback to all tools
-	if len(tools) != 16 {
-		t.Errorf("expected all 16 tools for ambiguous query, got %d: %v", len(tools), toolNames(tools))
+	if len(tools) != 17 {
+		t.Errorf("expected all 17 tools for ambiguous query, got %d: %v", len(tools), toolNames(tools))
 	}
 	t.Logf("Ambiguous query selected %d tools (fallback)", len(tools))
 }
@@ -207,8 +208,8 @@ func TestToolRouterEmptyMessage(t *testing.T) {
 	}
 
 	// Empty message → fallback to all tools
-	if len(tools) != 16 {
-		t.Errorf("expected all 16 tools for empty message, got %d", len(tools))
+	if len(tools) != 17 {
+		t.Errorf("expected all 17 tools for empty message, got %d", len(tools))
 	}
 }
 
@@ -247,8 +248,8 @@ func TestToolRouterPlantQueryRU(t *testing.T) {
 	if !hasToolNamed(tools, "search_plant") {
 		t.Error("expected search_plant for Russian plant query")
 	}
-	if len(tools) >= 16 {
-		t.Errorf("expected fewer than 16 tools, got %d: %v", len(tools), toolNames(tools))
+	if len(tools) >= 17 {
+		t.Errorf("expected fewer than 17 tools, got %d: %v", len(tools), toolNames(tools))
 	}
 	t.Logf("Plant query (RU) selected %d tools: %v", len(tools), toolNames(tools))
 }
@@ -265,8 +266,8 @@ func TestToolRouterDeviceQueryEN(t *testing.T) {
 	if !hasToolNamed(tools, "troubleshoot_device") {
 		t.Error("expected troubleshoot_device for English device query")
 	}
-	if len(tools) >= 16 {
-		t.Errorf("expected fewer than 16 tools, got %d: %v", len(tools), toolNames(tools))
+	if len(tools) >= 17 {
+		t.Errorf("expected fewer than 17 tools, got %d: %v", len(tools), toolNames(tools))
 	}
 	t.Logf("Device query (EN) selected %d tools: %v", len(tools), toolNames(tools))
 }
@@ -434,10 +435,10 @@ func TestToolRouterQualityAnalysis(t *testing.T) {
 		{
 			name:           "9. Greeting fallback",
 			query:          "Добрый день!",
-			expectedGroups: []string{}, // empty = expect fallback to all 16
+			expectedGroups: []string{}, // empty = expect fallback to all 17
 			mustHaveTools:  []string{"search_faq", "search_plant", "troubleshoot_device"},
 			mustNotTools:   []string{},
-			maxTools:       16,
+			maxTools:       17,
 		},
 		{
 			name:           "10. ZH plant query",
@@ -446,6 +447,14 @@ func TestToolRouterQualityAnalysis(t *testing.T) {
 			mustHaveTools:  []string{"search_plant", "search_faq"},
 			mustNotTools:   []string{"get_mesh_info"},
 			maxTools:       12,
+		},
+		{
+			name:           "11. Hardware specs query",
+			query:          "Какой чип используется в датчике Zefir?",
+			expectedGroups: []string{"device"},
+			mustHaveTools:  []string{"get_hardware_specs", "search_faq"},
+			mustNotTools:   []string{"search_plant"},
+			maxTools:       8,
 		},
 	}
 
@@ -515,8 +524,8 @@ func TestToolRouterQualityAnalysis(t *testing.T) {
 				}
 			} else {
 				// Expect fallback
-				if len(tools) != 16 {
-					issues = append(issues, fmt.Sprintf("Expected fallback (16 tools), got %d", len(tools)))
+				if len(tools) != 17 {
+					issues = append(issues, fmt.Sprintf("Expected fallback (17 tools), got %d", len(tools)))
 					if verdict != "FAIL" {
 						verdict = "WARN"
 					}
@@ -549,8 +558,8 @@ func TestToolRouterQualityAnalysis(t *testing.T) {
 				scores["plant"], scores["device"], scores["support"], tr.threshold)
 			t.Logf("  Groups:   %v", selectedGroups)
 			t.Logf("  Tools:    %d → %v", len(tools), names)
-			t.Logf("  Savings:  %d/16 tools filtered = %.0f%% token savings",
-				16-len(tools), float64(16-len(tools))/16*100)
+			t.Logf("  Savings:  %d/17 tools filtered = %.0f%% token savings",
+				17-len(tools), float64(17-len(tools))/17*100)
 
 			if len(issues) > 0 {
 				for _, iss := range issues {
@@ -587,7 +596,7 @@ func detectGroups(tools []tool.Tool) []string {
 	deviceTools := map[string]bool{
 		"get_user_devices": true, "get_sensor_reading": true,
 		"get_setup_guide": true, "troubleshoot_device": true,
-		"get_mesh_info": true,
+		"get_mesh_info": true, "get_hardware_specs": true,
 	}
 	supportTools := map[string]bool{
 		"search_faq": true, "get_app_info": true,

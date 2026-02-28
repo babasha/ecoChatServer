@@ -14,7 +14,7 @@ import (
 //
 // Scores 3 tool groups (plant, device, support) against user message tokens.
 // Only tools from matching groups are sent to the LLM, saving ~500-700 tokens.
-// Fallback: if no group matches, ALL 16 tools are returned (safe default).
+// Fallback: if no group matches, ALL 17 tools are returned (safe default).
 // search_faq is always included as universal fallback tool.
 // ============================================================================
 
@@ -61,6 +61,7 @@ func NewToolRouter(plantTools, deviceTools, supportTools []tool.Tool) *ToolRoute
 		"pair", "pairing", "bluetooth", "ble", "wifi", "mesh", "esp32",
 		"firmware", "troubleshoot", "offline", "reading", "led",
 		"calibrate", "probe", "usb", "topology", "esp_now", "root_node",
+		"specs", "hardware", "chip", "gpio", "adc",
 	}, 1.5)
 
 	addGroupLevelKeywords(supportKW, []string{
@@ -97,6 +98,7 @@ func NewToolRouter(plantTools, deviceTools, supportTools []tool.Tool) *ToolRoute
 		"pair", "pairing", "bluetooth", "ble", "wifi", "mesh", "esp32",
 		"firmware", "troubleshoot", "offline", "reading", "led",
 		"calibrate", "probe", "usb", "topology", "network",
+		"specs", "hardware", "gpio", "adc", "chip",
 	}
 	supportExclusive := []string{
 		"app", "application", "contact", "support", "help", "faq",

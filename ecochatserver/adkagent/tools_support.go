@@ -73,7 +73,7 @@ var faqDatabase = []faqEntry{
 	{question: "What is Zefir?", answer: "Open-source IoT plant monitoring: ESP32-C3 sensors measure soil moisture + temp, mesh network, cross-platform app (Tauri+Preact).", category: "general", tags: []string{"zefir", "what", "about", "overview"}},
 	{question: "Is Zefir free?", answer: "Open-source (MIT). App + firmware free. Buy/build ESP32-C3 sensor. Cloud free for ≤10 devices.", category: "general", tags: []string{"free", "cost", "price", "open-source"}},
 	{question: "What platforms?", answer: "Windows, macOS, Linux (Tauri), iOS, Android. Web: zefir.app.", category: "general", tags: []string{"platform", "ios", "android", "windows", "mac", "linux"}},
-	{question: "How many plants?", answer: "1 sensor = 1 plant. Up to 10 per mesh, unlimited per account.", category: "general", tags: []string{"plants", "limit", "how many", "sensors"}},
+	{question: "How many plants?", answer: "1 sensor = 1 plant. Up to 20 per mesh (ESP-NOW hardware limit), unlimited per account.", category: "general", tags: []string{"plants", "limit", "how many", "sensors"}},
 	{question: "Languages?", answer: "6: Russian, English, German, Spanish, Portuguese, Chinese.", category: "general", tags: []string{"language", "russian", "english", "german", "spanish"}},
 	{question: "Need internet?", answer: "For cloud sync yes. Sensors store locally ~7 days, sync when back online. Mesh works offline, only ROOT needs WiFi.", category: "general", tags: []string{"internet", "offline", "wifi", "cloud"}},
 	{question: "Outdoor use?", answer: "Indoor only (IP44 splash-proof). Outdoor needs weatherproof enclosure. Probe is water-resistant.", category: "general", tags: []string{"outdoor", "waterproof", "garden", "outside"}},
@@ -81,7 +81,7 @@ var faqDatabase = []faqEntry{
 	// SENSORS (8)
 	{question: "What sensor?", answer: "ESP32-C3 + capacitive soil moisture sensor. WiFi + BLE, RISC-V, ultra-low power.", category: "sensors", tags: []string{"sensor", "esp32", "hardware", "chip"}},
 	{question: "Accuracy?", answer: "±3% moisture in typical soil. Calibrate for your soil: Device Settings → Calibrate.", category: "sensors", tags: []string{"accuracy", "precision", "moisture", "calibrate"}},
-	{question: "Battery life?", answer: "15min=2mo, 30min(default)=4mo, 1hr=6mo. ROOT ~2mo. Cold reduces life.", category: "sensors", tags: []string{"battery", "life", "charge", "power"}},
+	{question: "Battery life?", answer: "NODE: ~21 months (2000mAh, 15min), deep sleep ~10μA. ROOT: ~40 days (WiFi always on, 5-10mA). Cold reduces life. Interval: 15min-6hr.", category: "sensors", tags: []string{"battery", "life", "charge", "power"}},
 	{question: "How to charge?", answer: "USB-C. White LED=charging, green=full. ~2 hours. Any 5V charger.", category: "sensors", tags: []string{"charge", "usb", "power", "cable"}},
 	{question: "DIY sensor?", answer: "Yes, open-source on GitHub. Need: ESP32-C3 board, capacitive sensor, LiPo battery, 3D case (STL provided).", category: "sensors", tags: []string{"diy", "build", "custom", "open-source", "hardware"}},
 	{question: "Reading interval?", answer: "Default 30min. Configurable 15min–6hr in Device Settings. More frequent = more drain.", category: "sensors", tags: []string{"interval", "frequency", "reading", "schedule"}},
@@ -93,7 +93,7 @@ var faqDatabase = []faqEntry{
 	{question: "BLE won't pair?", answer: "Charge sensor, BT ON, hold 3s→BLUE blink, <1m distance. Android: Location permission. iOS: BLE permission.", category: "setup", tags: []string{"bluetooth", "ble", "pair", "connect", "not found"}},
 	{question: "WiFi failed?", answer: "2.4GHz ONLY (no 5GHz). Check password, WPA2/3. Dual-band: disable band steering.", category: "setup", tags: []string{"wifi", "network", "connect", "fail", "password"}},
 	{question: "Add second sensor?", answer: "Same process. Auto-joins mesh as NODE. Place within 10m of existing sensor.", category: "setup", tags: []string{"second", "add", "another", "new", "mesh"}},
-	{question: "Factory reset?", answer: "Hold button 10s → all LEDs flash. Erases WiFi, mesh, plant config.", category: "setup", tags: []string{"reset", "factory", "default", "erase", "clear"}},
+	{question: "Factory reset?", answer: "Hold button (GPIO9) 10s. NVS cleared (WiFi, ownership, auth token). Reboots to Provisioning, BLE advertises as 'enddelIOT-XXXX'.", category: "setup", tags: []string{"reset", "factory", "default", "erase", "clear"}},
 	{question: "Move sensor?", answer: "App: device → Edit → Change Plant. Thresholds auto-update.", category: "setup", tags: []string{"move", "change", "plant", "reassign", "different"}},
 
 	// PLANTS (6)
@@ -120,7 +120,7 @@ var faqDatabase = []faqEntry{
 
 	// SECURITY (5)
 	{question: "Data private?", answer: "Only sensor data collected. TLS encrypted. No data sold. Email only for account.", category: "security", tags: []string{"privacy", "data", "private", "personal"}},
-	{question: "Encryption?", answer: "TLS 1.3 transit, CCMP mesh, AES-256 at rest, SSP for BLE.", category: "security", tags: []string{"encrypt", "tls", "security", "protection"}},
+	{question: "Encryption?", answer: "AES-256-GCM on ESP-NOW mesh (app-level). ECDH P-256 for BLE provisioning. TLS 1.3 for server. AES-256 at rest.", category: "security", tags: []string{"encrypt", "tls", "security", "protection"}},
 	{question: "Data location?", answer: "Railway EU servers, PostgreSQL encrypted. Delete anytime in Account Settings.", category: "security", tags: []string{"storage", "server", "where", "cloud", "database"}},
 	{question: "Others see sensors?", answer: "No, private. Optional read-only share links for specific devices.", category: "security", tags: []string{"share", "access", "private", "others", "see"}},
 	{question: "App permissions?", answer: "BLE: pairing. Location(Android): OS req for BLE scan. Internet: sync. Camera: optional photos.", category: "security", tags: []string{"permission", "bluetooth", "location", "camera", "access"}},
@@ -128,7 +128,7 @@ var faqDatabase = []faqEntry{
 	// TROUBLESHOOTING (7)
 	{question: "Sensor offline?", answer: "Check battery (press button), WiFi/mesh status, distance. Dead battery: charge 30min. Password changed: factory reset.", category: "troubleshooting", tags: []string{"offline", "disconnected", "not working", "down"}},
 	{question: "Wrong moisture?", answer: "Wait 5min to stabilize. Soil type affects readings. Recalibrate: Device Settings. Always 0/100: check probe.", category: "troubleshooting", tags: []string{"wrong", "incorrect", "reading", "moisture", "calibrate"}},
-	{question: "Battery drain?", answer: "Normal 3-6mo at 30min. Fast drain: reduce interval, weak WiFi, cold, mesh relay.", category: "troubleshooting", tags: []string{"battery", "drain", "fast", "power", "life"}},
+	{question: "Battery drain?", answer: "NODE: ~21mo at 15min (deep sleep ~10μA). ROOT: ~40 days (WiFi 5-10mA). Fast drain: reduce interval, weak WiFi, cold, mesh relay.", category: "troubleshooting", tags: []string{"battery", "drain", "fast", "power", "life"}},
 	{question: "App slow?", answer: "Restart app, clear cache, update, check internet.", category: "troubleshooting", tags: []string{"slow", "lag", "freeze", "app", "performance"}},
 	{question: "Lost sensor?", answer: "App shows last location. MAC on sticker inside case. Remove from account if lost.", category: "troubleshooting", tags: []string{"lost", "find", "missing", "sensor", "location"}},
 	{question: "Sensor in water?", answer: "NOT waterproof (IP44). Remove, dry 48h, don't charge wet. Probe is water-resistant.", category: "troubleshooting", tags: []string{"water", "wet", "dropped", "waterproof", "damage"}},
@@ -404,7 +404,7 @@ func createGetSecurityInfoTool() (tool.Tool, error) {
 			}
 
 			if topic == "all" || topic == "encryption" {
-				result += "ENCRYPTION: TLS 1.3 transit, CCMP mesh, AES-256 at rest, SSP for BLE, HTTPS+API key.\n"
+				result += "ENCRYPTION: AES-256-GCM on ESP-NOW mesh (app-level). ECDH P-256 for BLE provisioning. TLS 1.3 for server. AES-256 at rest.\n"
 			}
 
 			if topic == "all" || topic == "data_storage" {
