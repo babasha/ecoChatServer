@@ -87,5 +87,5 @@ require (
 	rsc.io/ordered v1.1.1 // indirect
 )
 
-// Use forked ADK with OpenAI support (local version with Qwen 3.5 compatibility)
-replace google.golang.org/adk => /Users/egor/Documents/GitHub/adk-go_openai
+// Use forked ADK with OpenAI + Qwen 3.5 support
+replace google.golang.org/adk => github.com/babasha/adk-go_openai v0.0.0-20260306181342-bf7db9b633d8
