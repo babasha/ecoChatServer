@@ -129,7 +129,7 @@ func (oa *OrchestratorAgent) createPlantAgent() (agent.Agent, error) {
 		Tools:       plantTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
-			MaxOutputTokens: 350,
+			MaxOutputTokens: 4096, // Thinking models need ~800-1000 tokens for <think> block
 		},
 	})
 	if err != nil {
@@ -160,7 +160,7 @@ func (oa *OrchestratorAgent) createDeviceAgent(zefirClient *ZefirClient, userIDP
 		Tools:       deviceTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.2),
-			MaxOutputTokens: 350,
+			MaxOutputTokens: 4096, // Thinking models need ~800-1000 tokens for <think> block
 		},
 	})
 	if err != nil {
@@ -191,7 +191,7 @@ func (oa *OrchestratorAgent) createSupportAgent() (agent.Agent, error) {
 		Tools:       supportTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
-			MaxOutputTokens: 300,
+			MaxOutputTokens: 4096, // Thinking models need ~800-1000 tokens for <think> block
 		},
 	})
 	if err != nil {
@@ -223,7 +223,7 @@ func (oa *OrchestratorAgent) createOrchestrator() (agent.Agent, error) {
 		Tools:       agentTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.1),
-			MaxOutputTokens: 30,
+			MaxOutputTokens: 2048, // Orchestrator routes, but thinking models still need tokens for <think> block
 		},
 	})
 	if err != nil {

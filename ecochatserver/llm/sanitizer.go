@@ -40,7 +40,11 @@ var escalationTriggers = []string{
 }
 
 // sanitize проверяет текст LLM. escalate=true => нужен живой оператор.
+// Strips <think> tags first to prevent false triggers from reasoning content.
 func sanitize(resp string) (clean string, escalate bool) {
+	// Strip <think> tags from reasoning models (Qwen 3.5, QwQ) before checking.
+	// Otherwise, reasoning like "I don't know if the user means..." triggers escalation.
+	resp = stripThinkTags(resp)
 	lower := strings.ToLower(resp)
 
 	// Проверяем запрещенные термины (раскрытие природы AI)

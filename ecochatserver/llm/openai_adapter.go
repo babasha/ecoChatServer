@@ -8,9 +8,32 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// Reasoning models (Qwen 3.5, QwQ) wrap chain-of-thought in <think> tags.
+// These must be stripped from all responses.
+var (
+	thinkTagRe              = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
+	unclosedThinkTagRe      = regexp.MustCompile(`(?s)<think>.*$`)
+	orphanedCloseThinkTagRe = regexp.MustCompile(`^\s*</think>\s*`)
+)
+
+// stripThinkTags removes <think>...</think> blocks from reasoning model output.
+// Also strips orphaned </think> tags that appear when reasoning spans across tool-call turns.
+func stripThinkTags(text string) string {
+	if strings.HasPrefix(strings.TrimSpace(text), "</think>") {
+		text = orphanedCloseThinkTagRe.ReplaceAllString(text, "")
+	}
+	if !strings.Contains(text, "<think>") {
+		return strings.TrimSpace(text)
+	}
+	result := thinkTagRe.ReplaceAllString(text, "")
+	result = unclosedThinkTagRe.ReplaceAllString(result, "")
+	return strings.TrimSpace(result)
+}
 
 // OpenAIAdapter реализует Provider для OpenAI API (и LM Studio)
 // Совместим с:
@@ -308,6 +331,8 @@ func (a *OpenAIAdapter) TranslateText(
 
 // cleanJSONResponse очищает ответ LLM от markdown и лишних символов
 func cleanJSONResponse(text string) string {
+	// Strip <think> tags first (Qwen 3.5 reasoning content)
+	text = stripThinkTags(text)
 	// Убираем markdown код блоки (```json ... ``` или ``` ... ```)
 	text = strings.TrimSpace(text)
 
@@ -576,8 +601,10 @@ func (a *OpenAIAdapter) parseResponse(resp *openAIChatResponse) *Response {
 	}
 
 	choice := resp.Choices[0]
+	// Strip <think> tags from reasoning models (Qwen 3.5, QwQ)
+	content := stripThinkTags(choice.Message.Content)
 	result := &Response{
-		Text:         choice.Message.Content,
+		Text:         content,
 		FinishReason: choice.FinishReason,
 		Usage: &Usage{
 			PromptTokens:     resp.Usage.PromptTokens,

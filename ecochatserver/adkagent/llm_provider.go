@@ -5,6 +5,7 @@ import (
 	"iter"
 	"log"
 	"os"
+	"time"
 
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
@@ -149,11 +150,13 @@ func newLMStudioModel(ctx context.Context, config *LLMConfig) (model.LLM, error)
 	debugMode := os.Getenv("LLM_DEBUG") == "true" || os.Getenv("ENVIRONMENT") != "production"
 
 	// LM Studio совместим с OpenAI API, используем openai.NewModel()
+	// Timeout увеличен: reasoning модели (Qwen 3.5) генерируют <think> блок перед ответом
 	lmStudioModel, err := openai.NewModel(config.Model, &openai.Config{
 		BaseURL:      config.BaseURL,
 		APIKey:       config.APIKey,
 		DebugLogging: debugMode,
 		Logger:       log.Default(),
+		Timeout:      3 * time.Minute,
 	})
 	if err != nil {
 		log.Printf("[ADK_LLM] ❌ Ошибка создания LM Studio модели: %v, fallback на Mock", err)

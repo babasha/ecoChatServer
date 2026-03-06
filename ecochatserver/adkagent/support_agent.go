@@ -93,7 +93,7 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 		Toolsets:    []tool.Toolset{toolRouter},
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
-			MaxOutputTokens: 200,
+			MaxOutputTokens: 4096, // Qwen 3.5 thinking uses ~800-1000 tokens before actual response
 			CandidateCount:  1,
 			TopP:            ptrFloat32(0.9),
 			TopK:            ptrFloat32(40),
