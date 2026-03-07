@@ -260,15 +260,19 @@ func InstagramOAuthCallback(c *gin.Context) {
 		redirectTo = igFrontendURL() + "/?session_token=" + url.QueryEscape(sessionToken)
 		log.Printf("InstagramOAuthCallback: логин через Instagram для %s, редирект → %s", admin.Email, redirectTo)
 	} else {
-		// Режим подключения Instagram: обновляем существующий session cookie
+		// Режим подключения Instagram
+		redirectTo = igFrontendURL() + "/settings?instagram_connected=true"
+
+		// Передаём сессионный токен через URL чтобы фронтенд мог восстановить сессию
+		// через Vercel прокси (cookie на домене фронтенда может быть потеряна после
+		// цепочки OAuth-редиректов через Facebook → бекенд → фронтенд)
 		if sessionToken, err := c.Cookie("session"); err == nil && sessionToken != "" {
-			domain := os.Getenv("COOKIE_DOMAIN")
-			cookieHeader := buildCookieHeader(sessionToken, true, domain)
-			c.Header("Set-Cookie", cookieHeader)
-			log.Println("InstagramOAuthCallback: session cookie обновлён с SameSite=None")
+			redirectTo += "&session_token=" + url.QueryEscape(sessionToken)
+			log.Println("InstagramOAuthCallback: session_token передан в URL для восстановления сессии")
+		} else {
+			log.Println("InstagramOAuthCallback: session cookie не найдена на домене бекенда, фронтенд должен использовать свою")
 		}
 
-		redirectTo = igFrontendURL() + "/settings?instagram_connected=true"
 		log.Printf("InstagramOAuthCallback: Instagram подключён, редирект → %s", redirectTo)
 	}
 
