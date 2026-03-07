@@ -162,6 +162,25 @@ func MeHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// WSTokenHandler возвращает короткоживущий токен для WebSocket подключения.
+// Используется когда фронтенд проксирует API через Vercel (same-origin cookies),
+// но WebSocket подключается напрямую к бекенду и не имеет доступа к cookie.
+// GET /api/auth/ws-token
+func WSTokenHandler(c *gin.Context) {
+	adminID, _ := c.Get("adminID")
+	clientID, _ := c.Get("clientID")
+	role, _ := c.Get("role")
+
+	token, err := middleware.GenerateToken(adminID.(string), clientID.(string), role.(string))
+	if err != nil {
+		log.Printf("WSTokenHandler: ошибка генерации токена: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token generation failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": token})
+}
+
 // LogoutHandler обрабатывает logout и удаляет session cookie
 // POST /api/auth/logout
 func LogoutHandler(c *gin.Context) {
