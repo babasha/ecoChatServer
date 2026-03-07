@@ -392,6 +392,10 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.GET("/instagram/oauth/init", handlers.InstagramOAuthInitiate)
 		api.GET("/instagram/oauth/callback", handlers.InstagramOAuthCallback)
 
+		// WhatsApp webhook
+		api.GET("/whatsapp/webhook", handlers.WhatsAppWebhookVerify)
+		api.POST("/whatsapp/webhook", handlers.WhatsAppWebhook)
+
 		// Виджетный API (публичный, для iframe/web widget + мягкий rate limit)
 		// Оставляем для обратной совместимости, но рекомендуем использовать WebSocket
 		widget := api.Group("/widget")
@@ -492,6 +496,12 @@ func setupAPIRoutes(r *gin.Engine) {
 			})
 		}
 	}
+
+	// Meta webhook endpoints — доступны без /api префикса (как требует Meta Developer)
+	r.GET("/webhook/instagram", handlers.InstagramWebhookVerify)
+	r.POST("/webhook/instagram", handlers.InstagramWebhook)
+	r.GET("/webhook/whatsapp", handlers.WhatsAppWebhookVerify)
+	r.POST("/webhook/whatsapp", handlers.WhatsAppWebhook)
 
 	// WebSocket точка подключения - основной механизм взаимодействия с сервером
 	r.GET("/ws", handlers.ServeWs)

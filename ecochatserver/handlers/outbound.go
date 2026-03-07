@@ -36,6 +36,10 @@ func dispatchExternalMessage(chatID uuid.UUID, message *models.Message) {
 		if err := sendInstagramOutgoingMessage(ctx, chat, message); err != nil {
 			log.Printf("dispatchExternalMessage: ошибка отправки сообщения в Instagram: %v", err)
 		}
+	case whatsappSource:
+		if err := sendWhatsAppOutgoingMessage(ctx, chat, message); err != nil {
+			log.Printf("dispatchExternalMessage: ошибка отправки сообщения в WhatsApp: %v", err)
+		}
 	default:
 		// Для других источников пока ничего не делаем
 	}
