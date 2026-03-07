@@ -125,7 +125,7 @@ func igFrontendURL() string {
 	if v := os.Getenv("FRONTEND_URL"); v != "" {
 		return v
 	}
-	return "https://eco-chat-admin.vercel.app"
+	return "https://admin-chat-vert.vercel.app"
 }
 
 // InstagramOAuthCallback обрабатывает callback от Facebook OAuth
