@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/egor/ecochatserver/database"
 )
@@ -74,50 +73,36 @@ func exchangeForLongLivedUserToken(shortToken, clientID, clientSecret string) (*
 	return &token, nil
 }
 
-// InstagramOAuthInitiate инициирует процесс OAuth для Instagram
+// InstagramOAuthInitiate инициирует процесс OAuth через Instagram Login
 // GET /api/instagram/oauth/init
 func InstagramOAuthInitiate(c *gin.Context) {
-	// Получаем конфигурацию из переменных окружения
 	clientID := os.Getenv("FACEBOOK_APP_ID")
-	redirectURI := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI")
-
 	if clientID == "" {
 		log.Println("InstagramOAuthInitiate: FACEBOOK_APP_ID не настроен")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "OAuth не настроен на сервере",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "OAuth не настроен на сервере"})
 		return
 	}
 
-	if redirectURI == "" {
-		log.Println("InstagramOAuthInitiate: INSTAGRAM_OAUTH_REDIRECT_URI не настроен")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "OAuth redirect URI не настроен",
-		})
-		return
+	// Redirect URI — тот что прописан в Meta Developer → Instagram → Valid OAuth redirect URIs
+	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
+	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
+		redirectURI = v
 	}
 
-	// Генерируем state для защиты от CSRF
-	state := uuid.New().String()
+	// Instagram Login scopes для работы с Direct Messages
+	scopes := "instagram_business_basic,instagram_business_manage_messages"
 
-	// Сохраняем state в сессии или БД (здесь используем временное хранилище в памяти)
-	// В production лучше использовать Redis или БД
-	c.SetCookie("oauth_state", state, 600, "/", "", false, true) // 10 минут
-
-	// Формируем URL для перенаправления пользователя на Facebook
-	authURL := fmt.Sprintf("%s?client_id=%s&redirect_uri=%s&state=%s&scope=%s&response_type=code",
-		facebookAuthURL,
+	// Формируем URL на Instagram OAuth (не Facebook)
+	authURL := fmt.Sprintf(
+		"https://www.instagram.com/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s",
 		url.QueryEscape(clientID),
 		url.QueryEscape(redirectURI),
-		url.QueryEscape(state),
-		url.QueryEscape("instagram_basic,instagram_manage_messages,pages_show_list,pages_messaging"),
+		url.QueryEscape(scopes),
 	)
 
-	log.Printf("InstagramOAuthInitiate: Redirecting to Facebook OAuth: %s", authURL)
+	log.Printf("InstagramOAuthInitiate: auth URL сформирован для client_id=%s", clientID)
 
-	c.JSON(http.StatusOK, gin.H{
-		"authUrl": authURL,
-	})
+	c.JSON(http.StatusOK, gin.H{"authUrl": authURL})
 }
 
 // InstagramOAuthCallback обрабатывает callback от Facebook OAuth
