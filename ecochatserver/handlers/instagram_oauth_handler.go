@@ -10,11 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/middleware"
+	"github.com/egor/ecochatserver/models"
 )
 
 func generateOAuthState() string {
@@ -101,8 +104,12 @@ func InstagramOAuthInitiate(c *gin.Context) {
 	// Scopes для Instagram Business Login
 	scopes := "instagram_basic,instagram_manage_messages"
 
+	// mode=login → логин через Instagram; mode=connect → подключение Instagram к чату
+	mode := c.DefaultQuery("mode", "connect")
+
 	// Генерируем state для CSRF-защиты — callback его проверит
-	state := generateOAuthState()
+	// Префикс mode_ используется для определения действия после OAuth
+	state := mode + "_" + generateOAuthState()
 	c.SetCookie("oauth_state", state, 600, "/", "", false, true)
 
 	// OAuth через Facebook (не Instagram) — именно так работает Instagram Business API
@@ -126,6 +133,29 @@ func igFrontendURL() string {
 		return v
 	}
 	return "https://admin-chat-vert.vercel.app"
+}
+
+// findFirstActiveAdmin возвращает первого активного админа из БД.
+// Используется для OAuth-логина когда нет прямой привязки Instagram → admin.
+func findFirstActiveAdmin() (*models.Admin, error) {
+	db := database.UsersDB
+	if db == nil {
+		return nil, fmt.Errorf("users database not initialized")
+	}
+
+	var admin models.Admin
+	err := db.QueryRow(`
+		SELECT u.id, u.email, u.display_name, u.status, COALESCE(r.name, 'user') as role_name
+		FROM users u
+		LEFT JOIN roles r ON r.id = u.role_id
+		WHERE u.status = 'active' AND u.password_hash IS NOT NULL AND u.password_hash != ''
+		ORDER BY u.created_at ASC
+		LIMIT 1
+	`).Scan(&admin.ID, &admin.Email, &admin.Name, &admin.Status, &admin.Role)
+	if err != nil {
+		return nil, err
+	}
+	return &admin, nil
 }
 
 // InstagramOAuthCallback обрабатывает callback от Facebook OAuth
@@ -197,27 +227,51 @@ func InstagramOAuthCallback(c *gin.Context) {
 	}
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
 
-	// Переустанавливаем session cookie с правильными атрибутами для cross-domain.
-	// Браузер отправляет cookie при first-party навигации на callback URL,
-	// но после редиректа на фронтенд cookie может не отправиться в cross-origin fetch
-	// без SameSite=None; Secure. Обновляем cookie здесь, пока мы на домене бекенда.
-	if sessionToken, err := c.Cookie("session"); err == nil && sessionToken != "" {
-		domain := os.Getenv("COOKIE_DOMAIN")
-		cookie := "session=" + sessionToken
-		cookie += "; Path=/"
-		cookie += "; Max-Age=86400"
-		cookie += "; HttpOnly"
-		cookie += "; SameSite=None"
-		cookie += "; Secure"
-		if domain != "" {
-			cookie += "; Domain=" + domain
+	// Определяем mode из state (login_ или connect_)
+	stateParam := c.Query("state")
+	isLoginMode := strings.HasPrefix(stateParam, "login_")
+
+	var redirectTo string
+
+	if isLoginMode {
+		// Режим логина: создаём сессию для первого активного админа
+		admin, err := findFirstActiveAdmin()
+		if err != nil || admin == nil {
+			log.Printf("InstagramOAuthCallback: не удалось найти активного админа: %v", err)
+			c.Redirect(http.StatusFound, igFrontendURL()+"/login?error=no_admin_account")
+			return
 		}
-		c.Header("Set-Cookie", cookie)
-		log.Println("InstagramOAuthCallback: session cookie обновлён с SameSite=None")
+
+		sessionToken, err := middleware.GenerateToken(admin.ID.String(), "", admin.Role)
+		if err != nil {
+			log.Printf("InstagramOAuthCallback: ошибка генерации токена: %v", err)
+			c.Redirect(http.StatusFound, igFrontendURL()+"/login?error=session_failed")
+			return
+		}
+
+		// Устанавливаем session cookie на домене бекенда
+		domain := os.Getenv("COOKIE_DOMAIN")
+		cookieHeader := buildCookieHeader(sessionToken, true, domain)
+		c.Header("Set-Cookie", cookieHeader)
+
+		// Передаём токен в URL чтобы фронтенд мог установить сессию через прокси.
+		// Токен одноразово используется для вызова /api/auth/me, который пропишет
+		// cookie на домене фронтенда.
+		redirectTo = igFrontendURL() + "/?session_token=" + url.QueryEscape(sessionToken)
+		log.Printf("InstagramOAuthCallback: логин через Instagram для %s, редирект → %s", admin.Email, redirectTo)
+	} else {
+		// Режим подключения Instagram: обновляем существующий session cookie
+		if sessionToken, err := c.Cookie("session"); err == nil && sessionToken != "" {
+			domain := os.Getenv("COOKIE_DOMAIN")
+			cookieHeader := buildCookieHeader(sessionToken, true, domain)
+			c.Header("Set-Cookie", cookieHeader)
+			log.Println("InstagramOAuthCallback: session cookie обновлён с SameSite=None")
+		}
+
+		redirectTo = igFrontendURL() + "/settings?instagram_connected=true"
+		log.Printf("InstagramOAuthCallback: Instagram подключён, редирект → %s", redirectTo)
 	}
 
-	redirectTo := igFrontendURL() + "/settings?instagram_connected=true"
-	log.Printf("InstagramOAuthCallback: токен сохранён, редирект → %s", redirectTo)
 	// location.replace убирает callback URL из истории браузера
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, `<!DOCTYPE html><html><head><script>window.location.replace(%q);</script></head><body></body></html>`, redirectTo)

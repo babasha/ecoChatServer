@@ -162,6 +162,57 @@ func MeHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// SessionRestoreHandler принимает JWT токен и устанавливает session cookie.
+// Используется после OAuth-логина: бекенд генерирует токен, передаёт через URL,
+// фронтенд вызывает этот endpoint через Vercel прокси → cookie устанавливается
+// на домене фронтенда (same-origin).
+// POST /api/auth/session
+func SessionRestoreHandler(c *gin.Context) {
+	var req struct {
+		Token string `json:"token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token required"})
+		return
+	}
+
+	// Валидируем токен
+	claims, err := middleware.ValidateToken(req.Token)
+	if err != nil {
+		log.Printf("SessionRestoreHandler: невалидный токен: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return
+	}
+
+	// Устанавливаем session cookie
+	isProduction := os.Getenv("GIN_MODE") == "release"
+	domain := os.Getenv("COOKIE_DOMAIN")
+
+	if isProduction || os.Getenv("ENABLE_CROSS_DOMAIN_COOKIES") == "true" {
+		cookieHeader := buildCookieHeader(req.Token, true, domain)
+		c.Header("Set-Cookie", cookieHeader)
+	} else {
+		c.SetCookie("session", req.Token, 86400, "/", domain, false, true)
+	}
+
+	// Возвращаем данные админа
+	admin, err := database.GetAdminByID(claims.AdminID)
+	if err != nil || admin == nil {
+		log.Printf("SessionRestoreHandler: админ не найден: %v", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "admin not found"})
+		return
+	}
+
+	var response LoginResponse
+	response.Admin.ID = admin.ID.String()
+	response.Admin.Email = admin.Email
+	response.Admin.Name = admin.Name
+	response.Admin.Role = claims.Role
+
+	log.Printf("SessionRestoreHandler: сессия восстановлена для %s", admin.Email)
+	c.JSON(http.StatusOK, response)
+}
+
 // WSTokenHandler возвращает короткоживущий токен для WebSocket подключения.
 // Используется когда фронтенд проксирует API через Vercel (same-origin cookies),
 // но WebSocket подключается напрямую к бекенду и не имеет доступа к cookie.

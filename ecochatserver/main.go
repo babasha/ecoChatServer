@@ -377,6 +377,7 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.POST("/auth/login", middleware.StrictRateLimitMiddleware(), handlers.LoginHandler)
 		api.GET("/auth/me", middleware.SessionMiddleware(), handlers.MeHandler)
 		api.GET("/auth/ws-token", middleware.SessionMiddleware(), handlers.WSTokenHandler)
+		api.POST("/auth/session", handlers.SessionRestoreHandler) // OAuth login session restore
 		api.POST("/auth/logout", handlers.LogoutHandler)
 
 		// OAuth 2.0 token endpoint для админки (DEPRECATED - используйте /auth/login)
