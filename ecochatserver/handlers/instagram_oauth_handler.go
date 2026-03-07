@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,12 @@ import (
 
 	"github.com/egor/ecochatserver/database"
 )
+
+func generateOAuthState() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 const (
 	// Facebook OAuth URLs
@@ -73,7 +81,8 @@ func exchangeForLongLivedUserToken(shortToken, clientID, clientSecret string) (*
 	return &token, nil
 }
 
-// InstagramOAuthInitiate инициирует процесс OAuth через Instagram Login
+// InstagramOAuthInitiate инициирует процесс OAuth через Facebook Business Login
+// (именно через него доступны Instagram DM и messaging permissions)
 // GET /api/instagram/oauth/init
 func InstagramOAuthInitiate(c *gin.Context) {
 	clientID := os.Getenv("FACEBOOK_APP_ID")
@@ -83,24 +92,30 @@ func InstagramOAuthInitiate(c *gin.Context) {
 		return
 	}
 
-	// Redirect URI — тот что прописан в Meta Developer → Instagram → Valid OAuth redirect URIs
+	// Redirect URI прописан в Meta Developer → Valid OAuth redirect URIs
 	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
 	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
 		redirectURI = v
 	}
 
-	// Instagram Login scopes для работы с Direct Messages
-	scopes := "instagram_business_basic,instagram_business_manage_messages"
+	// Scopes для Instagram DM через Facebook Business Login
+	scopes := "instagram_basic,instagram_manage_messages,pages_manage_metadata,pages_messaging"
 
-	// Формируем URL на Instagram OAuth (не Facebook)
+	// Генерируем state для CSRF-защиты — callback его проверит
+	state := generateOAuthState()
+	c.SetCookie("oauth_state", state, 600, "/", "", false, true)
+
+	// OAuth через Facebook (не Instagram) — именно так работает Instagram Business API
 	authURL := fmt.Sprintf(
-		"https://www.instagram.com/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s",
+		"%s?client_id=%s&redirect_uri=%s&scope=%s&response_type=code&state=%s",
+		facebookAuthURL,
 		url.QueryEscape(clientID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape(scopes),
+		url.QueryEscape(state),
 	)
 
-	log.Printf("InstagramOAuthInitiate: auth URL сформирован для client_id=%s", clientID)
+	log.Printf("InstagramOAuthInitiate: auth URL сформирован для client_id=%s, redirect=%s", clientID, redirectURI)
 
 	c.JSON(http.StatusOK, gin.H{"authUrl": authURL})
 }
@@ -144,10 +159,13 @@ func InstagramOAuthCallback(c *gin.Context) {
 	// Обмениваем код на access token
 	clientID := os.Getenv("FACEBOOK_APP_ID")
 	clientSecret := os.Getenv("FACEBOOK_APP_SECRET")
-	redirectURI := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI")
+	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
+	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
+		redirectURI = v
+	}
 
-	if clientID == "" || clientSecret == "" || redirectURI == "" {
-		log.Println("InstagramOAuthCallback: OAuth environment variables missing (FACEBOOK_APP_ID/SECRET or INSTAGRAM_OAUTH_REDIRECT_URI)")
+	if clientID == "" || clientSecret == "" {
+		log.Println("InstagramOAuthCallback: FACEBOOK_APP_ID или FACEBOOK_APP_SECRET не настроены")
 		c.Redirect(http.StatusTemporaryRedirect,
 			fmt.Sprintf("%s/settings?error=%s", os.Getenv("FRONTEND_URL"), "config_missing"))
 		return

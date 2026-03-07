@@ -503,8 +503,9 @@ func setupAPIRoutes(r *gin.Engine) {
 	r.GET("/webhook/whatsapp", handlers.WhatsAppWebhookVerify)
 	r.POST("/webhook/whatsapp", handlers.WhatsAppWebhook)
 
-	// Instagram Login OAuth callback (redirect URI настроен в Meta как /auth/instagram/callback)
-	r.GET("/auth/instagram/callback", handlers.InstagramLoginCallback)
+	// Instagram OAuth callback (redirect URI настроен в Meta как /auth/instagram/callback)
+	// Используем Facebook Business Login flow — он поддерживает Instagram DM permissions
+	r.GET("/auth/instagram/callback", handlers.InstagramOAuthCallback)
 
 	// WebSocket точка подключения - основной механизм взаимодействия с сервером
 	r.GET("/ws", handlers.ServeWs)
