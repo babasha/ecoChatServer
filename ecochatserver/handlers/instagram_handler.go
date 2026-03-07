@@ -376,7 +376,11 @@ func InstagramWebhook(c *gin.Context) {
 }
 
 func verifyInstagramSignature(payload []byte, signature string) bool {
-	appSecret := database.GetSetting(instagramAppSecretSetting, "")
+	// Сначала пробуем из env (FACEBOOK_APP_SECRET), затем из БД (INSTAGRAM_APP_SECRET)
+	appSecret := os.Getenv("FACEBOOK_APP_SECRET")
+	if appSecret == "" {
+		appSecret = database.GetSetting(instagramAppSecretSetting, "")
+	}
 	if appSecret == "" || signature == "" {
 		// Если секрет не настроен или подпись отсутствует, пропускаем проверку
 		log.Printf("verifyInstagramSignature: SKIP (appSecret=%v, signature=%v)", appSecret != "", signature != "")
