@@ -980,16 +980,15 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 		return nil
 	}
 
-	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
-	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", apiVersion, botID)
+	// Instagram Business Login API: отправка через graph.instagram.com
+	apiURL := "https://graph.instagram.com/v25.0/me/messages"
 
 	payload := map[string]any{
-		"messaging_product": instagramMessagingProduct,
 		"recipient": map[string]string{
 			"id": userID,
 		},
-		"text": map[string]string{
-			"body": text,
+		"message": map[string]string{
+			"text": text,
 		},
 	}
 
