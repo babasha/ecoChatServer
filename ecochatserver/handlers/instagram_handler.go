@@ -61,7 +61,7 @@ type instagramConversationsResponse struct {
 
 // fetchInstagramConversations получает список conversations для бизнес-аккаунта
 func fetchInstagramConversations(businessAccountID string) ([]instagramConversation, error) {
-	accessToken := database.GetSetting(instagramAccessTokenSetting, "")
+	accessToken := database.GetDynamicSetting(instagramAccessTokenSetting, "")
 	if accessToken == "" {
 		return nil, fmt.Errorf("instagram access token not configured")
 	}
@@ -123,7 +123,7 @@ func fetchInstagramConversations(businessAccountID string) ([]instagramConversat
 
 // fetchMessageText получает текст сообщения по MID через Graph API
 func fetchMessageText(messageID string) (string, error) {
-	accessToken := database.GetSetting(instagramAccessTokenSetting, "")
+	accessToken := database.GetDynamicSetting(instagramAccessTokenSetting, "")
 	if accessToken == "" {
 		return "", fmt.Errorf("instagram access token not configured")
 	}
@@ -729,7 +729,7 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 
 	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
 	clientAPIKey := database.GetSetting(instagramClientKeySetting, defaultInstagramClientKey)
-	botID := firstNotEmpty(envelope.RecipientID, database.GetSetting(instagramBusinessIDSetting, ""))
+	botID := firstNotEmpty(envelope.RecipientID, database.GetDynamicSetting(instagramBusinessIDSetting, ""))
 	if botID == "" {
 		return "", fmt.Errorf("bot id не найден для сообщения %s", messageID)
 	}
@@ -966,7 +966,7 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 
 	botID := strings.TrimSpace(chat.BotID)
 	if botID == "" {
-		botID = database.GetSetting(instagramBusinessIDSetting, "")
+		botID = database.GetDynamicSetting(instagramBusinessIDSetting, "")
 		if botID == "" {
 			return fmt.Errorf("instagram business id не настроен")
 		}
@@ -979,7 +979,7 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 		return nil
 	}
 
-	token := database.GetSetting(instagramAccessTokenSetting, "")
+	token := database.GetDynamicSetting(instagramAccessTokenSetting, "")
 	if token == "" {
 		return fmt.Errorf("instagram access token не настроен (userID=%s, text=%s)", userID, truncateForLog(text, 50))
 	}

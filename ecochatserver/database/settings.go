@@ -57,6 +57,40 @@ func GetSetting(key string, defaultValue string) string {
 	return value
 }
 
+// GetDynamicSetting получает динамическую настройку из БД (с кешированием, БЕЗ ENV).
+// Используется для значений, управляемых в runtime (OAuth токены, business ID и т.д.),
+// которые не должны перекрываться устаревшими ENV переменными.
+func GetDynamicSetting(key string, defaultValue string) string {
+	// Проверяем кеш
+	settingsCacheMutex.RLock()
+	if time.Since(settingsCacheTime) < cacheTTL {
+		if cachedValue, exists := settingsCache[key]; exists {
+			settingsCacheMutex.RUnlock()
+			return cachedValue
+		}
+	}
+	settingsCacheMutex.RUnlock()
+
+	// Загружаем из БД
+	value, err := GetSettingFromDB(key)
+	if err != nil {
+		log.Printf("[SETTINGS] Ошибка получения настройки %s из БД: %v, используем дефолт: %s", key, err, defaultValue)
+		return defaultValue
+	}
+
+	if value == "" {
+		return defaultValue
+	}
+
+	// Сохраняем в кеш
+	settingsCacheMutex.Lock()
+	settingsCache[key] = value
+	settingsCacheTime = time.Now()
+	settingsCacheMutex.Unlock()
+
+	return value
+}
+
 // GetSettingInt получает целочисленное значение настройки
 func GetSettingInt(key string, defaultValue int) int {
 	strValue := GetSetting(key, strconv.Itoa(defaultValue))

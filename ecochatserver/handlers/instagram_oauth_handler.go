@@ -310,6 +310,8 @@ func InstagramOAuthCallback(c *gin.Context) {
 	_ = database.SetSetting(instagramBusinessIDSetting, igID, "Instagram user/business account ID")
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
 
+	database.InvalidateSettingsCache()
+
 	log.Printf("InstagramOAuthCallback: успешно подключён аккаунт @%s (id=%s)", igUsername, igID)
 
 	// Сохраняем в таблицу instagram_accounts
@@ -773,6 +775,8 @@ func InstagramLoginCallback(c *gin.Context) {
 	_ = database.SetSetting(instagramAccessTokenSetting, finalToken, "Instagram access token (Login flow)")
 	_ = database.SetSetting(instagramBusinessIDSetting, igID, "Instagram user/business account ID")
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
+
+	database.InvalidateSettingsCache()
 
 	log.Printf("InstagramLoginCallback: успешно подключён аккаунт @%s (id=%s)", igUsername, igID)
 
