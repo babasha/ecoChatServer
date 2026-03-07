@@ -482,6 +482,7 @@ type instagramMessage struct {
 	Text        interface{}           `json:"text,omitempty"`
 	Type        string                `json:"type,omitempty"`
 	Attachments []instagramAttachment `json:"attachments,omitempty"`
+	IsEcho      bool                  `json:"is_echo,omitempty"`
 }
 
 type instagramAttachment struct {
@@ -714,7 +715,13 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 		return "", fmt.Errorf("sender id отсутствует")
 	}
 
-	// Пропускаем эхо-сообщения от собственного бота
+	// Пропускаем эхо-сообщения (is_echo=true — это уведомление об отправленном сообщении от бизнес-аккаунта)
+	if envelope.Message.IsEcho {
+		log.Printf("handleInstagramMessage: пропускаем is_echo сообщение (sender=%s, mid=%s)", envelope.SenderID, envelope.Message.MID)
+		return "", nil
+	}
+
+	// Пропускаем сообщения где sender=recipient
 	if envelope.RecipientID != "" && envelope.SenderID == envelope.RecipientID {
 		log.Printf("handleInstagramMessage: пропускаем сообщение-эхо (sender=recipient=%s)", envelope.SenderID)
 		return "", nil
@@ -974,10 +981,7 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 
 	token := database.GetSetting(instagramAccessTokenSetting, "")
 	if token == "" {
-		// Если токен не настроен и не dev режим - это ошибка
-		log.Printf("sendInstagramOutgoingMessage: токен не настроен, пропускаем отправку")
-		log.Printf("sendInstagramOutgoingMessage: сообщение для отправки: userID=%s, text=%s", userID, text)
-		return nil
+		return fmt.Errorf("instagram access token не настроен (userID=%s, text=%s)", userID, truncateForLog(text, 50))
 	}
 
 	// Instagram Business Login API: отправка через graph.instagram.com
