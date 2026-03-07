@@ -27,15 +27,15 @@ func generateOAuthState() string {
 }
 
 const (
-	// Facebook OAuth URLs
-	facebookAuthURL  = "https://www.facebook.com/v21.0/dialog/oauth"
+	// Instagram Business Login OAuth URLs
+	instagramAuthURL           = "https://www.instagram.com/oauth/authorize"
+	instagramTokenURL          = "https://api.instagram.com/oauth/access_token"
+	instagramLongLivedTokenURL = "https://graph.instagram.com/access_token"
+	instagramGraphURL          = "https://graph.instagram.com"
+
+	// Facebook Graph API (для legacy-функций: pages, business accounts)
 	facebookTokenURL = "https://graph.facebook.com/v21.0/oauth/access_token"
 	facebookGraphURL = "https://graph.facebook.com/v21.0"
-
-	// Instagram Login OAuth URLs (новый flow через Instagram, не Facebook)
-	instagramTokenURL         = "https://api.instagram.com/oauth/access_token"
-	instagramLongLivedTokenURL = "https://graph.instagram.com/access_token"
-	instagramGraphURL         = "https://graph.instagram.com"
 )
 
 type facebookTokenResponse struct {
@@ -84,38 +84,34 @@ func exchangeForLongLivedUserToken(shortToken, clientID, clientSecret string) (*
 	return &token, nil
 }
 
-// InstagramOAuthInitiate инициирует процесс OAuth через Facebook Business Login
-// (именно через него доступны Instagram DM и messaging permissions)
+// InstagramOAuthInitiate инициирует процесс OAuth через Instagram Business Login
 // GET /api/instagram/oauth/init
 func InstagramOAuthInitiate(c *gin.Context) {
-	clientID := os.Getenv("FACEBOOK_APP_ID")
+	clientID := os.Getenv("INSTAGRAM_APP_ID")
 	if clientID == "" {
-		log.Println("InstagramOAuthInitiate: FACEBOOK_APP_ID не настроен")
+		log.Println("InstagramOAuthInitiate: INSTAGRAM_APP_ID не настроен")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OAuth не настроен на сервере"})
 		return
 	}
 
-	// Redirect URI прописан в Meta Developer → Valid OAuth redirect URIs
 	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
 	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
 		redirectURI = v
 	}
 
-	// Scopes для Instagram Business Login
-	scopes := "instagram_basic,instagram_manage_messages"
+	// Scopes для Instagram Business Login (новый API, не deprecated)
+	scopes := "instagram_business_basic,instagram_business_manage_messages"
 
 	// mode=login → логин через Instagram; mode=connect → подключение Instagram к чату
 	mode := c.DefaultQuery("mode", "connect")
 
-	// Генерируем state для CSRF-защиты — callback его проверит
-	// Префикс mode_ используется для определения действия после OAuth
 	state := mode + "_" + generateOAuthState()
 	c.SetCookie("oauth_state", state, 600, "/", "", false, true)
 
-	// OAuth через Facebook (не Instagram) — именно так работает Instagram Business API
+	// OAuth через Instagram Business Login
 	authURL := fmt.Sprintf(
-		"%s?client_id=%s&redirect_uri=%s&scope=%s&response_type=code&state=%s&config_id=918999337663373",
-		facebookAuthURL,
+		"%s?client_id=%s&redirect_uri=%s&scope=%s&response_type=code&state=%s",
+		instagramAuthURL,
 		url.QueryEscape(clientID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape(scopes),
@@ -158,74 +154,174 @@ func findFirstActiveAdmin() (*models.Admin, error) {
 	return &admin, nil
 }
 
-// InstagramOAuthCallback обрабатывает callback от Facebook OAuth
+// InstagramOAuthCallback обрабатывает callback от Instagram Business Login
 // GET /api/instagram/oauth/callback и GET /auth/instagram/callback
 func InstagramOAuthCallback(c *gin.Context) {
 	code := c.Query("code")
-	if code == "" {
-		log.Println("InstagramOAuthCallback: code отсутствует")
-		c.Redirect(http.StatusFound, igFrontendURL()+"/settings?error=no_code")
+	errorCode := c.Query("error")
+	errorReason := c.Query("error_reason")
+
+	frontendURL := igFrontendURL()
+
+	if errorCode != "" {
+		log.Printf("InstagramOAuthCallback: Instagram OAuth error: %s — %s", errorCode, errorReason)
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error="+url.QueryEscape(errorReason))
 		return
 	}
 
-	clientID := os.Getenv("FACEBOOK_APP_ID")
-	clientSecret := os.Getenv("FACEBOOK_APP_SECRET")
+	if code == "" {
+		log.Println("InstagramOAuthCallback: code отсутствует")
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error=no_code")
+		return
+	}
+
+	clientID := os.Getenv("INSTAGRAM_APP_ID")
+	clientSecret := os.Getenv("INSTAGRAM_APP_SECRET")
 	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
 	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
 		redirectURI = v
 	}
 
 	if clientID == "" || clientSecret == "" {
-		log.Println("InstagramOAuthCallback: FACEBOOK_APP_ID или FACEBOOK_APP_SECRET не настроены")
-		c.Redirect(http.StatusFound, igFrontendURL()+"/settings?error=config_missing")
+		log.Println("InstagramOAuthCallback: INSTAGRAM_APP_ID или INSTAGRAM_APP_SECRET не настроены")
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error=config_missing")
 		return
 	}
 
-	// Обмен code на access_token через Facebook Graph API
-	tokenURL := fmt.Sprintf(
-		"https://graph.facebook.com/v21.0/oauth/access_token?client_id=%s&redirect_uri=%s&client_secret=%s&code=%s",
-		url.QueryEscape(clientID),
-		url.QueryEscape(redirectURI),
-		url.QueryEscape(clientSecret),
-		url.QueryEscape(code),
-	)
+	// Шаг 1: Обмениваем code на short-lived token через Instagram API (POST)
+	formData := url.Values{}
+	formData.Set("client_id", clientID)
+	formData.Set("client_secret", clientSecret)
+	formData.Set("grant_type", "authorization_code")
+	formData.Set("redirect_uri", redirectURI)
+	formData.Set("code", code)
 
-	log.Println("InstagramOAuthCallback: обмениваем code на access_token...")
+	log.Println("InstagramOAuthCallback: обмениваем code на short-lived token...")
 
-	resp, err := http.Get(tokenURL)
+	resp, err := http.PostForm(instagramTokenURL, formData)
 	if err != nil {
-		log.Printf("InstagramOAuthCallback: ошибка запроса токена: %v", err)
-		c.Redirect(http.StatusFound, igFrontendURL()+"/settings?error=token_exchange_failed")
+		log.Printf("InstagramOAuthCallback: ошибка POST к Instagram: %v", err)
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error=token_exchange_failed")
 		return
 	}
 	defer resp.Body.Close()
 
-	var tokenResp struct {
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("InstagramOAuthCallback: short-lived token response status=%d body=%s", resp.StatusCode, truncateForLog(string(body), 500))
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("InstagramOAuthCallback: ошибка получения short-lived token: %s", string(body))
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error=token_failed")
+		return
+	}
+
+	var shortToken struct {
 		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
-		ExpiresIn   int    `json:"expires_in"`
+		UserID      int64  `json:"user_id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		log.Printf("InstagramOAuthCallback: ошибка парсинга токена: %v", err)
-		c.Redirect(http.StatusFound, igFrontendURL()+"/settings?error=token_parse_failed")
+	if err := json.Unmarshal(body, &shortToken); err != nil {
+		log.Printf("InstagramOAuthCallback: ошибка парсинга short-lived token: %v", err)
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error=token_parse_failed")
 		return
 	}
 
-	if tokenResp.AccessToken == "" {
+	if shortToken.AccessToken == "" {
 		log.Printf("InstagramOAuthCallback: пустой access_token, статус=%d", resp.StatusCode)
-		c.Redirect(http.StatusFound, igFrontendURL()+"/settings?error=token_empty")
+		c.Redirect(http.StatusFound, frontendURL+"/settings?error=token_empty")
 		return
 	}
 
-	log.Printf("InstagramOAuthCallback: токен получен (expires_in=%d)", tokenResp.ExpiresIn)
+	log.Printf("InstagramOAuthCallback: short-lived token получен для user_id=%d", shortToken.UserID)
 
-	// Сохраняем токен в настройки БД
-	_ = database.SetSetting(instagramAccessTokenSetting, tokenResp.AccessToken, "Instagram access token")
+	// Шаг 2: Обмениваем short-lived на long-lived token (~60 дней)
+	finalToken := shortToken.AccessToken
 	tokenExpiresAt := time.Now().Add(60 * 24 * time.Hour)
-	if tokenResp.ExpiresIn > 0 {
-		tokenExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
+	longTokenURL := fmt.Sprintf("%s?grant_type=ig_exchange_token&client_secret=%s&access_token=%s",
+		instagramLongLivedTokenURL,
+		url.QueryEscape(clientSecret),
+		url.QueryEscape(shortToken.AccessToken),
+	)
+
+	longResp, err := http.Get(longTokenURL)
+	if err != nil {
+		log.Printf("InstagramOAuthCallback: ошибка получения long-lived token: %v, используем short-lived", err)
+	} else {
+		defer longResp.Body.Close()
+		longBody, _ := io.ReadAll(longResp.Body)
+		log.Printf("InstagramOAuthCallback: long-lived token response status=%d body=%s", longResp.StatusCode, truncateForLog(string(longBody), 300))
+
+		var longToken struct {
+			AccessToken string `json:"access_token"`
+			TokenType   string `json:"token_type"`
+			ExpiresIn   int64  `json:"expires_in"`
+		}
+		if longResp.StatusCode == http.StatusOK {
+			if err := json.Unmarshal(longBody, &longToken); err == nil && longToken.AccessToken != "" {
+				finalToken = longToken.AccessToken
+				if longToken.ExpiresIn > 0 {
+					tokenExpiresAt = time.Now().Add(time.Duration(longToken.ExpiresIn) * time.Second)
+				}
+				log.Printf("InstagramOAuthCallback: long-lived token получен, истекает %s", tokenExpiresAt.Format(time.RFC3339))
+			}
+		}
 	}
+
+	// Шаг 3: Получаем информацию об аккаунте
+	meURL := fmt.Sprintf("%s/me?fields=id,username,name,profile_picture_url&access_token=%s",
+		instagramGraphURL,
+		url.QueryEscape(finalToken),
+	)
+
+	var igUsername, igName, igID string
+	meResp, err := http.Get(meURL)
+	if err != nil {
+		log.Printf("InstagramOAuthCallback: ошибка получения /me: %v", err)
+	} else {
+		defer meResp.Body.Close()
+		meBody, _ := io.ReadAll(meResp.Body)
+		log.Printf("InstagramOAuthCallback: /me response status=%d body=%s", meResp.StatusCode, truncateForLog(string(meBody), 300))
+
+		var me struct {
+			ID                string `json:"id"`
+			Username          string `json:"username"`
+			Name              string `json:"name"`
+			ProfilePictureURL string `json:"profile_picture_url"`
+		}
+		if meResp.StatusCode == http.StatusOK {
+			if err := json.Unmarshal(meBody, &me); err == nil {
+				igID = me.ID
+				igUsername = me.Username
+				igName = me.Name
+			}
+		}
+	}
+
+	if igID == "" {
+		igID = fmt.Sprintf("%d", shortToken.UserID)
+	}
+	if igUsername == "" {
+		igUsername = igID
+	}
+
+	// Шаг 4: Сохраняем токен и данные аккаунта
+	_ = database.SetSetting(instagramAccessTokenSetting, finalToken, "Instagram access token (Business Login)")
+	_ = database.SetSetting(instagramBusinessIDSetting, igID, "Instagram user/business account ID")
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
+
+	log.Printf("InstagramOAuthCallback: успешно подключён аккаунт @%s (id=%s)", igUsername, igID)
+
+	// Сохраняем в таблицу instagram_accounts
+	account := InstagramAccountInfo{
+		ID:             igID,
+		Username:       igUsername,
+		Name:           igName,
+		TokenExpiresAt: tokenExpiresAt,
+	}
+	if err := saveInstagramAccount(account); err != nil {
+		log.Printf("InstagramOAuthCallback: ошибка сохранения в instagram_accounts: %v (продолжаем)", err)
+	}
 
 	// Определяем mode из state (login_ или connect_)
 	stateParam := c.Query("state")
@@ -234,49 +330,39 @@ func InstagramOAuthCallback(c *gin.Context) {
 	var redirectTo string
 
 	if isLoginMode {
-		// Режим логина: создаём сессию для первого активного админа
 		admin, err := findFirstActiveAdmin()
 		if err != nil || admin == nil {
 			log.Printf("InstagramOAuthCallback: не удалось найти активного админа: %v", err)
-			c.Redirect(http.StatusFound, igFrontendURL()+"/login?error=no_admin_account")
+			c.Redirect(http.StatusFound, frontendURL+"/login?error=no_admin_account")
 			return
 		}
 
 		sessionToken, err := middleware.GenerateToken(admin.ID.String(), "", admin.Role)
 		if err != nil {
 			log.Printf("InstagramOAuthCallback: ошибка генерации токена: %v", err)
-			c.Redirect(http.StatusFound, igFrontendURL()+"/login?error=session_failed")
+			c.Redirect(http.StatusFound, frontendURL+"/login?error=session_failed")
 			return
 		}
 
-		// Устанавливаем session cookie на домене бекенда
 		domain := os.Getenv("COOKIE_DOMAIN")
 		cookieHeader := buildCookieHeader(sessionToken, true, domain)
 		c.Header("Set-Cookie", cookieHeader)
 
-		// Передаём токен в URL чтобы фронтенд мог установить сессию через прокси.
-		// Токен одноразово используется для вызова /api/auth/me, который пропишет
-		// cookie на домене фронтенда.
-		redirectTo = igFrontendURL() + "/?session_token=" + url.QueryEscape(sessionToken)
+		redirectTo = frontendURL + "/?session_token=" + url.QueryEscape(sessionToken)
 		log.Printf("InstagramOAuthCallback: логин через Instagram для %s, редирект → %s", admin.Email, redirectTo)
 	} else {
-		// Режим подключения Instagram
-		redirectTo = igFrontendURL() + "/settings?instagram_connected=true"
+		redirectTo = frontendURL + "/settings?instagram_connected=true"
 
-		// Передаём сессионный токен через URL чтобы фронтенд мог восстановить сессию
-		// через Vercel прокси (cookie на домене фронтенда может быть потеряна после
-		// цепочки OAuth-редиректов через Facebook → бекенд → фронтенд)
 		if sessionToken, err := c.Cookie("session"); err == nil && sessionToken != "" {
 			redirectTo += "&session_token=" + url.QueryEscape(sessionToken)
 			log.Println("InstagramOAuthCallback: session_token передан в URL для восстановления сессии")
 		} else {
-			log.Println("InstagramOAuthCallback: session cookie не найдена на домене бекенда, фронтенд должен использовать свою")
+			log.Println("InstagramOAuthCallback: session cookie не найдена, фронтенд должен использовать свою")
 		}
 
 		log.Printf("InstagramOAuthCallback: Instagram подключён, редирект → %s", redirectTo)
 	}
 
-	// location.replace убирает callback URL из истории браузера
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, `<!DOCTYPE html><html><head><script>window.location.replace(%q);</script></head><body></body></html>`, redirectTo)
 }
@@ -556,15 +642,15 @@ func InstagramLoginCallback(c *gin.Context) {
 		return
 	}
 
-	clientID := os.Getenv("FACEBOOK_APP_ID")
-	clientSecret := os.Getenv("FACEBOOK_APP_SECRET")
+	clientID := os.Getenv("INSTAGRAM_APP_ID")
+	clientSecret := os.Getenv("INSTAGRAM_APP_SECRET")
 	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
 	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
 		redirectURI = v
 	}
 
 	if clientID == "" || clientSecret == "" {
-		log.Println("InstagramLoginCallback: FACEBOOK_APP_ID или FACEBOOK_APP_SECRET не настроены")
+		log.Println("InstagramLoginCallback: INSTAGRAM_APP_ID или INSTAGRAM_APP_SECRET не настроены")
 		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?error=config_missing")
 		return
 	}
