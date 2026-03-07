@@ -21,6 +21,11 @@ const (
 	facebookAuthURL  = "https://www.facebook.com/v21.0/dialog/oauth"
 	facebookTokenURL = "https://graph.facebook.com/v21.0/oauth/access_token"
 	facebookGraphURL = "https://graph.facebook.com/v21.0"
+
+	// Instagram Login OAuth URLs (новый flow через Instagram, не Facebook)
+	instagramTokenURL         = "https://api.instagram.com/oauth/access_token"
+	instagramLongLivedTokenURL = "https://graph.instagram.com/access_token"
+	instagramGraphURL         = "https://graph.instagram.com"
 )
 
 type facebookTokenResponse struct {
@@ -538,4 +543,175 @@ func DisconnectInstagramAccount(c *gin.Context) {
 		"success": true,
 		"message": "Instagram account disconnected",
 	})
+}
+
+// InstagramLoginCallback обрабатывает callback от Instagram Login (новый flow).
+// Redirect URI в Meta настроен на /auth/instagram/callback
+// GET /auth/instagram/callback
+func InstagramLoginCallback(c *gin.Context) {
+	code := c.Query("code")
+	errorCode := c.Query("error")
+	errorReason := c.Query("error_reason")
+
+	frontendURL := os.Getenv("FRONTEND_URL")
+
+	if errorCode != "" {
+		log.Printf("InstagramLoginCallback: Instagram OAuth error: %s — %s", errorCode, errorReason)
+		c.Redirect(http.StatusTemporaryRedirect,
+			frontendURL+"/settings?error="+url.QueryEscape(errorReason))
+		return
+	}
+
+	if code == "" {
+		log.Println("InstagramLoginCallback: code отсутствует")
+		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?error=no_code")
+		return
+	}
+
+	clientID := os.Getenv("FACEBOOK_APP_ID")
+	clientSecret := os.Getenv("FACEBOOK_APP_SECRET")
+	redirectURI := "https://ecochatserver-production.up.railway.app/auth/instagram/callback"
+	if v := os.Getenv("INSTAGRAM_OAUTH_REDIRECT_URI"); v != "" {
+		redirectURI = v
+	}
+
+	if clientID == "" || clientSecret == "" {
+		log.Println("InstagramLoginCallback: FACEBOOK_APP_ID или FACEBOOK_APP_SECRET не настроены")
+		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?error=config_missing")
+		return
+	}
+
+	// Шаг 1: Обмениваем code на short-lived user token
+	// POST https://api.instagram.com/oauth/access_token
+	formData := url.Values{}
+	formData.Set("client_id", clientID)
+	formData.Set("client_secret", clientSecret)
+	formData.Set("grant_type", "authorization_code")
+	formData.Set("redirect_uri", redirectURI)
+	formData.Set("code", code)
+
+	log.Println("InstagramLoginCallback: обмениваем code на short-lived token...")
+
+	resp, err := http.PostForm(instagramTokenURL, formData)
+	if err != nil {
+		log.Printf("InstagramLoginCallback: ошибка POST к Instagram: %v", err)
+		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?error=exchange_failed")
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("InstagramLoginCallback: short-lived token response status=%d body=%s", resp.StatusCode, truncateForLog(string(body), 500))
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("InstagramLoginCallback: ошибка получения short-lived token: %s", string(body))
+		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?error=token_failed")
+		return
+	}
+
+	var shortToken struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+		UserID      int64  `json:"user_id"`
+	}
+	if err := json.Unmarshal(body, &shortToken); err != nil {
+		log.Printf("InstagramLoginCallback: ошибка парсинга short-lived token: %v", err)
+		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?error=parse_failed")
+		return
+	}
+
+	log.Printf("InstagramLoginCallback: short-lived token получен для user_id=%d", shortToken.UserID)
+
+	// Шаг 2: Обмениваем short-lived на long-lived token (~60 дней)
+	// GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token&...
+	longTokenURL := fmt.Sprintf("%s?grant_type=ig_exchange_token&client_secret=%s&access_token=%s",
+		instagramLongLivedTokenURL,
+		url.QueryEscape(clientSecret),
+		url.QueryEscape(shortToken.AccessToken),
+	)
+
+	longResp, err := http.Get(longTokenURL)
+	finalToken := shortToken.AccessToken
+	tokenExpiresAt := time.Now().Add(60 * 24 * time.Hour) // дефолт 60 дней
+
+	if err != nil {
+		log.Printf("InstagramLoginCallback: ошибка получения long-lived token: %v, используем short-lived", err)
+	} else {
+		defer longResp.Body.Close()
+		longBody, _ := io.ReadAll(longResp.Body)
+		log.Printf("InstagramLoginCallback: long-lived token response status=%d body=%s", longResp.StatusCode, truncateForLog(string(longBody), 300))
+
+		var longToken struct {
+			AccessToken string `json:"access_token"`
+			TokenType   string `json:"token_type"`
+			ExpiresIn   int64  `json:"expires_in"`
+		}
+		if longResp.StatusCode == http.StatusOK {
+			if err := json.Unmarshal(longBody, &longToken); err == nil && longToken.AccessToken != "" {
+				finalToken = longToken.AccessToken
+				if longToken.ExpiresIn > 0 {
+					tokenExpiresAt = time.Now().Add(time.Duration(longToken.ExpiresIn) * time.Second)
+				}
+				log.Printf("InstagramLoginCallback: long-lived token получен, истекает %s", tokenExpiresAt.Format(time.RFC3339))
+			}
+		}
+	}
+
+	// Шаг 3: Получаем информацию об аккаунте
+	// GET https://graph.instagram.com/me?fields=id,username,name&access_token=...
+	meURL := fmt.Sprintf("%s/me?fields=id,username,name,profile_picture_url&access_token=%s",
+		instagramGraphURL,
+		url.QueryEscape(finalToken),
+	)
+
+	meResp, err := http.Get(meURL)
+	var igUsername, igName, igID string
+	if err != nil {
+		log.Printf("InstagramLoginCallback: ошибка получения /me: %v", err)
+	} else {
+		defer meResp.Body.Close()
+		meBody, _ := io.ReadAll(meResp.Body)
+		log.Printf("InstagramLoginCallback: /me response status=%d body=%s", meResp.StatusCode, truncateForLog(string(meBody), 300))
+
+		var me struct {
+			ID                string `json:"id"`
+			Username          string `json:"username"`
+			Name              string `json:"name"`
+			ProfilePictureURL string `json:"profile_picture_url"`
+		}
+		if meResp.StatusCode == http.StatusOK {
+			if err := json.Unmarshal(meBody, &me); err == nil {
+				igID = me.ID
+				igUsername = me.Username
+				igName = me.Name
+			}
+		}
+	}
+
+	if igID == "" {
+		igID = fmt.Sprintf("%d", shortToken.UserID)
+	}
+	if igUsername == "" {
+		igUsername = igID
+	}
+
+	// Шаг 4: Сохраняем токен и данные аккаунта в настройки
+	_ = database.SetSetting(instagramAccessTokenSetting, finalToken, "Instagram access token (Login flow)")
+	_ = database.SetSetting(instagramBusinessIDSetting, igID, "Instagram user/business account ID")
+	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
+
+	log.Printf("InstagramLoginCallback: успешно подключён аккаунт @%s (id=%s)", igUsername, igID)
+
+	// Также сохраняем в таблицу instagram_accounts если она есть
+	account := InstagramAccountInfo{
+		ID:             igID,
+		Username:       igUsername,
+		Name:           igName,
+		TokenExpiresAt: tokenExpiresAt,
+	}
+	if err := saveInstagramAccount(account); err != nil {
+		log.Printf("InstagramLoginCallback: ошибка сохранения в instagram_accounts: %v (продолжаем)", err)
+	}
+
+	c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/settings?instagram_connected=true")
 }
