@@ -197,7 +197,26 @@ func InstagramOAuthCallback(c *gin.Context) {
 	}
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
 
-	redirectTo := igFrontendURL() + "/?instagram_connected=true"
+	// Переустанавливаем session cookie с правильными атрибутами для cross-domain.
+	// Браузер отправляет cookie при first-party навигации на callback URL,
+	// но после редиректа на фронтенд cookie может не отправиться в cross-origin fetch
+	// без SameSite=None; Secure. Обновляем cookie здесь, пока мы на домене бекенда.
+	if sessionToken, err := c.Cookie("session"); err == nil && sessionToken != "" {
+		domain := os.Getenv("COOKIE_DOMAIN")
+		cookie := "session=" + sessionToken
+		cookie += "; Path=/"
+		cookie += "; Max-Age=86400"
+		cookie += "; HttpOnly"
+		cookie += "; SameSite=None"
+		cookie += "; Secure"
+		if domain != "" {
+			cookie += "; Domain=" + domain
+		}
+		c.Header("Set-Cookie", cookie)
+		log.Println("InstagramOAuthCallback: session cookie обновлён с SameSite=None")
+	}
+
+	redirectTo := igFrontendURL() + "/settings?instagram_connected=true"
 	log.Printf("InstagramOAuthCallback: токен сохранён, редирект → %s", redirectTo)
 	// location.replace убирает callback URL из истории браузера
 	c.Header("Content-Type", "text/html; charset=utf-8")

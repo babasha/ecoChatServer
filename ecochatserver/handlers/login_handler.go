@@ -84,13 +84,12 @@ func LoginHandler(c *gin.Context) {
 	isProduction := os.Getenv("GIN_MODE") == "release"
 	domain := os.Getenv("COOKIE_DOMAIN") // например, ".vercel.app" для поддоменов
 
-	// CORS: Для cross-domain нужно явно указать SameSite=None
-	// Gin не поддерживает SameSite напрямую в SetCookie, поэтому для cross-domain
-	// используем ручную установку заголовка
-	if os.Getenv("ENABLE_CROSS_DOMAIN_COOKIES") == "true" {
-		cookieHeader := buildCookieHeader(token, isProduction, domain)
+	// В production всегда SameSite=None; Secure для cross-domain (фронтенд на Vercel, бекенд на Railway)
+	// В dev режиме можно использовать обычные cookies
+	if isProduction || os.Getenv("ENABLE_CROSS_DOMAIN_COOKIES") == "true" {
+		cookieHeader := buildCookieHeader(token, true, domain)
 		c.Header("Set-Cookie", cookieHeader)
-		log.Printf("LoginHandler: установлен cross-domain cookie для %s: %s", req.Email, cookieHeader)
+		log.Printf("LoginHandler: установлен cross-domain cookie для %s", req.Email)
 	} else {
 		c.SetCookie(
 			"session",    // name
@@ -98,7 +97,7 @@ func LoginHandler(c *gin.Context) {
 			86400,        // maxAge (24 часа в секундах)
 			"/",          // path
 			domain,       // domain (пустая строка = текущий домен)
-			isProduction, // secure (только HTTPS в production)
+			false,        // secure
 			true,         // httpOnly
 		)
 		log.Printf("LoginHandler: установлен same-origin cookie для: %s", req.Email)
@@ -169,16 +168,16 @@ func LogoutHandler(c *gin.Context) {
 	domain := os.Getenv("COOKIE_DOMAIN")
 	isProduction := os.Getenv("GIN_MODE") == "release"
 
-	// Удаляем cookie установкой MaxAge в -1
-	c.SetCookie(
-		"session",
-		"",
-		-1, // MaxAge = -1 удаляет cookie
-		"/",
-		domain,
-		isProduction,
-		true,
-	)
+	// Удаляем cookie — атрибуты должны совпадать с установкой
+	if isProduction || os.Getenv("ENABLE_CROSS_DOMAIN_COOKIES") == "true" {
+		cookie := "session=; Path=/; Max-Age=0; HttpOnly; SameSite=None; Secure"
+		if domain != "" {
+			cookie += "; Domain=" + domain
+		}
+		c.Header("Set-Cookie", cookie)
+	} else {
+		c.SetCookie("session", "", -1, "/", domain, false, true)
+	}
 
 	log.Printf("LogoutHandler: session cookie удалена")
 
