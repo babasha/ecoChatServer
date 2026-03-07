@@ -114,7 +114,7 @@ func InstagramOAuthInitiate(c *gin.Context) {
 
 	// OAuth через Facebook (не Instagram) — именно так работает Instagram Business API
 	authURL := fmt.Sprintf(
-		"%s?client_id=%s&redirect_uri=%s&scope=%s&response_type=code&state=%s",
+		"%s?client_id=%s&redirect_uri=%s&scope=%s&response_type=code&state=%s&config_id=918999337663373",
 		facebookAuthURL,
 		url.QueryEscape(clientID),
 		url.QueryEscape(redirectURI),
