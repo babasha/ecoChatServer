@@ -98,8 +98,8 @@ func InstagramOAuthInitiate(c *gin.Context) {
 		redirectURI = v
 	}
 
-	// Scopes для Instagram DM через Facebook Business Login
-	scopes := "instagram_basic,instagram_manage_messages,pages_manage_metadata,pages_messaging"
+	// Scopes для Instagram Business Login
+	scopes := "instagram_basic,instagram_manage_messages"
 
 	// Генерируем state для CSRF-защиты — callback его проверит
 	state := generateOAuthState()
