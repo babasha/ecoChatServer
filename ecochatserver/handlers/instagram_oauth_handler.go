@@ -197,10 +197,9 @@ func InstagramOAuthCallback(c *gin.Context) {
 	}
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
 
-	redirectTo := igFrontendURL() + "/settings?instagram_connected=true"
-	log.Printf("InstagramOAuthCallback: токен сохранён, редирект → %s (FRONTEND_URL=%q)", redirectTo, os.Getenv("FRONTEND_URL"))
-	// Используем location.replace чтобы не засорять browser history
-	// (иначе кнопка "назад" вернёт на /auth/instagram/callback с протухшим code)
+	redirectTo := igFrontendURL() + "/?instagram_connected=true"
+	log.Printf("InstagramOAuthCallback: токен сохранён, редирект → %s", redirectTo)
+	// location.replace убирает callback URL из истории браузера
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusOK, `<!DOCTYPE html><html><head><script>window.location.replace(%q);</script></head><body></body></html>`, redirectTo)
 }
