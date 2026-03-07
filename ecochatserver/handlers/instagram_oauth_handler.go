@@ -102,7 +102,7 @@ func InstagramOAuthInitiate(c *gin.Context) {
 	}
 
 	// Scopes для Instagram Business Login
-	scopes := "instagram_basic,instagram_manage_messages"
+	scopes := "instagram_basic,instagram_manage_messages,pages_messaging,pages_manage_metadata"
 
 	// mode=login → логин через Instagram; mode=connect → подключение Instagram к чату
 	mode := c.DefaultQuery("mode", "connect")
