@@ -199,7 +199,10 @@ func InstagramOAuthCallback(c *gin.Context) {
 
 	redirectTo := igFrontendURL() + "/settings?instagram_connected=true"
 	log.Printf("InstagramOAuthCallback: токен сохранён, редирект → %s (FRONTEND_URL=%q)", redirectTo, os.Getenv("FRONTEND_URL"))
-	c.Redirect(http.StatusFound, redirectTo)
+	// Используем location.replace чтобы не засорять browser history
+	// (иначе кнопка "назад" вернёт на /auth/instagram/callback с протухшим code)
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, `<!DOCTYPE html><html><head><script>window.location.replace(%q);</script></head><body></body></html>`, redirectTo)
 }
 
 // FacebookPage представляет страницу Facebook
