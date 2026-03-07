@@ -197,8 +197,9 @@ func InstagramOAuthCallback(c *gin.Context) {
 	}
 	_ = database.SetSetting("INSTAGRAM_TOKEN_EXPIRES_AT", tokenExpiresAt.UTC().Format(time.RFC3339), "Instagram token expiration")
 
-	log.Println("InstagramOAuthCallback: токен сохранён, редиректим на фронтенд")
-	c.Redirect(http.StatusFound, igFrontendURL()+"/settings?instagram_connected=true")
+	redirectTo := igFrontendURL() + "/settings?instagram_connected=true"
+	log.Printf("InstagramOAuthCallback: токен сохранён, редирект → %s (FRONTEND_URL=%q)", redirectTo, os.Getenv("FRONTEND_URL"))
+	c.Redirect(http.StatusFound, redirectTo)
 }
 
 // FacebookPage представляет страницу Facebook
