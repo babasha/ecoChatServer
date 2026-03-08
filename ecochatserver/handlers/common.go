@@ -1,14 +1,20 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/egor/ecochatserver/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/database/queries"
+	"github.com/egor/ecochatserver/models"
+	"github.com/egor/ecochatserver/websocket"
 )
 
 // parsePagination извлекает и валидирует параметры пагинации из query string
@@ -140,4 +146,159 @@ func getAdminLanguage(adminID uuid.UUID) string {
 		return ""
 	}
 	return settings.PreferredLanguage
+}
+
+// truncateForLog обрезает строку для вывода в лог
+func truncateForLog(value string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen] + "...(truncated)"
+}
+
+// firstNotEmpty возвращает первое непустое значение из списка
+func firstNotEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// deterministicUUID создаёт детерминированный UUID из строки (или парсит, если строка — валидный UUID)
+func deterministicUUID(value string) uuid.UUID {
+	if parsed, err := uuid.Parse(value); err == nil {
+		return parsed
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(value))
+}
+
+// maskIdentifier маскирует идентификатор, оставляя последние 4 символа
+func maskIdentifier(id string) string {
+	if len(id) <= 4 {
+		return id
+	}
+	return id[len(id)-4:]
+}
+
+// createChatInfo создает информацию о чате для WebSocket уведомлений
+func createChatInfo(chat *models.Chat) map[string]interface{} {
+	return map[string]interface{}{
+		"id":                   chat.ID.String(),
+		"user":                 chat.User,
+		"status":               chat.Status,
+		"source":               chat.Source,
+		"clientId":             chat.ClientID.String(),
+		"createdAt":            chat.CreatedAt.Format(time.RFC3339),
+		"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
+		"unreadCount":          0,
+		"autoResponderEnabled": chat.AutoResponderEnabled,
+	}
+}
+
+// createMessageNotification создает WebSocket уведомление для одного сообщения
+func createMessageNotification(chatID uuid.UUID, message *models.Message, chatInfo map[string]interface{}) []byte {
+	payload := map[string]interface{}{
+		"chatId":  chatID.String(),
+		"message": createMessagePayload(message, chatID),
+		"chat":    chatInfo,
+	}
+	msg, _ := websocket.NewMessage("new_message", payload)
+	return msg
+}
+
+// createEscalationNotification создает уведомление об эскалации для админов
+func createEscalationNotification(chatID uuid.UUID, userMsg *models.Message) []byte {
+	payload := map[string]interface{}{
+		"type":   "escalation",
+		"chatId": chatID.String(),
+		"message": map[string]interface{}{
+			"id":        userMsg.ID.String(),
+			"content":   userMsg.Content,
+			"sender":    userMsg.Sender,
+			"timestamp": userMsg.Timestamp.Format(time.RFC3339),
+		},
+		"sound":  "notification",
+		"urgent": true,
+	}
+	msg, _ := websocket.NewMessage("escalation_alert", payload)
+	return msg
+}
+
+// runAutoResponder обрабатывает сообщение через автоответчик, сохраняет ответ,
+// обрабатывает эскалацию и (опционально) отправляет во внешние каналы.
+func runAutoResponder(ctx context.Context, chat *models.Chat, userMsg *models.Message, dispatchExternal bool) *models.Message {
+	if AutoResponder == nil || !chat.AutoResponderEnabled {
+		return nil
+	}
+
+	lightChat, err := queries.GetChatLightweight(database.DB, chat.ID)
+	if err != nil {
+		log.Printf("runAutoResponder: ошибка загрузки чата: %v", err)
+		lightChat = chat
+	}
+
+	botMsg, err := AutoResponder.ProcessMessage(ctx, lightChat, userMsg)
+	if err != nil {
+		log.Printf("runAutoResponder: ошибка: %v", err)
+		if strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "overloaded") {
+			botMsg = &models.Message{
+				ChatID:    chat.ID,
+				Content:   "Извините, сервис временно перегружен. Попробуйте повторить запрос через несколько секунд.",
+				Sender:    "admin",
+				SenderID:  uuid.MustParse("00000000-0000-0000-0000-000000000000"),
+				Type:      "text",
+				Timestamp: time.Now(),
+				Metadata:  make(map[string]interface{}),
+			}
+		}
+	}
+
+	if botMsg == nil {
+		return nil
+	}
+
+	saved, err := database.AddMessage(
+		chat.ID,
+		botMsg.Content,
+		botMsg.Sender,
+		botMsg.SenderID,
+		botMsg.Type,
+		botMsg.Metadata,
+	)
+	if err != nil {
+		log.Printf("runAutoResponder: ошибка сохранения: %v", err)
+		return nil
+	}
+
+	botMsg = saved
+
+	if dispatchExternal {
+		go dispatchExternalMessage(chat.ID, botMsg)
+	}
+
+	if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok && needEscalation {
+		escalation := createEscalationNotification(chat.ID, userMsg)
+		sent := WebSocketHub.SendToAllAdmins(escalation)
+		log.Printf("runAutoResponder: уведомление об эскалации → %d админов", sent)
+	}
+
+	return botMsg
+}
+
+// notifyNewMessages отправляет WebSocket уведомления о новых сообщениях (user + bot)
+func notifyNewMessages(chat *models.Chat, userMsg *models.Message, botMsg *models.Message) {
+	chatInfo := createChatInfo(chat)
+
+	userNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
+	WebSocketHub.SendToChatAndAdmins(chat.ID.String(), userNotification)
+
+	if botMsg != nil {
+		botNotification := createMessageNotification(chat.ID, botMsg, chatInfo)
+		WebSocketHub.SendToChatAndAdmins(chat.ID.String(), botNotification)
+	}
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/egor/ecochatserver/database"
-	"github.com/egor/ecochatserver/database/queries"
 	"github.com/egor/ecochatserver/models"
 )
 
@@ -257,54 +256,8 @@ func handleWhatsAppMessage(ctx context.Context, entryID string, metadata whatsap
 
 	log.Printf("handleWhatsAppMessage: сообщение сохранено (id=%s, chat=%s, from=%s)", userMsg.ID, chat.ID, senderPhone)
 
-	var botMsg *models.Message
-	if AutoResponder != nil && chat.AutoResponderEnabled {
-		log.Printf("handleWhatsAppMessage: запуск автоответчика")
-
-		lightChat, err := queries.GetChatLightweight(database.DB, chat.ID)
-		if err != nil {
-			log.Printf("handleWhatsAppMessage: ошибка загрузки чата для автоответчика: %v", err)
-			lightChat = chat
-		}
-
-		botMsg, err = AutoResponder.ProcessMessage(ctx, lightChat, userMsg)
-		if err != nil {
-			log.Printf("handleWhatsAppMessage: ошибка автоответчика: %v", err)
-		}
-
-		if botMsg != nil {
-			saved, err := database.AddMessage(
-				chat.ID,
-				botMsg.Content,
-				botMsg.Sender,
-				botMsg.SenderID,
-				botMsg.Type,
-				botMsg.Metadata,
-			)
-			if err != nil {
-				log.Printf("handleWhatsAppMessage: ошибка сохранения автоответа: %v", err)
-			} else {
-				botMsg = saved
-				go dispatchExternalMessage(chat.ID, botMsg)
-
-				if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok && needEscalation {
-					escalationNotification := createEscalationNotification(chat.ID, userMsg)
-					totalSent := WebSocketHub.SendToAllAdmins(escalationNotification)
-					log.Printf("handleWhatsAppMessage: уведомление об эскалации отправлено %d админам", totalSent)
-				}
-			}
-		}
-	}
-
-	chatInfo := createChatInfo(chat)
-	userNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
-	totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), userNotification)
-	log.Printf("handleWhatsAppMessage: уведомление отправлено %d клиентам", totalSent)
-
-	if botMsg != nil {
-		botNotification := createMessageNotification(chat.ID, botMsg, chatInfo)
-		WebSocketHub.SendToChatAndAdmins(chat.ID.String(), botNotification)
-	}
+	botMsg := runAutoResponder(ctx, chat, userMsg, true)
+	notifyNewMessages(chat, userMsg, botMsg)
 
 	return nil
 }

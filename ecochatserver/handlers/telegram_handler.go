@@ -12,7 +12,6 @@ import (
 
 	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
-	"github.com/egor/ecochatserver/database/queries"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
 	"github.com/egor/ecochatserver/websocket"
@@ -230,80 +229,7 @@ func TelegramWebhook(c *gin.Context) {
 	log.Printf("TelegramWebhook: сообщение добавлено: ID=%s", userMsg.ID)
 
 	// Генерируем автоответ, если включено
-	var botMsg *models.Message
-	log.Printf("TelegramWebhook: проверка автоответчика - AutoResponder != nil: %v, chat.AutoResponderEnabled: %v", AutoResponder != nil, chat.AutoResponderEnabled)
-	if AutoResponder != nil && chat.AutoResponderEnabled {
-		log.Printf("TelegramWebhook: генерируем автоответ")
-
-		// Загружаем минимальную информацию о чате для автоответчика
-		lightChat, err := queries.GetChatLightweight(database.DB, chat.ID)
-		if err != nil {
-			log.Printf("TelegramWebhook: ошибка загрузки чата: %v", err)
-			lightChat = chat // Используем уже загруженный чат
-		}
-
-		// LLM получает оригинальный текст (он уже в userMsg.Content)
-		// Теперь content всегда содержит оригинал, не нужно подменять
-		botMsg, err = AutoResponder.ProcessMessage(
-			c.Request.Context(),
-			lightChat,
-			userMsg,
-		)
-		if err != nil {
-			log.Printf("TelegramWebhook: AutoResponder.ProcessMessage error: %v", err)
-
-			// Если ошибка от Gemini API (перегрузка, таймаут и т.д.) - отправляем извинение
-			if strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "overloaded") {
-				botMsg = &models.Message{
-					ChatID:    chat.ID,
-					Content:   "Извините, сервис временно перегружен 😔 Попробуйте повторить запрос через несколько секунд.",
-					Sender:    "admin",
-					SenderID:  uuid.MustParse("00000000-0000-0000-0000-000000000000"),
-					Type:      "text",
-					Timestamp: time.Now(),
-					Metadata:  make(map[string]interface{}),
-				}
-			}
-		}
-
-		if botMsg != nil {
-			log.Printf("TelegramWebhook: автоответ сгенерирован, сохраняем в БД")
-			botUUID := botMsg.SenderID
-
-			saved, err := database.AddMessage(
-				chat.ID,
-				botMsg.Content,
-				botMsg.Sender,
-				botUUID,
-				botMsg.Type,
-				botMsg.Metadata,
-			)
-			if err != nil {
-				log.Printf("TelegramWebhook: ошибка сохранения автоответа: %v", err)
-			} else {
-				botMsg = saved
-				log.Printf("TelegramWebhook: автоответ сохранен: ID=%s", botMsg.ID)
-
-				// Проверяем нужна ли эскалация
-				if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok {
-					log.Printf("TelegramWebhook: проверка эскалации для чата %s: needEscalation=%v", chat.ID, needEscalation)
-					if needEscalation {
-						log.Printf("TelegramWebhook: требуется эскалация для чата %s", chat.ID)
-						// Отправляем уведомление админам об эскалации
-						escalationNotification := createEscalationNotification(chat.ID, userMsg)
-						totalSent := WebSocketHub.SendToAllAdmins(escalationNotification)
-						log.Printf("TelegramWebhook: уведомление об эскалации отправлено %d админам", totalSent)
-					}
-				} else {
-					log.Printf("TelegramWebhook: поле needEscalation отсутствует в метаданных для чата %s", chat.ID)
-				}
-			}
-		} else {
-			log.Printf("TelegramWebhook: автоответ не сгенерирован (botMsg == nil)")
-		}
-	} else {
-		log.Printf("TelegramWebhook: автоответчик не активен")
-	}
+	botMsg := runAutoResponder(c.Request.Context(), chat, userMsg, false)
 
 	// ВАЖНО: Отправляем WebSocket уведомления
 	if userMsg != nil {
@@ -343,58 +269,6 @@ func TelegramWebhook(c *gin.Context) {
 
 	log.Printf("TelegramWebhook: отправляем ответ: %+v", response)
 	c.JSON(http.StatusOK, response)
-}
-
-// createChatInfo создает информацию о чате для WebSocket уведомлений (используется повторно)
-func createChatInfo(chat *models.Chat) map[string]interface{} {
-	// ВАЖНО: unreadCount НЕ используется фронтендом из WebSocket!
-	// Фронтенд сам инкрементирует счётчик локально при получении нового сообщения.
-	// Источник правды для unreadCount - это GetChats с SQL COUNT из БД.
-	// Здесь отправляем 0 для совместимости, но фронтенд это значение игнорирует.
-
-	return map[string]interface{}{
-		"id":                   chat.ID.String(),
-		"user":                 chat.User,
-		"status":               chat.Status,
-		"source":               chat.Source,
-		"clientId":             chat.ClientID.String(),
-		"createdAt":            chat.CreatedAt.Format(time.RFC3339),
-		"updatedAt":            chat.UpdatedAt.Format(time.RFC3339),
-		"unreadCount":          0, // Фронтенд не использует это значение
-		"autoResponderEnabled": chat.AutoResponderEnabled,
-	}
-}
-
-// createMessageNotification создает WebSocket уведомление для одного сообщения
-func createMessageNotification(chatID uuid.UUID, message *models.Message, chatInfo map[string]interface{}) []byte {
-	payload := map[string]interface{}{
-		"chatId":  chatID.String(),
-		"message": createMessagePayload(message, chatID),
-		"chat":    chatInfo,
-	}
-
-	msg, _ := websocket.NewMessage("new_message", payload)
-	return msg
-}
-
-// createEscalationNotification создает уведомление об эскалации для админов
-func createEscalationNotification(chatID uuid.UUID, userMsg *models.Message) []byte {
-	payload := map[string]interface{}{
-		"type":   "escalation",
-		"chatId": chatID.String(),
-		"message": map[string]interface{}{
-			"id":        userMsg.ID.String(),
-			"content":   userMsg.Content,
-			"sender":    userMsg.Sender,
-			"timestamp": userMsg.Timestamp.Format(time.RFC3339),
-		},
-		"sound":  "notification", // Флаг для звукового уведомления
-		"urgent": true,
-	}
-
-	msg, _ := websocket.NewMessage("escalation_alert", payload)
-	log.Printf("createEscalationNotification: создано уведомление об эскалации: %s", string(msg))
-	return msg
 }
 
 // handleCORS выставляет стандартные CORS заголовки

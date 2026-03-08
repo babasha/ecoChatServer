@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/egor/ecochatserver/database"
-	"github.com/egor/ecochatserver/database/queries"
 	"github.com/egor/ecochatserver/models"
 )
 
@@ -248,13 +247,11 @@ func InstagramWebhook(c *gin.Context) {
 
 	processed := 0
 	var processedDetails []gin.H
-	configuredBusinessID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
 	webhookEntryID := database.GetDynamicSetting(instagramWebhookEntryID, "")
-	log.Printf("InstagramWebhook: configuredBusinessID=%s, webhookEntryID=%s", configuredBusinessID, webhookEntryID)
 
 	for _, entry := range payload.Entry {
-		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d",
-			entry.ID, len(entry.Changes), len(entry.Messaging))
+		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d, filter=%s",
+			entry.ID, len(entry.Changes), len(entry.Messaging), webhookEntryID)
 
 		// Фильтруем вебхуки от чужих аккаунтов
 		if webhookEntryID != "" && entry.ID != webhookEntryID {
@@ -721,29 +718,20 @@ func parseInstagramTimestamp(ts json.Number) time.Time {
 	return time.Time{}
 }
 
-func firstNotEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (string, error) {
 	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
-	configuredID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
-	log.Printf("handleInstagramMessage: senderID=%s, recipientID=%s, is_echo=%v, mid=%s, configuredBusinessID=%s, text=%s",
-		envelope.SenderID, envelope.RecipientID, envelope.Message.IsEcho, messageID, configuredID,
+
+	log.Printf("handleInstagramMessage: sender=%s, recipient=%s, is_echo=%v, text=%s",
+		envelope.SenderID, envelope.RecipientID, envelope.Message.IsEcho,
 		truncateForLog(extractInstagramText(envelope.Message), 50))
 
 	if envelope.SenderID == "" {
 		return "", fmt.Errorf("sender id отсутствует")
 	}
 
-	// Пропускаем эхо-сообщения (is_echo=true — это уведомление об отправленном сообщении от бизнес-аккаунта)
+	// Пропускаем эхо-сообщения (is_echo=true — уведомление об отправленном сообщении от бизнес-аккаунта)
 	if envelope.Message.IsEcho {
-		log.Printf("handleInstagramMessage: SKIP is_echo (sender=%s, mid=%s)", envelope.SenderID, messageID)
+		log.Printf("handleInstagramMessage: SKIP is_echo (sender=%s)", envelope.SenderID)
 		return "", nil
 	}
 
@@ -754,7 +742,7 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 	}
 
 	clientAPIKey := database.GetSetting(instagramClientKeySetting, defaultInstagramClientKey)
-	botID := firstNotEmpty(envelope.RecipientID, configuredID)
+	botID := firstNotEmpty(envelope.RecipientID, database.GetDynamicSetting(instagramBusinessIDSetting, ""))
 	if botID == "" {
 		return "", fmt.Errorf("bot id не найден для сообщения %s", messageID)
 	}
@@ -859,66 +847,8 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 
 	log.Printf("handleInstagramMessage: сообщение сохранено (id=%s, chat=%s)", userMsg.ID, chat.ID)
 
-	var botMsg *models.Message
-	if AutoResponder != nil && chat.AutoResponderEnabled {
-		log.Printf("handleInstagramMessage: запуск автоответчика")
-
-		lightChat, err := queries.GetChatLightweight(database.DB, chat.ID)
-		if err != nil {
-			log.Printf("handleInstagramMessage: ошибка загрузки чата для автоответчика: %v", err)
-			lightChat = chat
-		}
-
-		botMsg, err = AutoResponder.ProcessMessage(ctx, lightChat, userMsg)
-		if err != nil {
-			log.Printf("handleInstagramMessage: ошибка автоответчика: %v", err)
-			if strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "overloaded") {
-				botMsg = &models.Message{
-					ChatID:    chat.ID,
-					Content:   "Извините, сервис временно перегружен 😔 Попробуйте повторить запрос через несколько секунд.",
-					Sender:    "admin",
-					SenderID:  uuid.MustParse("00000000-0000-0000-0000-000000000000"),
-					Type:      "text",
-					Timestamp: time.Now(),
-					Metadata:  make(map[string]interface{}),
-				}
-			}
-		}
-
-		if botMsg != nil {
-			saved, err := database.AddMessage(
-				chat.ID,
-				botMsg.Content,
-				botMsg.Sender,
-				botMsg.SenderID,
-				botMsg.Type,
-				botMsg.Metadata,
-			)
-			if err != nil {
-				log.Printf("handleInstagramMessage: ошибка сохранения автоответа: %v", err)
-			} else {
-				botMsg = saved
-				go dispatchExternalMessage(chat.ID, botMsg)
-
-				if needEscalation, ok := botMsg.Metadata["needEscalation"].(bool); ok && needEscalation {
-					escalationNotification := createEscalationNotification(chat.ID, userMsg)
-					totalSent := WebSocketHub.SendToAllAdmins(escalationNotification)
-					log.Printf("handleInstagramMessage: уведомление об эскалации отправлено %d админам", totalSent)
-				}
-			}
-		}
-	}
-
-	chatInfo := createChatInfo(chat)
-	userNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
-	totalSent := WebSocketHub.SendToChatAndAdmins(chat.ID.String(), userNotification)
-	log.Printf("handleInstagramMessage: уведомление о сообщении пользователя отправлено %d клиентам", totalSent)
-
-	if botMsg != nil {
-		botNotification := createMessageNotification(chat.ID, botMsg, chatInfo)
-		totalSent = WebSocketHub.SendToChatAndAdmins(chat.ID.String(), botNotification)
-		log.Printf("handleInstagramMessage: уведомление о сообщении бота отправлено %d клиентам", totalSent)
-	}
+	botMsg := runAutoResponder(ctx, chat, userMsg, true)
+	notifyNewMessages(chat, userMsg, botMsg)
 
 	return chat.ID.String(), nil
 }
@@ -954,20 +884,6 @@ func describeInstagramAttachment(attachments []instagramAttachment) string {
 		return "Instagram attachment"
 	}
 	return fmt.Sprintf("Instagram attachment: %s", strings.Join(types, ", "))
-}
-
-func deterministicUUID(value string) uuid.UUID {
-	if parsed, err := uuid.Parse(value); err == nil {
-		return parsed
-	}
-	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(value))
-}
-
-func maskIdentifier(id string) string {
-	if len(id) <= 4 {
-		return id
-	}
-	return id[len(id)-4:]
 }
 
 func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, message *models.Message) error {
@@ -1009,9 +925,6 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 		return fmt.Errorf("instagram access token не настроен (userID=%s, text=%s)", userID, truncateForLog(text, 50))
 	}
 
-	log.Printf("sendInstagramOutgoingMessage: chatID=%s, chatSource=%s, chatBotID=%s, userSourceID=%s, tokenPrefix=%s",
-		chat.ID, chat.Source, chat.BotID, userID, truncateForLog(token, 20))
-
 	// Instagram Business Login API: отправка через graph.instagram.com
 	apiURL := "https://graph.instagram.com/v25.0/me/messages"
 
@@ -1050,16 +963,6 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 
 	log.Printf("sendInstagramOutgoingMessage: сообщение отправлено (chat=%s, user=%s)", chat.ID, userID)
 	return nil
-}
-
-func truncateForLog(value string, maxLen int) string {
-	if maxLen <= 0 {
-		return ""
-	}
-	if len(value) <= maxLen {
-		return value
-	}
-	return value[:maxLen] + "...(truncated)"
 }
 
 // FindInstagramChat ищет существующий Instagram чат по sender_id
