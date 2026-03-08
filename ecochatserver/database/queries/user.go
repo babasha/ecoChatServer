@@ -32,6 +32,18 @@ func getOrCreateUser(
 
 	if err == nil {
 		user.Avatar = nullStringToPointer(avatarNull)
+		// Обновляем имя, если передано новое непустое имя, отличное от текущего
+		if userName != "" && userName != user.Name {
+			log.Printf("getOrCreateUser: обновляем имя пользователя ID=%s: %q -> %q", user.ID, user.Name, userName)
+			if _, err := tx.ExecContext(ctx,
+				"UPDATE users SET name=$1 WHERE id=$2",
+				userName, user.ID,
+			); err != nil {
+				log.Printf("getOrCreateUser: ошибка обновления имени: %v", err)
+			} else {
+				user.Name = userName
+			}
+		}
 		log.Printf("getOrCreateUser: найден существующий пользователь ID=%s, name=%s", user.ID, user.Name)
 		return &user, nil
 	}
