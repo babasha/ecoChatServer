@@ -10,6 +10,110 @@ import (
 	"github.com/google/uuid"
 )
 
+// ============================================================================
+// Director Reports (Level 2 agent)
+// ============================================================================
+
+func InsertDirectorReport(id uuid.UUID, reportDate time.Time, reportType, triggerEvent string, summaryCount int, analysis string, directives, stats, customerComplaints, keyObservations, promptChanges json.RawMessage, expectations string) error {
+	return queries.InsertDirectorReport(DB, id, reportDate, reportType, triggerEvent, summaryCount, analysis, directives, stats, customerComplaints, keyObservations, promptChanges, expectations)
+}
+
+func GetLatestDirectorReport() (*models.DirectorReport, error) {
+	return queries.GetLatestDirectorReport(DB)
+}
+
+func UpdateDirectorReportPromptChanges(id uuid.UUID, promptChanges json.RawMessage) error {
+	return queries.UpdateDirectorReportPromptChanges(DB, id, promptChanges)
+}
+
+func GetChatSummariesSince(since time.Time) ([]models.ChatSummary, error) {
+	return queries.GetChatSummariesSince(DB, since)
+}
+
+// ============================================================================
+// Agent Prompts (versioned prompt management)
+// ============================================================================
+
+func GetActivePrompt(agentName string) (*models.AgentPrompt, error) {
+	return queries.GetActivePrompt(DB, agentName)
+}
+
+func GetPromptHistory(agentName string, limit int) ([]models.AgentPrompt, error) {
+	return queries.GetPromptHistory(DB, agentName, limit)
+}
+
+func InsertPrompt(agentName string, version int, prompt, createdBy string, parentVersion *int, notes string) (*models.AgentPrompt, error) {
+	return queries.InsertPrompt(DB, agentName, version, prompt, createdBy, parentVersion, notes)
+}
+
+func ActivatePrompt(agentName string, version int) error {
+	return queries.ActivatePrompt(DB, agentName, version)
+}
+
+func UpdatePromptMetrics(agentName string, version int, metrics *models.PromptMetrics) error {
+	return queries.UpdatePromptMetrics(DB, agentName, version, metrics)
+}
+
+func GetNextPromptVersion(agentName string) (int, error) {
+	return queries.GetNextVersion(DB, agentName)
+}
+
+// ============================================================================
+// Interaction Metrics (per-agent/per-tool analytics)
+// ============================================================================
+
+func InsertInteractionMetric(m *models.InteractionMetric) error {
+	return queries.InsertInteractionMetric(DB, m)
+}
+
+func GetAgentStatsSince(since time.Time) ([]models.AgentStats, error) {
+	return queries.GetAgentStatsSince(DB, since)
+}
+
+func GetToolStatsSince(since time.Time) ([]models.ToolStats, error) {
+	return queries.GetToolStatsSince(DB, since)
+}
+
+func GetToolStatsByAgentSince(agentName string, since time.Time) ([]models.ToolStats, error) {
+	return queries.GetToolStatsByAgentSince(DB, agentName, since)
+}
+
+func GetPromptVersionMetrics(agentName string, version int) (*models.PromptMetrics, error) {
+	return queries.GetPromptVersionMetrics(DB, agentName, version)
+}
+
+// ============================================================================
+// Chat Summaries (session pruning)
+// ============================================================================
+
+func InsertChatSummary(chatID uuid.UUID, summary string, messagesFrom, messagesTo time.Time, messageCount int) (*models.ChatSummary, error) {
+	return queries.InsertChatSummary(DB, chatID, summary, messagesFrom, messagesTo, messageCount)
+}
+
+func GetLatestChatSummary(chatID uuid.UUID) (*models.ChatSummary, error) {
+	return queries.GetLatestChatSummary(DB, chatID)
+}
+
+func CountMessagesSince(chatID uuid.UUID, since time.Time) (int, error) {
+	return queries.CountMessagesSince(DB, chatID, since)
+}
+
+func CountAllMessages(chatID uuid.UUID) (int, error) {
+	return queries.CountAllMessages(DB, chatID)
+}
+
+func GetMessagesSince(chatID uuid.UUID, since time.Time, limit int) ([]models.Message, error) {
+	return queries.GetMessagesSince(DB, chatID, since, limit)
+}
+
+func GetRecentMessages(chatID uuid.UUID, limit int) ([]models.Message, error) {
+	return queries.GetRecentMessages(DB, chatID, limit)
+}
+
+func GetMessagesForSummary(chatID uuid.UUID, since time.Time, limit int) ([]models.Message, error) {
+	return queries.GetMessagesForSummary(DB, chatID, since, limit)
+}
+
 // Экспортируем константы
 const (
 	DefaultPageSize = queries.DefaultPageSize

@@ -482,6 +482,11 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/instagram/status", handlers.GetInstagramAccountStatus)
 			admin.POST("/instagram/disconnect", handlers.DisconnectInstagramAccount)
 
+			// Director chat (Level 2 AI agent conversation)
+			admin.POST("/director/chat", handlers.DirectorChatMessage)
+			admin.GET("/director/chat/history", handlers.DirectorChatHistory)
+			admin.DELETE("/director/chat/history", handlers.DirectorChatClear)
+
 			// Статистика для администраторов
 			admin.GET("/admin/stats", func(c *gin.Context) {
 				stats := handlers.WebSocketHub.GetStats()

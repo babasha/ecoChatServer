@@ -6,6 +6,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/egor/ecochatserver/models"
+
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/artifact"
@@ -125,7 +127,7 @@ func (oa *OrchestratorAgent) createPlantAgent() (agent.Agent, error) {
 		Name:        "plant_expert",
 		Model:       model,
 		Description: "Plant care expert: species, humidity thresholds, care guides, recommendations.",
-		Instruction: getPlantAgentPrompt(),
+		Instruction: loadPrompt("plant_expert", getPlantAgentPrompt),
 		Tools:       plantTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
@@ -156,7 +158,7 @@ func (oa *OrchestratorAgent) createDeviceAgent(zefirClient *ZefirClient, userIDP
 		Name:        "device_specialist",
 		Model:       model,
 		Description: "Device expert: sensors, setup, troubleshooting, mesh network.",
-		Instruction: getDeviceAgentPrompt(),
+		Instruction: loadPrompt("device_specialist", getDeviceAgentPrompt),
 		Tools:       deviceTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.2),
@@ -187,7 +189,7 @@ func (oa *OrchestratorAgent) createSupportAgent() (agent.Agent, error) {
 		Name:        "support_specialist",
 		Model:       model,
 		Description: "Support: FAQ, app info, contacts, features, security.",
-		Instruction: getSupportAgentPrompt(),
+		Instruction: loadPrompt("support_specialist", getSupportAgentPrompt),
 		Tools:       supportTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.3),
@@ -219,7 +221,7 @@ func (oa *OrchestratorAgent) createOrchestrator() (agent.Agent, error) {
 		Name:        "zefir_orchestrator",
 		Model:       model,
 		Description: "Router for Zefir support",
-		Instruction: getOrchestratorPrompt(),
+		Instruction: loadPrompt("orchestrator", getOrchestratorPrompt),
 		Tools:       agentTools,
 		GenerateContentConfig: &genai.GenerateContentConfig{
 			Temperature:     ptrFloat32(0.1),
@@ -240,7 +242,7 @@ func (oa *OrchestratorAgent) GetOrchestrator() agent.Agent {
 }
 
 // ProcessMessage processes a message through the multi-agent system
-func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, userMessage string, clientLang string) (string, error) {
+func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, userMessage string, clientLang string) (*AgentResult, error) {
 	log.Printf("[MULTI-AGENT] Processing message for session %s", sessionID)
 
 	// Create or get session
@@ -266,7 +268,7 @@ func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, user
 			},
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to create session: %w", err)
+			return nil, fmt.Errorf("failed to create session: %w", err)
 		}
 		log.Printf("[MULTI-AGENT] Created new session %s for user %s", sessionID, userID)
 	}
@@ -277,13 +279,16 @@ func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, user
 		messageContent = fmt.Sprintf("[Client language: %s]\n%s", clientLang, userMessage)
 	}
 
-	// Run agent
+	// Run agent — capture tool calls
 	const maxToolCalls = 15 // safety limit for multi-agent (higher since orchestrator delegates)
 	userContent := genai.NewContentFromText(messageContent, genai.RoleUser)
 
 	var responseText strings.Builder
 	var lastError error
 	toolCallsCount := 0
+
+	var toolCalls []models.ToolCall
+	pendingByID := map[string]int{} // FunctionCall.ID → index in toolCalls
 
 	eventCh := oa.runner.Run(ctx, userID, sessionID, userContent, agent.RunConfig{
 		StreamingMode: agent.StreamingModeNone,
@@ -305,8 +310,43 @@ func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, user
 				responseText.WriteString(part.Text)
 			}
 			if part.FunctionCall != nil {
+				tc := models.ToolCall{
+					Name:   part.FunctionCall.Name,
+					Result: "success",
+				}
+				idx := len(toolCalls)
+				toolCalls = append(toolCalls, tc)
+				if part.FunctionCall.ID != "" {
+					pendingByID[part.FunctionCall.ID] = idx
+				}
+
 				toolCallsCount++
 				log.Printf("[MULTI-AGENT] Tool called: %s (#%d)", part.FunctionCall.Name, toolCallsCount)
+			}
+			if part.FunctionResponse != nil {
+				idx := -1
+				if part.FunctionResponse.ID != "" {
+					if i, ok := pendingByID[part.FunctionResponse.ID]; ok {
+						idx = i
+						delete(pendingByID, part.FunctionResponse.ID)
+					}
+				}
+				if idx == -1 {
+					for i := len(toolCalls) - 1; i >= 0; i-- {
+						if toolCalls[i].Name == part.FunctionResponse.Name && toolCalls[i].Result == "success" {
+							idx = i
+							break
+						}
+					}
+				}
+				if idx >= 0 {
+					resp := part.FunctionResponse.Response
+					if errVal, hasErr := resp["error"]; hasErr && errVal != nil {
+						toolCalls[idx].Result = "error"
+					} else if resp == nil || len(resp) == 0 {
+						toolCalls[idx].Result = "empty"
+					}
+				}
 			}
 		}
 
@@ -321,7 +361,7 @@ func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, user
 	}
 
 	if responseText.Len() == 0 && lastError != nil {
-		return "", fmt.Errorf("agent error: %w", lastError)
+		return nil, fmt.Errorf("agent error: %w", lastError)
 	}
 
 	response := strings.TrimSpace(responseText.String())
@@ -331,8 +371,11 @@ func (oa *OrchestratorAgent) ProcessMessage(ctx context.Context, sessionID, user
 		response = "Sorry, an error occurred. Please try rephrasing your question."
 	}
 
-	log.Printf("[MULTI-AGENT] Response length: %d chars", len(response))
-	return response, nil
+	log.Printf("[MULTI-AGENT] Response length: %d chars, %d tool calls", len(response), toolCallsCount)
+	return &AgentResult{
+		Response:    response,
+		ToolsCalled: toolCalls,
+	}, nil
 }
 
 // cleanThinkingTags removes <think>...</think> tags from response

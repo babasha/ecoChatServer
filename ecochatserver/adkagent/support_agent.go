@@ -6,6 +6,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/egor/ecochatserver/models"
+
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/runner"
@@ -80,8 +82,8 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 	// 4. Create ToolRouter for dynamic per-request tool selection
 	toolRouter := NewToolRouter(plantTools, deviceTools, supportTools)
 
-	// 5. System prompt
-	systemPrompt := getZefirPrompt()
+	// 5. System prompt (from DB if available, fallback to hardcoded)
+	systemPrompt := loadPrompt("zefir_support", getZefirPrompt)
 	log.Printf("[AGENT] Creating Zefir support agent with ToolRouter (%d tools available)", totalTools)
 
 	// 6. Create ADK agent with Toolsets (dynamic) instead of Tools (static)
@@ -147,15 +149,17 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 
 // ProcessMessage processes a user message through the ADK runner
 // clientLanguage is optional (ru, en, de, es, pt, zh)
-func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message string, zefirUserID string, clientLanguage ...string) (string, error) {
+func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message string, zefirUserID string, clientLanguage ...string) (*AgentResult, error) {
 	defer sa.resetContext()
 
 	// Rate limit check
 	if sa.rateLimiter != nil && !sa.rateLimiter.AllowRequest() {
 		rpm, rpd, maxRPM, maxRPD := sa.rateLimiter.GetStats()
 		log.Printf("[AGENT] Rate limit exceeded: RPM=%d/%d, RPD=%d/%d", rpm, maxRPM, rpd, maxRPD)
-		return fmt.Sprintf("Sorry, AI rate limit reached. RPM: %d/%d, RPD: %d/%d. Please try again later.",
-			rpm, maxRPM, rpd, maxRPD), nil
+		return &AgentResult{
+			Response: fmt.Sprintf("Sorry, AI rate limit reached. RPM: %d/%d, RPD: %d/%d. Please try again later.",
+				rpm, maxRPM, rpd, maxRPD),
+		}, nil
 	}
 
 	// Store userID for tools
@@ -168,7 +172,7 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 		UserID:  sessionID,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create session: %w", err)
+		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
 	// 2. Prepare message with optional language tag
@@ -181,18 +185,22 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 
 	userMsg := genai.NewContentFromText(userMessage, genai.RoleUser)
 
-	// 3. Run agent
+	// 3. Run agent — capture tool calls
 	const maxToolCalls = 10 // safety limit: prevent infinite tool call loops
 	var response strings.Builder
 	toolCallsCount := 0
 	toolCallLimitHit := false
+
+	// Track tool calls: index → ToolCall (FunctionCall sets name, FunctionResponse sets result)
+	var toolCalls []models.ToolCall
+	pendingByID := map[string]int{} // FunctionCall.ID → index in toolCalls
 
 	for event, err := range sa.runner.Run(ctx, sessionID, sessionResp.Session.ID(), userMsg, agent.RunConfig{
 		StreamingMode: agent.StreamingModeNone,
 	}) {
 		if err != nil {
 			log.Printf("[AGENT] Error during run: %v", err)
-			return "", fmt.Errorf("agent run error: %w", err)
+			return nil, fmt.Errorf("agent run error: %w", err)
 		}
 
 		if event.LLMResponse.Content != nil {
@@ -200,6 +208,16 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 				response.WriteString(part.Text)
 
 				if part.FunctionCall != nil {
+					tc := models.ToolCall{
+						Name:   part.FunctionCall.Name,
+						Result: "success", // default, updated by FunctionResponse
+					}
+					idx := len(toolCalls)
+					toolCalls = append(toolCalls, tc)
+					if part.FunctionCall.ID != "" {
+						pendingByID[part.FunctionCall.ID] = idx
+					}
+
 					toolCallsCount++
 					log.Printf("[AGENT] Tool called: %s (#%d)", part.FunctionCall.Name, toolCallsCount)
 					if part.FunctionCall.Args != nil {
@@ -208,6 +226,35 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 					if toolCallsCount >= maxToolCalls {
 						log.Printf("[AGENT] Tool call limit reached (%d), stopping", maxToolCalls)
 						toolCallLimitHit = true
+					}
+				}
+
+				if part.FunctionResponse != nil {
+					// Match response to its call by ID or name
+					idx := -1
+					if part.FunctionResponse.ID != "" {
+						if i, ok := pendingByID[part.FunctionResponse.ID]; ok {
+							idx = i
+							delete(pendingByID, part.FunctionResponse.ID)
+						}
+					}
+					if idx == -1 {
+						// Fallback: find last unresolved call with same name
+						for i := len(toolCalls) - 1; i >= 0; i-- {
+							if toolCalls[i].Name == part.FunctionResponse.Name && toolCalls[i].Result == "success" {
+								idx = i
+								break
+							}
+						}
+					}
+					if idx >= 0 {
+						resp := part.FunctionResponse.Response
+						if errVal, hasErr := resp["error"]; hasErr && errVal != nil {
+							toolCalls[idx].Result = "error"
+						} else if resp == nil || len(resp) == 0 {
+							toolCalls[idx].Result = "empty"
+						}
+						// else remains "success"
 					}
 				}
 			}
@@ -233,7 +280,10 @@ func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message s
 		log.Printf("[AGENT] Preview: %s", result)
 	}
 
-	return result, nil
+	return &AgentResult{
+		Response:    result,
+		ToolsCalled: toolCalls,
+	}, nil
 }
 
 // IsEscalationNeeded checks if escalation is needed
