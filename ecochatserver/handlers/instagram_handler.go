@@ -247,8 +247,20 @@ func InstagramWebhook(c *gin.Context) {
 
 	processed := 0
 	var processedDetails []gin.H
+	configuredBusinessID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
+	log.Printf("InstagramWebhook: configuredBusinessID=%s", configuredBusinessID)
+
 	for _, entry := range payload.Entry {
-		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d", entry.ID, len(entry.Changes), len(entry.Messaging))
+		entryMatch := "UNKNOWN"
+		if configuredBusinessID != "" {
+			if entry.ID == configuredBusinessID {
+				entryMatch = "MATCH"
+			} else {
+				entryMatch = "MISMATCH"
+			}
+		}
+		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d, matchConfigured=%s",
+			entry.ID, len(entry.Changes), len(entry.Messaging), entryMatch)
 
 		// Обработка Direct Messages (формат messaging)
 		for _, msg := range entry.Messaging {
@@ -711,25 +723,30 @@ func firstNotEmpty(values ...string) string {
 }
 
 func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (string, error) {
+	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
+	configuredID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
+	log.Printf("handleInstagramMessage: senderID=%s, recipientID=%s, is_echo=%v, mid=%s, configuredBusinessID=%s, text=%s",
+		envelope.SenderID, envelope.RecipientID, envelope.Message.IsEcho, messageID, configuredID,
+		truncateForLog(extractInstagramText(envelope.Message), 50))
+
 	if envelope.SenderID == "" {
 		return "", fmt.Errorf("sender id отсутствует")
 	}
 
 	// Пропускаем эхо-сообщения (is_echo=true — это уведомление об отправленном сообщении от бизнес-аккаунта)
 	if envelope.Message.IsEcho {
-		log.Printf("handleInstagramMessage: пропускаем is_echo сообщение (sender=%s, mid=%s)", envelope.SenderID, envelope.Message.MID)
+		log.Printf("handleInstagramMessage: SKIP is_echo (sender=%s, mid=%s)", envelope.SenderID, messageID)
 		return "", nil
 	}
 
 	// Пропускаем сообщения где sender=recipient
 	if envelope.RecipientID != "" && envelope.SenderID == envelope.RecipientID {
-		log.Printf("handleInstagramMessage: пропускаем сообщение-эхо (sender=recipient=%s)", envelope.SenderID)
+		log.Printf("handleInstagramMessage: SKIP sender=recipient=%s", envelope.SenderID)
 		return "", nil
 	}
 
-	messageID := firstNotEmpty(envelope.Message.MID, envelope.Message.ID)
 	clientAPIKey := database.GetSetting(instagramClientKeySetting, defaultInstagramClientKey)
-	botID := firstNotEmpty(envelope.RecipientID, database.GetDynamicSetting(instagramBusinessIDSetting, ""))
+	botID := firstNotEmpty(envelope.RecipientID, configuredID)
 	if botID == "" {
 		return "", fmt.Errorf("bot id не найден для сообщения %s", messageID)
 	}
@@ -983,6 +1000,9 @@ func sendInstagramOutgoingMessage(ctx context.Context, chat *models.Chat, messag
 	if token == "" {
 		return fmt.Errorf("instagram access token не настроен (userID=%s, text=%s)", userID, truncateForLog(text, 50))
 	}
+
+	log.Printf("sendInstagramOutgoingMessage: chatID=%s, chatSource=%s, chatBotID=%s, userSourceID=%s, tokenPrefix=%s",
+		chat.ID, chat.Source, chat.BotID, userID, truncateForLog(token, 20))
 
 	// Instagram Business Login API: отправка через graph.instagram.com
 	apiURL := "https://graph.instagram.com/v25.0/me/messages"
