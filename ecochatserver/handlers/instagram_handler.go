@@ -33,9 +33,10 @@ const (
 	instagramAppSecretSetting   = "INSTAGRAM_APP_SECRET"
 	instagramClientKeySetting   = "INSTAGRAM_CLIENT_API_KEY"
 	instagramBusinessIDSetting  = "INSTAGRAM_BUSINESS_ACCOUNT_ID"
-	instagramAccessTokenSetting = "INSTAGRAM_ACCESS_TOKEN"
-	instagramAPIVersionSetting  = "INSTAGRAM_API_VERSION"
-	defaultInstagramAPIVersion  = "v18.0"
+	instagramAccessTokenSetting  = "INSTAGRAM_ACCESS_TOKEN"
+	instagramWebhookEntryID      = "INSTAGRAM_WEBHOOK_ENTRY_ID"
+	instagramAPIVersionSetting   = "INSTAGRAM_API_VERSION"
+	defaultInstagramAPIVersion   = "v18.0"
 )
 
 var instagramHTTPClient = &http.Client{
@@ -248,19 +249,26 @@ func InstagramWebhook(c *gin.Context) {
 	processed := 0
 	var processedDetails []gin.H
 	configuredBusinessID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
-	log.Printf("InstagramWebhook: configuredBusinessID=%s", configuredBusinessID)
+	webhookEntryID := database.GetDynamicSetting(instagramWebhookEntryID, "")
+	log.Printf("InstagramWebhook: configuredBusinessID=%s, webhookEntryID=%s", configuredBusinessID, webhookEntryID)
 
 	for _, entry := range payload.Entry {
-		entryMatch := "UNKNOWN"
-		if configuredBusinessID != "" {
-			if entry.ID == configuredBusinessID {
-				entryMatch = "MATCH"
-			} else {
-				entryMatch = "MISMATCH"
-			}
+		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d",
+			entry.ID, len(entry.Changes), len(entry.Messaging))
+
+		// Фильтруем вебхуки от чужих аккаунтов
+		if webhookEntryID != "" && entry.ID != webhookEntryID {
+			log.Printf("InstagramWebhook: SKIP entry %s (ожидаем %s)", entry.ID, webhookEntryID)
+			continue
 		}
-		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d, matchConfigured=%s",
-			entry.ID, len(entry.Changes), len(entry.Messaging), entryMatch)
+
+		// Автозапоминание: если entry.ID ещё не сохранён — запоминаем первый прошедший верификацию
+		if webhookEntryID == "" && entry.ID != "" {
+			log.Printf("InstagramWebhook: автозапоминание webhook entry.ID=%s", entry.ID)
+			_ = database.SetSetting(instagramWebhookEntryID, entry.ID, "Instagram webhook entry ID (auto-detected)")
+			database.InvalidateSettingsCache()
+			webhookEntryID = entry.ID
+		}
 
 		// Обработка Direct Messages (формат messaging)
 		for _, msg := range entry.Messaging {
