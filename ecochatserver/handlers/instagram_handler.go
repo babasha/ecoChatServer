@@ -179,6 +179,73 @@ func getSenderFromConversations(businessAccountID string) (string, string, error
 	return "", "", fmt.Errorf("sender not found in recent conversations")
 }
 
+func fetchInstagramUserProfile(senderID string) (name, profilePic, username string) {
+	accessToken := database.GetDynamicSetting(instagramAccessTokenSetting, "")
+	if accessToken == "" {
+		log.Printf("fetchInstagramUserProfile: access token не настроен")
+		return "", "", ""
+	}
+
+	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
+
+	profileURL := fmt.Sprintf(
+		"https://graph.facebook.com/%s/%s?fields=name,profile_pic&access_token=%s",
+		apiVersion, senderID, accessToken,
+	)
+
+	log.Printf("fetchInstagramUserProfile: запрос профиля для %s", maskIdentifier(senderID))
+
+	resp, err := instagramHTTPClient.Get(profileURL)
+	if err != nil {
+		log.Printf("fetchInstagramUserProfile: ошибка HTTP: %v", err)
+		return "", "", ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("fetchInstagramUserProfile: ошибка чтения: %v", err)
+		return "", "", ""
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("fetchInstagramUserProfile: статус %d, body=%s",
+			resp.StatusCode, truncateForLog(string(body), 200))
+		return "", "", ""
+	}
+
+	var profile instagramUserProfileResponse
+	if err := json.Unmarshal(body, &profile); err != nil {
+		log.Printf("fetchInstagramUserProfile: ошибка парсинга: %v", err)
+		return "", "", ""
+	}
+
+	name = strings.TrimSpace(profile.Name)
+	profilePic = strings.TrimSpace(profile.ProfilePic)
+
+	log.Printf("fetchInstagramUserProfile: name=%q, has_pic=%v", name, profilePic != "")
+
+	businessAccountID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
+	if businessAccountID != "" {
+		convs, err := fetchInstagramConversations(businessAccountID)
+		if err == nil {
+			for _, conv := range convs {
+				for _, p := range conv.Participants.Data {
+					if p.ID == senderID && p.Username != "" {
+						username = p.Username
+						break
+					}
+				}
+				if username != "" {
+					break
+				}
+			}
+		}
+	}
+
+	return name, profilePic, username
+}
+
 // InstagramWebhookVerify обрабатывает GET-запрос для подтверждения вебхука
 func InstagramWebhookVerify(c *gin.Context) {
 	mode := c.Query("hub.mode")
@@ -490,6 +557,12 @@ type instagramProfile struct {
 	Username string `json:"username"`
 }
 
+type instagramUserProfileResponse struct {
+	Name       string `json:"name"`
+	ProfilePic string `json:"profile_pic"`
+	ID         string `json:"id"`
+}
+
 type instagramMessage struct {
 	MID         string                `json:"mid,omitempty"`
 	ID          string                `json:"id,omitempty"`
@@ -753,8 +826,17 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 	}
 
 	userName := envelope.SenderUsername
-	if userName == "" {
-		userName = fmt.Sprintf("Instagram user %s", maskIdentifier(envelope.SenderID))
+
+	if userName == "" || userName == envelope.SenderID {
+		profileName, _, profileUsername := fetchInstagramUserProfile(envelope.SenderID)
+		if profileUsername != "" {
+			userName = profileUsername
+		} else if profileName != "" {
+			userName = profileName
+		} else {
+			userName = fmt.Sprintf("Instagram user %s", maskIdentifier(envelope.SenderID))
+		}
+		log.Printf("handleInstagramMessage: профиль из API: name=%q, username=%q", profileName, profileUsername)
 	}
 
 	chat, err := database.GetOrCreateChatMetadata(
