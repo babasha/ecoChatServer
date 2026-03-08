@@ -189,7 +189,7 @@ func fetchInstagramUserProfile(senderID string) (name, profilePic, username stri
 	apiVersion := database.GetSetting(instagramAPIVersionSetting, defaultInstagramAPIVersion)
 
 	profileURL := fmt.Sprintf(
-		"https://graph.facebook.com/%s/%s?fields=name,profile_pic&access_token=%s",
+		"https://graph.instagram.com/%s/%s?fields=name,profile_pic&access_token=%s",
 		apiVersion, senderID, accessToken,
 	)
 
