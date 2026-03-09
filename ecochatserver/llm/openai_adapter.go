@@ -324,7 +324,7 @@ func (a *OpenAIAdapter) TranslateText(
 
 	resp, err := a.GenerateResponse(ctx, prompt, nil, &GenerateOptions{
 		Temperature:     0.3, // низкая температура для точного перевода
-		MaxTokens:       500,
+		MaxTokens:       2000, // thinking-модели (Qwen3.5) тратят ~500 токенов на размышления
 		DisableThinking: true,
 	})
 
@@ -386,7 +386,7 @@ Text: %s`, targetLang, text),
 		Model:       a.model,
 		Messages:    messages,
 		Temperature: 0.3,
-		MaxTokens:   500,
+		MaxTokens:   2000, // thinking-модели (Qwen3.5) тратят ~500 токенов на размышления
 		// LM Studio не поддерживает json_object, используем text
 		// ResponseFormat убран для совместимости с LM Studio
 		ChatTemplateKwargs: map[string]interface{}{

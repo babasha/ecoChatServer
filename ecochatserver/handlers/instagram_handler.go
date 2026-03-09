@@ -312,8 +312,11 @@ func InstagramWebhook(c *gin.Context) {
 
 	log.Printf("InstagramWebhook: payload.Object=%s, entries=%d", payload.Object, len(payload.Entry))
 
-	processed := 0
-	var processedDetails []gin.H
+	// Сразу отвечаем Instagram 200 OK — обработку делаем в фоне
+	// Instagram ожидает ответ за 5 секунд, иначе ретраит
+	c.JSON(http.StatusOK, gin.H{"status": "received"})
+
+	// Собираем все envelopes для обработки в фоне
 	webhookEntryID := database.GetDynamicSetting(instagramWebhookEntryID, "")
 
 	for _, entry := range payload.Entry {
@@ -399,14 +402,11 @@ func InstagramWebhook(c *gin.Context) {
 			}
 
 			envelope := buildInstagramEnvelopeFromMessaging(entry.ID, msg)
-			chatID, err := handleInstagramMessage(context.Background(), envelope)
-			if err != nil {
-				log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
-			} else {
-				processed++
-				detail := createProcessedDetail(envelope, chatID)
-				processedDetails = append(processedDetails, detail)
-			}
+			go func(env instagramEnvelope) {
+				if _, err := handleInstagramMessage(context.Background(), env); err != nil {
+					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
+				}
+			}(envelope)
 		}
 
 		// Обработка публичного контента (формат changes)
@@ -426,30 +426,16 @@ func InstagramWebhook(c *gin.Context) {
 				log.Printf("InstagramWebhook: не удалось извлечь сообщения (entry_id=%s)", entry.ID)
 			}
 			for _, envelope := range envelopes {
-				chatID, err := handleInstagramMessage(context.Background(), envelope)
-				if err != nil {
-					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
-				} else {
-					processed++
-					detail := createProcessedDetail(envelope, chatID)
-					processedDetails = append(processedDetails, detail)
-				}
+				go func(env instagramEnvelope) {
+					if _, err := handleInstagramMessage(context.Background(), env); err != nil {
+						log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
+					}
+				}(envelope)
 			}
 		}
 	}
 
-	log.Printf("InstagramWebhook: обработано %d сообщений", processed)
-
-	response := gin.H{
-		"status":    "received",
-		"processed": processed,
-	}
-
-	if len(processedDetails) > 0 {
-		response["messages"] = processedDetails
-	}
-
-	c.JSON(http.StatusOK, response)
+	log.Printf("InstagramWebhook: сообщения отправлены на обработку в фоне")
 }
 
 func verifyInstagramSignature(payload []byte, signature string) bool {

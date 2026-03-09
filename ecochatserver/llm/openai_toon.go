@@ -36,7 +36,7 @@ func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, target
 			Model:       a.model,
 			Messages:    messages,
 			Temperature: 0.3,
-			MaxTokens:   500,
+			MaxTokens:   2000, // thinking-модели (Qwen3.5) тратят ~500 токенов на размышления
 			ChatTemplateKwargs: map[string]interface{}{
 				"enable_thinking": false,
 			},
@@ -199,7 +199,7 @@ func (a *OpenAIAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, t
 		Model:       a.model,
 		Messages:    messages,
 		Temperature: 0.3,
-		MaxTokens:   500,
+		MaxTokens:   2000, // thinking-модели (Qwen3.5) тратят ~500 токенов на размышления
 		ChatTemplateKwargs: map[string]interface{}{
 			"enable_thinking": false,
 		},

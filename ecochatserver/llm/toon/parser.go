@@ -2,6 +2,7 @@ package toon
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -113,10 +114,22 @@ func ParseSimpleList(toonStr string) ([]string, error) {
 	return results, nil
 }
 
-// CleanLLMResponse очищает ответ LLM от markdown и лишних символов
+// thinkTagRe strips <think>...</think> blocks from Qwen3.5 reasoning output
+var (
+	toonThinkTagRe         = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
+	toonUnclosedThinkTagRe = regexp.MustCompile(`(?s)<think>.*$`)
+)
+
+// CleanLLMResponse очищает ответ LLM от markdown, thinking-блоков и лишних символов
 // Используется перед парсингом
 func CleanLLMResponse(response string) string {
 	response = strings.TrimSpace(response)
+
+	// Убираем <think>...</think> блоки (Qwen3.5 reasoning)
+	if strings.Contains(response, "<think>") {
+		response = toonThinkTagRe.ReplaceAllString(response, "")
+		response = toonUnclosedThinkTagRe.ReplaceAllString(response, "")
+	}
 
 	// Убираем markdown код блоки
 	response = strings.TrimPrefix(response, "```toon")
