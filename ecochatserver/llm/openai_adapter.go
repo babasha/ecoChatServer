@@ -15,24 +15,52 @@ import (
 
 // Reasoning models (Qwen 3.5, QwQ) wrap chain-of-thought in <think> tags.
 // These must be stripped from all responses.
+// When enable_thinking=false is partially supported, thinking may appear WITHOUT tags.
 var (
 	thinkTagRe              = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
 	unclosedThinkTagRe      = regexp.MustCompile(`(?s)<think>.*$`)
 	orphanedCloseThinkTagRe = regexp.MustCompile(`^\s*</think>\s*`)
+	// Qwen3.5 без <think> тегов: "Thinking Process:\n\n1. ..." до "</think>" или до конца
+	untaggedThinkingRe = regexp.MustCompile(`(?s)^Thinking Process:.*?(\n\n(?:lang:|text:|[A-Z])|\z)`)
 )
 
 // stripThinkTags removes <think>...</think> blocks from reasoning model output.
 // Also strips orphaned </think> tags that appear when reasoning spans across tool-call turns.
+// Handles untagged thinking from Qwen3.5 when enable_thinking=false strips the tags.
 func stripThinkTags(text string) string {
 	if strings.HasPrefix(strings.TrimSpace(text), "</think>") {
 		text = orphanedCloseThinkTagRe.ReplaceAllString(text, "")
 	}
-	if !strings.Contains(text, "<think>") {
-		return strings.TrimSpace(text)
+	if strings.Contains(text, "<think>") {
+		result := thinkTagRe.ReplaceAllString(text, "")
+		result = unclosedThinkTagRe.ReplaceAllString(result, "")
+		return strings.TrimSpace(result)
 	}
-	result := thinkTagRe.ReplaceAllString(text, "")
-	result = unclosedThinkTagRe.ReplaceAllString(result, "")
-	return strings.TrimSpace(result)
+	// Qwen3.5 без <think> тегов: thinking выводится как plain text
+	trimmed := strings.TrimSpace(text)
+	if strings.HasPrefix(trimmed, "Thinking Process:") || strings.HasPrefix(trimmed, "Thinking:") {
+		// Ищем конец thinking-блока — после двойного переноса строки
+		// должен быть реальный ответ
+		parts := strings.SplitN(trimmed, "\n</think>\n", 2)
+		if len(parts) == 2 {
+			return strings.TrimSpace(parts[1])
+		}
+		// Ищем паттерн: thinking заканчивается, потом идёт ответ (lang:, text:, просто текст)
+		// Берём последние строки после пустой строки
+		lines := strings.Split(trimmed, "\n")
+		// Ищем с конца — последний блок после пустой строки
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) == "" && i < len(lines)-1 {
+				candidate := strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+				if candidate != "" && !strings.HasPrefix(candidate, "*") && !strings.HasPrefix(candidate, "Thinking") {
+					return candidate
+				}
+			}
+		}
+		// Не нашли ответ — thinking заняло весь вывод
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 // OpenAIAdapter реализует Provider для OpenAI API (и LM Studio)

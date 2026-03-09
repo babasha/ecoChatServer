@@ -129,6 +129,23 @@ func CleanLLMResponse(response string) string {
 	if strings.Contains(response, "<think>") {
 		response = toonThinkTagRe.ReplaceAllString(response, "")
 		response = toonUnclosedThinkTagRe.ReplaceAllString(response, "")
+		response = strings.TrimSpace(response)
+	}
+
+	// Убираем untagged thinking (Qwen3.5 с enable_thinking=false)
+	// Формат: "Thinking Process:\n...\n\nlang: ru\ntext: ..."
+	if strings.HasPrefix(response, "Thinking Process:") || strings.HasPrefix(response, "Thinking:") {
+		// Ищем последний блок после пустой строки — это реальный ответ
+		lines := strings.Split(response, "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) == "" && i < len(lines)-1 {
+				candidate := strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+				if candidate != "" && !strings.HasPrefix(candidate, "Thinking") && !strings.HasPrefix(candidate, "*") {
+					response = candidate
+					break
+				}
+			}
+		}
 	}
 
 	// Убираем markdown код блоки

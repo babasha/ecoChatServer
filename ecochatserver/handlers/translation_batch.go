@@ -104,7 +104,7 @@ func (ts *TranslationService) TranslateMessagesForAdmin(ctx context.Context, mes
 	byLang := make(map[string][]models.Message)
 	for _, msg := range toTranslate {
 		if msg.Metadata != nil {
-			if detected, ok := msg.Metadata["detectedLanguage"].(string); ok && detected != "" && detected != adminLang {
+			if detected, ok := msg.Metadata["detectedLanguage"].(string); ok && detected != "" && detected != "unknown" && detected != adminLang {
 				byLang[detected] = append(byLang[detected], msg)
 			}
 		}
