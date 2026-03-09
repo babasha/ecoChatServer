@@ -315,23 +315,53 @@ func InstagramWebhook(c *gin.Context) {
 	processed := 0
 	var processedDetails []gin.H
 	webhookEntryID := database.GetDynamicSetting(instagramWebhookEntryID, "")
+	businessAccountID := database.GetDynamicSetting(instagramBusinessIDSetting, "")
+
+	// Если сохранённый entry ID совпадает с business account ID — он был сохранён ошибочно
+	// (от echo-сообщения). Сбрасываем, чтобы автодетект сохранил правильный page ID.
+	if webhookEntryID != "" && businessAccountID != "" && webhookEntryID == businessAccountID {
+		log.Printf("InstagramWebhook: RESET webhookEntryID=%s (совпадает с businessAccountID, был сохранён от echo)", webhookEntryID)
+		_ = database.SetSetting(instagramWebhookEntryID, "", "Reset: was incorrectly set to business account ID")
+		database.InvalidateSettingsCache()
+		webhookEntryID = ""
+	}
 
 	for _, entry := range payload.Entry {
-		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d, filter=%s",
-			entry.ID, len(entry.Changes), len(entry.Messaging), webhookEntryID)
+		log.Printf("InstagramWebhook: entry.ID=%s, changes=%d, messaging=%d, filter=%s, businessID=%s",
+			entry.ID, len(entry.Changes), len(entry.Messaging), webhookEntryID, businessAccountID)
 
 		// Фильтруем вебхуки от чужих аккаунтов
-		if webhookEntryID != "" && entry.ID != webhookEntryID {
-			log.Printf("InstagramWebhook: SKIP entry %s (ожидаем %s)", entry.ID, webhookEntryID)
+		// Принимаем entry если: совпадает с сохранённым page entry ID ИЛИ с business account ID
+		if webhookEntryID != "" && entry.ID != webhookEntryID &&
+			(businessAccountID == "" || entry.ID != businessAccountID) {
+			log.Printf("InstagramWebhook: SKIP entry %s (ожидаем %s или businessID %s)", entry.ID, webhookEntryID, businessAccountID)
 			continue
 		}
 
-		// Автозапоминание: если entry.ID ещё не сохранён — запоминаем первый прошедший верификацию
+		// Автозапоминание: сохраняем entry.ID только от entries с реальными (не echo) сообщениями
 		if webhookEntryID == "" && entry.ID != "" {
-			log.Printf("InstagramWebhook: автозапоминание webhook entry.ID=%s", entry.ID)
-			_ = database.SetSetting(instagramWebhookEntryID, entry.ID, "Instagram webhook entry ID (auto-detected)")
-			database.InvalidateSettingsCache()
-			webhookEntryID = entry.ID
+			hasNonEcho := false
+			for _, m := range entry.Messaging {
+				if m.Message != nil && !m.Message.IsEcho {
+					hasNonEcho = true
+					break
+				}
+				if m.MessageEdit != nil {
+					hasNonEcho = true
+					break
+				}
+			}
+			if len(entry.Changes) > 0 {
+				hasNonEcho = true
+			}
+			if hasNonEcho {
+				log.Printf("InstagramWebhook: автозапоминание webhook entry.ID=%s (содержит не-echo сообщения)", entry.ID)
+				_ = database.SetSetting(instagramWebhookEntryID, entry.ID, "Instagram webhook entry ID (auto-detected)")
+				database.InvalidateSettingsCache()
+				webhookEntryID = entry.ID
+			} else {
+				log.Printf("InstagramWebhook: пропускаем автозапоминание для entry.ID=%s (только echo сообщения)", entry.ID)
+			}
 		}
 
 		// Обработка Direct Messages (формат messaging)
