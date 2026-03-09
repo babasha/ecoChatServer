@@ -6,7 +6,14 @@ import "fmt"
 // Это избегает дублирования между провайдерами (Gemini, OpenAI, etc.)
 
 // SystemInstructionDetectAndTranslate - system instruction для DetectAndTranslate
-const SystemInstructionDetectAndTranslate = "Language translator. Use TOON format: key: value. No markdown, no code blocks."
+// Few-shot пример помогает thinking-моделям (Qwen3.5) не тратить сотни токенов на анализ формата
+const SystemInstructionDetectAndTranslate = `Translator. Detect language, translate. Reply ONLY 2 lines:
+lang: <code>
+text: <translation>
+
+Example — input: "Bonjour" target: en → output:
+lang: fr
+text: Hello`
 
 // SystemInstructionBatch - system instruction для batch перевода
 const SystemInstructionBatch = "Translator. Reply with simple list, one item per line. No markdown, no numbering, no code blocks."
@@ -16,11 +23,7 @@ const SystemInstructionSimple = "Translator. Reply with translation only, no exp
 
 // BuildDetectAndTranslatePrompt создает промпт для DetectAndTranslate
 func BuildDetectAndTranslatePrompt(text, targetLang string) string {
-	return fmt.Sprintf(`Detect language and translate to %s: "%s"
-
-Reply in TOON format (NO JSON, NO MARKDOWN, NO CODE BLOCKS):
-lang: <code>
-text: <translation>`, targetLang, text)
+	return fmt.Sprintf(`"%s" → %s`, text, targetLang)
 }
 
 // BuildBatchTranslatePrompt создает промпт для batch перевода
