@@ -37,6 +37,9 @@ func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, target
 			Messages:    messages,
 			Temperature: 0.3,
 			MaxTokens:   500,
+			ChatTemplateKwargs: map[string]interface{}{
+				"enable_thinking": false,
+			},
 		}
 
 		chatResp, err := a.sendRequest(ctx, req)
@@ -127,6 +130,9 @@ func (a *OpenAIAdapter) TranslateBatchTOON(ctx context.Context, texts []string, 
 		Messages:    messages,
 		Temperature: 0.3,
 		MaxTokens:   2000,
+		ChatTemplateKwargs: map[string]interface{}{
+			"enable_thinking": false,
+		},
 	}
 
 	chatResp, err := a.sendRequest(ctx, req)
@@ -194,6 +200,9 @@ func (a *OpenAIAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, t
 		Messages:    messages,
 		Temperature: 0.3,
 		MaxTokens:   500,
+		ChatTemplateKwargs: map[string]interface{}{
+			"enable_thinking": false,
+		},
 	}
 
 	chatResp, err := a.sendRequest(ctx, req)

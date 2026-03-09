@@ -39,6 +39,9 @@ type GenerateOptions struct {
 	SystemPrompt   string  `json:"system_prompt,omitempty"`
 	ResponseFormat string  `json:"response_format,omitempty"` // "text" или "json"
 
+	// Qwen3.5: отключение thinking-режима для простых задач (перевод)
+	DisableThinking bool `json:"-"`
+
 	// Для логирования использования токенов
 	ClientID *uuid.UUID `json:"-"` // UUID клиента (для статистики)
 	ChatID   *uuid.UUID `json:"-"` // UUID чата (для статистики)

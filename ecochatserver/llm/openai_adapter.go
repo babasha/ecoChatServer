@@ -83,6 +83,8 @@ type openAIChatRequest struct {
 	ResponseFormat *struct {
 		Type string `json:"type"` // "json_object" для JSON mode
 	} `json:"response_format,omitempty"`
+	// Qwen3.5: отключение thinking-режима для простых задач (перевод и т.д.)
+	ChatTemplateKwargs map[string]interface{} `json:"chat_template_kwargs,omitempty"`
 }
 
 type openAIChatResponse struct {
@@ -165,6 +167,11 @@ func (a *OpenAIAdapter) GenerateResponse(
 	if opts != nil {
 		req.Temperature = float32(opts.Temperature)
 		req.MaxTokens = opts.MaxTokens
+		if opts.DisableThinking {
+			req.ChatTemplateKwargs = map[string]interface{}{
+				"enable_thinking": false,
+			}
+		}
 	}
 
 	resp, err := a.sendRequest(ctx, req)
@@ -316,8 +323,9 @@ func (a *OpenAIAdapter) TranslateText(
 	)
 
 	resp, err := a.GenerateResponse(ctx, prompt, nil, &GenerateOptions{
-		Temperature: 0.3, // низкая температура для точного перевода
-		MaxTokens:   500,
+		Temperature:     0.3, // низкая температура для точного перевода
+		MaxTokens:       500,
+		DisableThinking: true,
 	})
 
 	if err != nil {
@@ -381,6 +389,9 @@ Text: %s`, targetLang, text),
 		MaxTokens:   500,
 		// LM Studio не поддерживает json_object, используем text
 		// ResponseFormat убран для совместимости с LM Studio
+		ChatTemplateKwargs: map[string]interface{}{
+			"enable_thinking": false,
+		},
 	}
 
 	// Retry logic: до 2 попыток
@@ -474,8 +485,9 @@ Texts to translate:
 %s`, fromLang, toLang, string(textsJSON))
 
 	resp, err := a.GenerateResponse(ctx, prompt, nil, &GenerateOptions{
-		Temperature: 0.3,
-		MaxTokens:   2000,
+		Temperature:     0.3,
+		MaxTokens:       2000,
+		DisableThinking: true,
 	})
 
 	if err != nil {
