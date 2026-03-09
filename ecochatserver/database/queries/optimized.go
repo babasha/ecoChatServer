@@ -22,17 +22,18 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
 	var assignedNull sql.NullString
 	var userSourceID sql.NullString
 
+	var userProfileURL sql.NullString
 	err := db.QueryRowContext(ctx, `
         SELECT c.id, c.created_at, c.updated_at, c.status,
                c.user_id, c.source, c.bot_id, c.client_id, c.auto_responder_enabled, c.assigned_to,
-               u.id, u.name, u.email, u.source, u.source_id
+               u.id, u.name, u.email, u.source, u.source_id, u.profile_url
         FROM chats c
         JOIN users u ON c.user_id = u.id
         WHERE c.id = $1
     `, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
 		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &chat.AutoResponderEnabled, &assignedNull,
-		&chat.User.ID, &chat.User.Name, &chat.User.Email, &chat.User.Source, &userSourceID,
+		&chat.User.ID, &chat.User.Name, &chat.User.Email, &chat.User.Source, &userSourceID, &userProfileURL,
 	)
 
 	if err != nil {
@@ -47,6 +48,9 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
 
 	if userSourceID.Valid {
 		chat.User.SourceID = userSourceID.String
+	}
+	if userProfileURL.Valid {
+		chat.User.ProfileURL = &userProfileURL.String
 	}
 
 	return &chat, nil

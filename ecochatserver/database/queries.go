@@ -247,6 +247,10 @@ func GetLastUserMessage(chatID uuid.UUID) (*models.Message, error) {
 	return queries.GetLastUserMessage(DB, chatID)
 }
 
+func UpdateUserProfile(userID uuid.UUID, avatar, profileURL string) error {
+	return queries.UpdateUserProfile(DB, userID, avatar, profileURL)
+}
+
 // Функции для системы контроля доступа админов
 func GetAdminLanguagesForChat(chatID uuid.UUID) ([]queries.AdminLanguageInfo, error) {
 	return queries.GetAdminLanguagesForChat(DB, chatID)

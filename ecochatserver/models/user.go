@@ -6,12 +6,13 @@ import (
 
 // User представляет собой структуру пользователя (клиента)
 type User struct {
-	ID       uuid.UUID `json:"id"`
-	Name     string    `json:"name"`
-	Email    string    `json:"email,omitempty"`
-	Avatar   *string   `json:"avatar,omitempty"`
-	Source   string    `json:"source,omitempty"`   // Источник (telegram, whatsapp, etc.)
-	SourceID string    `json:"sourceId,omitempty"` // ID пользователя в источнике
+	ID         uuid.UUID `json:"id"`
+	Name       string    `json:"name"`
+	Email      string    `json:"email,omitempty"`
+	Avatar     *string   `json:"avatar,omitempty"`
+	ProfileURL *string   `json:"profileUrl,omitempty"` // Ссылка на профиль (Instagram, etc.)
+	Source     string    `json:"source,omitempty"`      // Источник (telegram, whatsapp, etc.)
+	SourceID   string    `json:"sourceId,omitempty"`    // ID пользователя в источнике
 }
 
 // Admin представляет собой структуру администратора

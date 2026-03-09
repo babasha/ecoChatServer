@@ -18,12 +18,12 @@ func getOrCreateUser(
 		userID, userName, source, sourceID)
 
 	var user models.User
-	var avatarNull sql.NullString
+	var avatarNull, profileURLNull sql.NullString
 
 	err := tx.QueryRowContext(ctx,
-		"SELECT id,name,email,avatar,source,source_id FROM users WHERE source=$1 AND source_id=$2 LIMIT 1",
+		"SELECT id,name,email,avatar,profile_url,source,source_id FROM users WHERE source=$1 AND source_id=$2 LIMIT 1",
 		source, sourceID,
-	).Scan(&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID)
+	).Scan(&user.ID, &user.Name, &user.Email, &avatarNull, &profileURLNull, &user.Source, &user.SourceID)
 
 	if err != nil && err != sql.ErrNoRows {
 		log.Printf("getOrCreateUser: ошибка поиска пользователя: %v", err)
@@ -32,6 +32,7 @@ func getOrCreateUser(
 
 	if err == nil {
 		user.Avatar = nullStringToPointer(avatarNull)
+		user.ProfileURL = nullStringToPointer(profileURLNull)
 		// Обновляем имя, если передано новое непустое имя, отличное от текущего
 		if userName != "" && userName != user.Name {
 			log.Printf("getOrCreateUser: обновляем имя пользователя ID=%s: %q -> %q", user.ID, user.Name, userName)
@@ -72,4 +73,22 @@ func getOrCreateUser(
 
 	log.Printf("getOrCreateUser: пользователь создан ID=%s", user.ID)
 	return &user, nil
+}
+
+// UpdateUserProfile обновляет avatar и profile_url пользователя
+func UpdateUserProfile(db *sql.DB, userID uuid.UUID, avatar, profileURL string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := db.ExecContext(ctx,
+		"UPDATE users SET avatar=COALESCE(NULLIF($1,''),avatar), profile_url=COALESCE(NULLIF($2,''),profile_url) WHERE id=$3",
+		avatar, profileURL, userID,
+	)
+	if err != nil {
+		log.Printf("UpdateUserProfile: ошибка обновления профиля ID=%s: %v", userID, err)
+		return err
+	}
+	log.Printf("UpdateUserProfile: профиль обновлен ID=%s, avatar=%v, profileURL=%v",
+		userID, avatar != "", profileURL != "")
+	return nil
 }

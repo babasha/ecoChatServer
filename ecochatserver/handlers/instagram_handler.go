@@ -70,8 +70,8 @@ func fetchInstagramConversations(businessAccountID string) ([]instagramConversat
 
 	// Пробуем разные endpoints, т.к. в dev mode может быть ограничение
 	endpoints := []string{
-		fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=id,username,name&access_token=%s", apiVersion, businessAccountID, accessToken),
-		fmt.Sprintf("https://graph.facebook.com/%s/me?access_token=%s", apiVersion, accessToken),
+		fmt.Sprintf("https://graph.instagram.com/%s/%s?fields=id,username,name&access_token=%s", apiVersion, businessAccountID, accessToken),
+		fmt.Sprintf("https://graph.instagram.com/%s/me?access_token=%s", apiVersion, accessToken),
 	}
 
 	for _, url := range endpoints {
@@ -95,7 +95,7 @@ func fetchInstagramConversations(businessAccountID string) ([]instagramConversat
 	}
 
 	// Основной запрос к conversations
-	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/conversations?platform=instagram&fields=id,participants{id,username,name}&limit=10&access_token=%s",
+	url := fmt.Sprintf("https://graph.instagram.com/%s/%s/conversations?platform=instagram&fields=id,participants{id,username,name}&limit=10&access_token=%s",
 		apiVersion, businessAccountID, accessToken)
 
 	log.Printf("fetchInstagramConversations: fetching conversations from %s", truncateForLog(url, 120))
@@ -826,17 +826,21 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 	}
 
 	userName := envelope.SenderUsername
+	var avatarURL, profileURL string
 
 	if userName == "" || userName == envelope.SenderID {
-		profileName, _, profileUsername := fetchInstagramUserProfile(envelope.SenderID)
+		profileName, profilePic, profileUsername := fetchInstagramUserProfile(envelope.SenderID)
+		avatarURL = profilePic
 		if profileUsername != "" {
 			userName = profileUsername
+			profileURL = "https://instagram.com/" + profileUsername
 		} else if profileName != "" {
 			userName = profileName
 		} else {
 			userName = fmt.Sprintf("Instagram user %s", maskIdentifier(envelope.SenderID))
 		}
-		log.Printf("handleInstagramMessage: профиль из API: name=%q, username=%q", profileName, profileUsername)
+		log.Printf("handleInstagramMessage: профиль из API: name=%q, username=%q, avatar=%v, profileURL=%q",
+			profileName, profileUsername, avatarURL != "", profileURL)
 	}
 
 	chat, err := database.GetOrCreateChatMetadata(
@@ -851,6 +855,11 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 	)
 	if err != nil {
 		return "", fmt.Errorf("GetOrCreateChatMetadata: %w", err)
+	}
+
+	// Обновляем avatar и profile_url пользователя
+	if avatarURL != "" || profileURL != "" {
+		go database.UpdateUserProfile(chat.User.ID, avatarURL, profileURL)
 	}
 
 	content := strings.TrimSpace(extractInstagramText(envelope.Message))

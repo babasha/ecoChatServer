@@ -55,7 +55,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	const q = `
       SELECT
         c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,
-        u.id,u.name,u.email,u.avatar,
+        u.id,u.name,u.email,u.avatar,u.profile_url,
         COUNT(CASE WHEN m.sender='user' AND m.read=false THEN 1 END) AS unread,
         l.id,l.content,l.sender,l.timestamp
       FROM chats c
@@ -69,7 +69,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
          LIMIT 1
       ) l ON TRUE
       WHERE %s
-      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,l.id,l.content,l.sender,l.timestamp
+      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,u.profile_url,l.id,l.content,l.sender,l.timestamp
       ORDER BY c.updated_at DESC
       LIMIT $%d OFFSET $%d
     `
@@ -100,18 +100,19 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	rowNum := 0
 	for rows.Next() {
 		var (
-			chat       models.ChatResponse
-			user       models.User
-			avatarNull sql.NullString
-			unread     int
-			lastID     sql.NullString
-			lastCont   sql.NullString
-			lastSender sql.NullString
-			lastTime   sql.NullTime
+			chat           models.ChatResponse
+			user           models.User
+			avatarNull     sql.NullString
+			profileURLNull sql.NullString
+			unread         int
+			lastID         sql.NullString
+			lastCont       sql.NullString
+			lastSender     sql.NullString
+			lastTime       sql.NullTime
 		)
 		if err := rows.Scan(
 			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &chat.Source, &chat.ClientID, &chat.AutoResponderEnabled,
-			&user.ID, &user.Name, &user.Email, &avatarNull,
+			&user.ID, &user.Name, &user.Email, &avatarNull, &profileURLNull,
 			&unread, &lastID, &lastCont, &lastSender, &lastTime,
 		); err != nil {
 			log.Printf("GetChats: ошибка сканирования строки %d: %v", rowNum, err)
@@ -119,6 +120,7 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 		}
 
 		user.Avatar = nullStringToPointer(avatarNull)
+		user.ProfileURL = nullStringToPointer(profileURLNull)
 		chat.User = user
 		chat.UnreadCount = unread
 
@@ -195,15 +197,17 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 		user       models.User
 		avatarNull sql.NullString
 	)
-	userQuery := `SELECT id,name,email,avatar,source,source_id FROM users WHERE id=$1`
+	userQuery := `SELECT id,name,email,avatar,profile_url,source,source_id FROM users WHERE id=$1`
 
+	var profileURLNull sql.NullString
 	if err := db.QueryRowContext(ctx, userQuery, userID).Scan(
-		&user.ID, &user.Name, &user.Email, &avatarNull, &user.Source, &user.SourceID,
+		&user.ID, &user.Name, &user.Email, &avatarNull, &profileURLNull, &user.Source, &user.SourceID,
 	); err != nil {
 		return nil, 0, fmt.Errorf("ошибка получения пользователя: %w", err)
 	}
 
 	user.Avatar = nullStringToPointer(avatarNull)
+	user.ProfileURL = nullStringToPointer(profileURLNull)
 	chat.User = user
 
 	// Подсчитываем общее количество сообщений
@@ -557,7 +561,7 @@ func FindChatByUserSourceID(db *sql.DB, userSourceID, source string) (*models.Ch
 	query := `
 		SELECT c.id, c.client_id, c.created_at, c.updated_at, c.status, c.bot_id,
 		       c.assigned_to, c.is_archived, c.auto_responder_enabled,
-		       u.id, u.source_id, u.name, u.email, u.avatar, u.source
+		       u.id, u.source_id, u.name, u.email, u.avatar, u.profile_url, u.source
 		FROM chats c
 		JOIN users u ON c.user_id = u.id
 		WHERE u.source_id = $1 AND u.source = $2
@@ -573,7 +577,7 @@ func FindChatByUserSourceID(db *sql.DB, userSourceID, source string) (*models.Ch
 	err := db.QueryRowContext(ctx, query, userSourceID, source).Scan(
 		&chat.ID, &chat.ClientID, &chat.CreatedAt, &chat.UpdatedAt,
 		&chat.Status, &botID, &assignedTo, &chat.IsArchived, &chat.AutoResponderEnabled,
-		&user.ID, &user.SourceID, &user.Name, &user.Email, &user.Avatar, &user.Source,
+		&user.ID, &user.SourceID, &user.Name, &user.Email, &user.Avatar, &user.ProfileURL, &user.Source,
 	)
 
 	if err == sql.ErrNoRows {
