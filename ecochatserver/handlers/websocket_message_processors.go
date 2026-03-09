@@ -177,19 +177,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					// Обновляем lightChat перед отправкой уведомления
 					lightChat.Messages = append(lightChat.Messages, *message)
 
-					// Создаем общую информацию о чате
-					chatInfo := createChatInfo(lightChat)
-
-					// Отправляем уведомление о сообщении пользователя
-					userNotification := createMessageNotification(chatID, message, chatInfo)
-					WebSocketHub.SendToChatAndAdmins(chatID.String(), userNotification)
-
-					// Если есть автоответ бота, отправляем его отдельно
-					if botMsg != nil {
-						lightChat.Messages = append(lightChat.Messages, *botMsg)
-						botNotification := createMessageNotification(chatID, botMsg, chatInfo)
-						WebSocketHub.SendToChatAndAdmins(chatID.String(), botNotification)
-					}
+					// Уведомляем через общую функцию
+					notifyNewMessages(lightChat, message, botMsg)
 				}
 			}
 		}()
@@ -215,10 +204,19 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 			lightChat.Messages = append(lightChat.Messages, *widgetMessage)
 		}
 
-		// Отправляем сообщение (с переводом для виджета)
 		chatInfo := createChatInfo(lightChat)
-		notification := createMessageNotification(chatID, widgetMessage, chatInfo)
-		WebSocketHub.SendToChatAndAdmins(chatID.String(), notification)
+
+		// Виджетам — с переводом для виджета (для admin-сообщений на язык клиента)
+		widgetNotification := createMessageNotification(chatID, widgetMessage, chatInfo)
+		WebSocketHub.SendToChat(chatID.String(), widgetNotification)
+
+		// Админам — персонализированный перевод для user-сообщений, оригинал для admin
+		if sender == "user" {
+			broadcastToAdminsPersonalized(chatID, message, chatInfo)
+		} else {
+			adminNotification := createMessageNotification(chatID, message, chatInfo)
+			WebSocketHub.SendToAllAdmins(adminNotification)
+		}
 	}
 
 	log.Printf("processSendMessage: сообщение успешно отправлено (ID=%s)", message.ID)

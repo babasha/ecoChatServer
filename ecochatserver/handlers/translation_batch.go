@@ -80,6 +80,9 @@ func (ts *TranslationService) TranslateMessagesForAdmin(ctx context.Context, mes
 				if cached, exists := translations[adminLang]; exists && cached != "" {
 					// Есть кеш - используем
 					if cachedStr, ok := cached.(string); ok {
+						msg.Metadata["isTranslated"] = true
+						msg.Metadata["originalText"] = msg.Content
+						msg.Metadata["translatedText"] = cachedStr
 						msg.Content = cachedStr
 						log.Printf("TranslateMessagesForAdmin: использован кеш для msg %s", msg.ID)
 						continue
@@ -152,11 +155,17 @@ func (ts *TranslationService) TranslateMessagesForAdmin(ctx context.Context, mes
 			return fmt.Errorf("TranslateMessagesForAdmin: SaveTranslationsBatch: %w", err)
 		}
 
-		// Обновляем content в исходном массиве
+		// Обновляем content и metadata-флаги в исходном массиве
 		for msgID, translations := range allTranslationsMap {
 			if translation, ok := translations[adminLang]; ok {
 				for j := range messages {
 					if messages[j].ID == msgID {
+						if messages[j].Metadata == nil {
+							messages[j].Metadata = make(map[string]interface{})
+						}
+						messages[j].Metadata["isTranslated"] = true
+						messages[j].Metadata["originalText"] = messages[j].Content
+						messages[j].Metadata["translatedText"] = translation
 						messages[j].Content = translation
 						break
 					}

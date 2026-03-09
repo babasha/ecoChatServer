@@ -123,7 +123,8 @@ func applyTranslationForWidget(message *models.Message, chatID uuid.UUID, client
 }
 
 // applyTranslationForAdmin создаёт копию сообщения с переводом для админа.
-// Если перевод на язык админа существует, заменяет content.
+// Если перевод на язык админа существует, заменяет content и ставит metadata-флаги
+// которые фронтенд использует для отображения (isTranslated, originalText, translatedText).
 func applyTranslationForAdmin(message *models.Message, adminLang string) *models.Message {
 	adminMessage := *message
 	if message.Metadata == nil || adminLang == "" {
@@ -131,7 +132,17 @@ func applyTranslationForAdmin(message *models.Message, adminLang string) *models
 	}
 
 	if translatedText, ok := getTranslation(message.Metadata, adminLang); ok {
+		// Копируем metadata чтобы не мутировать оригинал
+		newMetadata := make(map[string]interface{})
+		for k, v := range message.Metadata {
+			newMetadata[k] = v
+		}
+		newMetadata["isTranslated"] = true
+		newMetadata["originalText"] = message.Content
+		newMetadata["translatedText"] = translatedText
+
 		adminMessage.Content = translatedText
+		adminMessage.Metadata = newMetadata
 		log.Printf("applyTranslationForAdmin: применён перевод на %s", adminLang)
 	}
 
@@ -290,12 +301,38 @@ func runAutoResponder(ctx context.Context, chat *models.Chat, userMsg *models.Me
 	return botMsg
 }
 
+// broadcastToAdminsPersonalized отправляет user-сообщение каждому админу
+// с переводом на его язык. Если переводов нет — отправляет оригинал.
+func broadcastToAdminsPersonalized(chatID uuid.UUID, message *models.Message, chatInfo map[string]interface{}) {
+	fallback := createMessageNotification(chatID, message, chatInfo)
+
+	if message.Metadata != nil {
+		if _, ok := message.Metadata["translations"]; ok {
+			WebSocketHub.SendToAllAdminsWithCallback(func(adminClient *websocket.Client) []byte {
+				adminLang := getAdminLanguage(adminClient.UserID)
+				personalizedMsg := applyTranslationForAdmin(message, adminLang)
+				return createMessageNotification(chatID, personalizedMsg, chatInfo)
+			})
+			return
+		}
+	}
+	WebSocketHub.SendToAllAdmins(fallback)
+}
+
 // notifyNewMessages отправляет WebSocket уведомления о новых сообщениях (user + bot)
 func notifyNewMessages(chat *models.Chat, userMsg *models.Message, botMsg *models.Message) {
 	chatInfo := createChatInfo(chat)
 
-	userNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
-	WebSocketHub.SendToChatAndAdmins(chat.ID.String(), userNotification)
+	// Виджетам — оригинал
+	widgetNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
+	WebSocketHub.SendToChat(chat.ID.String(), widgetNotification)
+
+	// Админам — персонализированный перевод
+	if userMsg.Sender == "user" {
+		broadcastToAdminsPersonalized(chat.ID, userMsg, chatInfo)
+	} else {
+		WebSocketHub.SendToAllAdmins(widgetNotification)
+	}
 
 	if botMsg != nil {
 		botNotification := createMessageNotification(chat.ID, botMsg, chatInfo)
