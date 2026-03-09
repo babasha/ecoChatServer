@@ -399,7 +399,7 @@ func InstagramWebhook(c *gin.Context) {
 			}
 
 			envelope := buildInstagramEnvelopeFromMessaging(entry.ID, msg)
-			chatID, err := handleInstagramMessage(c.Request.Context(), envelope)
+			chatID, err := handleInstagramMessage(context.Background(), envelope)
 			if err != nil {
 				log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
 			} else {
@@ -426,7 +426,7 @@ func InstagramWebhook(c *gin.Context) {
 				log.Printf("InstagramWebhook: не удалось извлечь сообщения (entry_id=%s)", entry.ID)
 			}
 			for _, envelope := range envelopes {
-				chatID, err := handleInstagramMessage(c.Request.Context(), envelope)
+				chatID, err := handleInstagramMessage(context.Background(), envelope)
 				if err != nil {
 					log.Printf("InstagramWebhook: ошибка обработки сообщения: %v", err)
 				} else {
