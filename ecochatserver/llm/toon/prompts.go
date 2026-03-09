@@ -6,8 +6,10 @@ import "fmt"
 // Это избегает дублирования между провайдерами (Gemini, OpenAI, etc.)
 
 // SystemInstructionDetectAndTranslate - system instruction для DetectAndTranslate
-// Few-shot пример помогает thinking-моделям (Qwen3.5) не тратить сотни токенов на анализ формата
-const SystemInstructionDetectAndTranslate = `Translator. Detect language, translate. Reply ONLY 2 lines:
+// /no_think отключает reasoning у Qwen3/3.5 на уровне модели (экономит ~500 токенов и ~40 секунд)
+// Few-shot пример помогает модели сразу выдать правильный формат
+const SystemInstructionDetectAndTranslate = `/no_think
+Translator. Detect language, translate. Reply ONLY 2 lines:
 lang: <code>
 text: <translation>
 
@@ -16,10 +18,10 @@ lang: fr
 text: Hello`
 
 // SystemInstructionBatch - system instruction для batch перевода
-const SystemInstructionBatch = "Translator. Reply with simple list, one item per line. No markdown, no numbering, no code blocks."
+const SystemInstructionBatch = "/no_think\nTranslator. Reply with simple list, one item per line. No markdown, no numbering, no code blocks."
 
 // SystemInstructionSimple - system instruction для простого перевода
-const SystemInstructionSimple = "Translator. Reply with translation only, no explanations."
+const SystemInstructionSimple = "/no_think\nTranslator. Reply with translation only, no explanations."
 
 // BuildDetectAndTranslatePrompt создает промпт для DetectAndTranslate
 func BuildDetectAndTranslatePrompt(text, targetLang string) string {

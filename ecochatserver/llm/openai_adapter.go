@@ -199,6 +199,12 @@ func (a *OpenAIAdapter) GenerateResponse(
 			req.ChatTemplateKwargs = map[string]interface{}{
 				"enable_thinking": false,
 			}
+			// Добавляем /no_think в system prompt для Qwen3/3.5
+			// Работает на уровне модели, не зависит от API (LM Studio/vLLM)
+			req.Messages = append([]openAIMessage{{
+				Role:    "system",
+				Content: "/no_think",
+			}}, req.Messages...)
 		}
 	}
 
@@ -398,7 +404,7 @@ func (a *OpenAIAdapter) DetectAndTranslate(
 	messages := []openAIMessage{
 		{
 			Role:    "system",
-			Content: "You are a translator. CRITICAL: Respond ONLY with raw JSON, no markdown blocks, no explanations, no extra text. Just the JSON object.",
+			Content: "/no_think\nYou are a translator. CRITICAL: Respond ONLY with raw JSON, no markdown blocks, no explanations, no extra text. Just the JSON object.",
 		},
 		{
 			Role: "user",
