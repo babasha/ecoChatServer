@@ -6,12 +6,12 @@ import "fmt"
 // Это избегает дублирования между провайдерами (Gemini, OpenAI, etc.)
 
 // SystemInstructionDetectAndTranslate - system instruction для DetectAndTranslate
-// Few-shot пример помогает модели сразу выдать правильный формат
-const SystemInstructionDetectAndTranslate = `Translator. Detect language, translate. Reply ONLY 2 lines:
-lang: <code>
-text: <translation>
+// Явная инструкция + few-shot пример для маленьких моделей (2B-4B)
+const SystemInstructionDetectAndTranslate = `Detect source language and translate text to the target language. Reply ONLY 2 lines:
+lang: <source_language_code>
+text: <translated_text>
 
-Example — input: "Bonjour" target: en → output:
+Example — input: "Bonjour" translate to: en → output:
 lang: fr
 text: Hello`
 
@@ -23,7 +23,7 @@ const SystemInstructionSimple = "Translator. Reply with translation only, no exp
 
 // BuildDetectAndTranslatePrompt создает промпт для DetectAndTranslate
 func BuildDetectAndTranslatePrompt(text, targetLang string) string {
-	return fmt.Sprintf(`"%s" → %s`, text, targetLang)
+	return fmt.Sprintf(`"%s" translate to: %s`, text, targetLang)
 }
 
 // BuildBatchTranslatePrompt создает промпт для batch перевода
