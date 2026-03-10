@@ -169,7 +169,7 @@ func GetLLMSettingsSimple(c *gin.Context) {
 	response.OpenAI.BaseURL = database.GetSetting("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
 	// OpenAI OAuth
-	response.OpenAIOAuth.Model = database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-4o")
+	response.OpenAIOAuth.Model = database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-5.2-codex")
 	response.OpenAIOAuth.ReasoningEffort = database.GetSetting("OPENAI_OAUTH_REASONING_EFFORT", "")
 	response.OpenAIOAuth.ReasoningSummary = database.GetSetting("OPENAI_OAUTH_REASONING_SUMMARY", "auto")
 	response.OpenAIOAuth.TextVerbosity = database.GetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", "medium")

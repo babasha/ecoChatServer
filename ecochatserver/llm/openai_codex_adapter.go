@@ -30,7 +30,7 @@ type OpenAICodexAdapter struct {
 
 // NewOpenAICodexAdapter создаёт адаптер для ChatGPT Codex
 func NewOpenAICodexAdapter(model string, timeout time.Duration) *OpenAICodexAdapter {
-	if model == "" {
+	if model == "" || strings.Contains(model, "@") {
 		model = "gpt-5.2-codex"
 	}
 	if timeout == 0 {
