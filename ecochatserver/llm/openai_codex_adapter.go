@@ -270,16 +270,18 @@ func (a *OpenAICodexAdapter) doRequest(
 		return nil, fmt.Errorf("marshal input: %w", err)
 	}
 
-	// Read settings from DB
-	textVerbosity := database.GetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", "medium")
-
 	body := codexRequestBody{
 		Model:   a.model,
 		Store:   false,
 		Stream:  true,
 		Input:   inputJSON,
-		Text:    &codexTextConfig{Verbosity: textVerbosity},
 		Include: []string{"reasoning.encrypted_content"},
+	}
+
+	// Text verbosity — gpt-5.2-codex поддерживает только "medium"
+	textVerbosity := database.GetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", "medium")
+	if !isReasoningModel(a.model) {
+		body.Text = &codexTextConfig{Verbosity: textVerbosity}
 	}
 
 	// Reasoning support — read from DB settings
