@@ -36,12 +36,22 @@ func init() {
 
 // SessionMiddleware проверяет session cookie (httpOnly) и авторизует запрос
 // Используется для запросов от Next.js admin panel
+// Поддерживает: 1) Cookie "session", 2) Authorization: Bearer <token> (для Next.js proxy)
 func SessionMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Получаем session cookie
+		// 1) Пытаемся получить session cookie
 		sessionToken, err := c.Cookie("session")
+
+		// 2) Fallback: Authorization header (для Next.js proxy через cross-domain)
 		if err != nil || sessionToken == "" {
-			log.Printf("[SessionMiddleware] Cookie не найдена: %v, origin: %s", err, c.Request.Header.Get("Origin"))
+			authHeader := c.GetHeader("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				sessionToken = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if sessionToken == "" {
+			log.Printf("[SessionMiddleware] Cookie и Authorization не найдены, origin: %s", c.Request.Header.Get("Origin"))
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется авторизация"})
 			c.Abort()
 			return
