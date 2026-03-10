@@ -305,8 +305,8 @@ func (a *OpenAICodexAdapter) doRequest(
 		body.Instructions = opts.SystemPrompt
 	}
 
-	// Temperature
-	if opts != nil && opts.Temperature > 0 {
+	// Temperature (не поддерживается reasoning моделями gpt-5.x, o-series, codex)
+	if opts != nil && opts.Temperature > 0 && !isReasoningModel(a.model) {
 		body.Temperature = &opts.Temperature
 	}
 
