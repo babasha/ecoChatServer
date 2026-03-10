@@ -24,7 +24,7 @@ import (
 )
 
 func main() {
-	// Логи по файлу и строке
+	
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logInfo("EcoChat server starting...")
 
