@@ -357,6 +357,29 @@ func setupAPIRoutes(r *gin.Engine) {
 		api.POST("/llm/reload", handlers.ReloadLLMProvider)                // Ручной reload провайдера
 		api.POST("/llm/test", handlers.TestLLMProviderConnection)          // Альтернативный endpoint для теста
 
+		// Gemini OAuth (бесплатный доступ через Google аккаунт)
+		geminiOAuth := handlers.NewGeminiOAuthConfig()
+		api.GET("/llm/gemini-oauth/start", handlers.MakeStartOAuthHandler(geminiOAuth))
+		api.GET("/llm/gemini-oauth/status", handlers.MakeOAuthStatusHandler(geminiOAuth))
+		api.POST("/llm/gemini-oauth/manual", handlers.MakeOAuthManualCallbackHandler(geminiOAuth))
+		api.POST("/llm/gemini-oauth/poll", handlers.MakeOAuthPollHandler(geminiOAuth))
+		api.POST("/llm/gemini-oauth/disconnect", handlers.MakeOAuthDisconnectHandler(geminiOAuth))
+
+		// OpenAI OAuth (ChatGPT через подписку Plus/Pro)
+		openaiOAuth := handlers.NewOpenAIOAuthConfig()
+		api.GET("/llm/openai-oauth/start", handlers.MakeStartOAuthHandler(openaiOAuth))
+		api.GET("/llm/openai-oauth/status", handlers.MakeOAuthStatusHandler(openaiOAuth))
+		api.POST("/llm/openai-oauth/manual", handlers.MakeOAuthManualCallbackHandler(openaiOAuth))
+		api.POST("/llm/openai-oauth/poll", handlers.MakeOAuthPollHandler(openaiOAuth))
+		api.POST("/llm/openai-oauth/disconnect", handlers.MakeOAuthDisconnectHandler(openaiOAuth))
+
+		// Claude OAuth (Claude через подписку Pro/Max)
+		claudeOAuth := handlers.NewClaudeOAuthConfig()
+		api.GET("/llm/claude-oauth/start", handlers.MakeStartOAuthHandler(claudeOAuth))
+		api.GET("/llm/claude-oauth/status", handlers.MakeOAuthStatusHandler(claudeOAuth))
+		api.POST("/llm/claude-oauth/callback", handlers.MakeOAuthManualCallbackHandler(claudeOAuth))
+		api.POST("/llm/claude-oauth/disconnect", handlers.MakeOAuthDisconnectHandler(claudeOAuth))
+
 		// Публичная статистика WebSocket (для Dashboard без аутентификации)
 		api.GET("/stats/websocket", func(c *gin.Context) {
 			stats := handlers.WebSocketHub.GetStats()
@@ -486,6 +509,12 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.POST("/director/chat", handlers.DirectorChatMessage)
 			admin.GET("/director/chat/history", handlers.DirectorChatHistory)
 			admin.DELETE("/director/chat/history", handlers.DirectorChatClear)
+
+			// AI Chat (generalized role-based chat: Director, Responder, Translator, Global)
+			admin.POST("/ai/chat", handlers.AIChatMessage)
+			admin.GET("/ai/chat", handlers.AIChatHistory)
+			admin.DELETE("/ai/chat", handlers.AIChatClear)
+			admin.GET("/ai/chat/roles", handlers.AIChatRoles)
 
 			// Статистика для администраторов
 			admin.GET("/admin/stats", func(c *gin.Context) {

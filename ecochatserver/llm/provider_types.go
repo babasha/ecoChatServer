@@ -42,6 +42,11 @@ type GenerateOptions struct {
 	// Qwen3.5: отключение thinking-режима для простых задач (перевод)
 	DisableThinking bool `json:"-"`
 
+	// Claude Extended Thinking
+	ThinkingEnabled      bool   `json:"-"` // Включить extended thinking
+	ThinkingBudgetTokens int    `json:"-"` // Бюджет токенов для thinking (min 1024)
+	ThinkingEffort       string `json:"-"` // Для adaptive thinking: "low", "medium", "high", "max"
+
 	// Для логирования использования токенов
 	ClientID *uuid.UUID `json:"-"` // UUID клиента (для статистики)
 	ChatID   *uuid.UUID `json:"-"` // UUID чата (для статистики)
@@ -147,12 +152,15 @@ type ProviderWithTOON interface {
 type ProviderType string
 
 const (
-	ProviderGemini   ProviderType = "gemini"
-	ProviderOpenAI   ProviderType = "openai"
-	ProviderLMStudio ProviderType = "lmstudio" // LM Studio (локальная LLM через OpenAI-совместимый API)
-	ProviderClaude   ProviderType = "claude"
-	ProviderOllama   ProviderType = "ollama" // Локальные модели Ollama
-	ProviderDefault  ProviderType = "gemini" // По умолчанию
+	ProviderGemini      ProviderType = "gemini"
+	ProviderGeminiOAuth ProviderType = "gemini-oauth"  // Gemini через Google OAuth (бесплатно)
+	ProviderOpenAI      ProviderType = "openai"
+	ProviderOpenAIOAuth ProviderType = "openai-oauth"  // ChatGPT через OpenAI OAuth (подписка Plus/Pro)
+	ProviderLMStudio    ProviderType = "lmstudio"      // LM Studio (локальная LLM через OpenAI-совместимый API)
+	ProviderClaude      ProviderType = "claude"
+	ProviderClaudeOAuth ProviderType = "claude-oauth"  // Claude через Anthropic OAuth (подписка Pro/Max)
+	ProviderOllama      ProviderType = "ollama"         // Локальные модели Ollama
+	ProviderDefault     ProviderType = "gemini"         // По умолчанию
 )
 
 // ProviderConfig конфигурация провайдера

@@ -5,6 +5,7 @@ import (
 	"iter"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"google.golang.org/adk/model"
@@ -34,9 +35,18 @@ type LLMConfig struct {
 }
 
 // LoadLLMConfig загружает конфигурацию LLM из переменных окружения и БД
-// Приоритет: 1) ENV переменные, 2) БД, 3) дефолты
+// Приоритет: 1) RESPONDER_* настройки, 2) глобальные настройки LLM_PROVIDER, 3) дефолты
 func LoadLLMConfig() *LLMConfig {
-	// Определяем провайдера
+	// Сначала проверяем отдельную конфигурацию для авто-ответчика (RESPONDER_*)
+	responderProvider := database.GetSetting("RESPONDER_PROVIDER", "")
+	if responderProvider != "" {
+		config := loadResponderConfig(responderProvider)
+		if config != nil {
+			return config
+		}
+	}
+
+	// Fallback: используем глобальный провайдер
 	providerStr := database.GetSetting("LLM_PROVIDER", string(ProviderGemini))
 	provider := LLMProviderType(providerStr)
 
@@ -47,7 +57,7 @@ func LoadLLMConfig() *LLMConfig {
 	switch provider {
 	case ProviderGemini:
 		config.APIKey = database.GetSetting("GEMINI_API_KEY", "")
-		config.Model = database.GetSetting("GEMINI_MODEL", "gemini-2.5-flash") // Updated to latest stable model
+		config.Model = database.GetSetting("GEMINI_MODEL", "gemini-2.5-flash")
 		log.Printf("[ADK_LLM] Загружена конфигурация Gemini: model=%s", config.Model)
 
 	case ProviderOpenAI:
@@ -57,10 +67,8 @@ func LoadLLMConfig() *LLMConfig {
 		log.Printf("[ADK_LLM] Загружена конфигурация OpenAI: model=%s, baseURL=%s", config.Model, config.BaseURL)
 
 	case ProviderLMStudio:
-		// LM Studio: единый ключ LMSTUDIO_BASE_URL для dev и prod
-		// В dev — http://127.0.0.1:1234/v1, в prod — ngrok URL (настраивается через админку)
 		config.BaseURL = database.GetSetting("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
-		config.APIKey = database.GetSetting("LMSTUDIO_API_KEY", "not-needed") // LM Studio не требует ключ
+		config.APIKey = database.GetSetting("LMSTUDIO_API_KEY", "not-needed")
 		config.Model = database.GetSetting("LMSTUDIO_MODEL", "local-model")
 
 		isDev := os.Getenv("ENVIRONMENT") != "production"
@@ -77,6 +85,66 @@ func LoadLLMConfig() *LLMConfig {
 	}
 
 	return config
+}
+
+// loadResponderConfig загружает конфигурацию из RESPONDER_* настроек
+func loadResponderConfig(providerType string) *LLMConfig {
+	provider := LLMProviderType(providerType)
+	config := &LLMConfig{
+		Provider: provider,
+	}
+
+	// Модель из RESPONDER_MODEL, fallback на дефолт провайдера
+	responderModel := database.GetSetting("RESPONDER_MODEL", "")
+	responderBaseURL := database.GetSetting("RESPONDER_BASE_URL", "")
+	responderAPIKey := database.GetSetting("RESPONDER_API_KEY", "")
+
+	switch provider {
+	case ProviderGemini:
+		config.APIKey = firstNonEmpty(responderAPIKey, database.GetSetting("GEMINI_API_KEY", ""))
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("GEMINI_MODEL", "gemini-2.5-flash"))
+		log.Printf("[ADK_LLM] RESPONDER: Gemini model=%s", config.Model)
+
+	case ProviderOpenAI:
+		config.APIKey = firstNonEmpty(responderAPIKey, database.GetSetting("OPENAI_API_KEY", ""))
+		config.BaseURL = firstNonEmpty(responderBaseURL, database.GetSetting("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("OPENAI_MODEL", "gpt-4o-mini"))
+		log.Printf("[ADK_LLM] RESPONDER: OpenAI model=%s, baseURL=%s", config.Model, config.BaseURL)
+
+	case ProviderLMStudio:
+		config.APIKey = firstNonEmpty(responderAPIKey, database.GetSetting("LMSTUDIO_API_KEY", "not-needed"))
+		config.BaseURL = firstNonEmpty(responderBaseURL, database.GetSetting("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1"))
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("LMSTUDIO_MODEL", "local-model"))
+		log.Printf("[ADK_LLM] RESPONDER: LM Studio model=%s, baseURL=%s", config.Model, config.BaseURL)
+
+	case LLMProviderType("ollama"):
+		// Ollama через OpenAI-совместимый API
+		ollamaBase := firstNonEmpty(responderBaseURL, database.GetSetting("OLLAMA_BASE_URL", "http://localhost:11434"))
+		// Ollama OpenAI-compatible: нужен /v1 суффикс
+		if !strings.HasSuffix(ollamaBase, "/v1") {
+			ollamaBase = strings.TrimRight(ollamaBase, "/") + "/v1"
+		}
+		config.Provider = ProviderLMStudio // Используем LM Studio адаптер (OpenAI-совместимый)
+		config.BaseURL = ollamaBase
+		config.APIKey = "not-needed"
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("OLLAMA_MODEL", "llama3.1"))
+		log.Printf("[ADK_LLM] RESPONDER: Ollama model=%s, baseURL=%s", config.Model, config.BaseURL)
+
+	default:
+		log.Printf("[ADK_LLM] ⚠️ RESPONDER: Неизвестный провайдер %s, fallback на глобальный", providerType)
+		return nil
+	}
+
+	return config
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // NewLLMModel создаёт LLM модель для ADK на основе конфигурации

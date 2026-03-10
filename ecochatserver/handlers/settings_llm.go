@@ -96,6 +96,14 @@ func TestLLMProviderConnection(c *gin.Context) {
 	})
 }
 
+// RoleSettingsJSON — настройки роли для фронтенда
+type RoleSettingsJSON struct {
+	Provider string `json:"provider"` // "" = использовать глобальный
+	Model    string `json:"model"`
+	BaseURL  string `json:"baseUrl,omitempty"`
+	APIKey   string `json:"apiKey,omitempty"`
+}
+
 // LLMSettingsResponse структура ответа для фронтенда
 type LLMSettingsResponse struct {
 	ActiveProvider string `json:"activeProvider"`
@@ -108,6 +116,12 @@ type LLMSettingsResponse struct {
 		Model   string `json:"model"`
 		BaseURL string `json:"baseUrl"`
 	} `json:"openai"`
+	OpenAIOAuth struct {
+		Model            string `json:"model"`
+		ReasoningEffort  string `json:"reasoningEffort"`  // "minimal", "low", "medium", "high"
+		ReasoningSummary string `json:"reasoningSummary"` // "auto", "concise", "detailed"
+		TextVerbosity    string `json:"textVerbosity"`    // "low", "medium", "high"
+	} `json:"openaiOauth"`
 	LMStudio struct {
 		BaseURL string `json:"baseUrl"`
 		Model   string `json:"model"`
@@ -117,12 +131,25 @@ type LLMSettingsResponse struct {
 		APIKey string `json:"apiKey"`
 		Model  string `json:"model"`
 	} `json:"claude"`
+	ClaudeOAuth struct {
+		Model           string `json:"model"`
+		ThinkingEnabled bool   `json:"thinkingEnabled"`
+		ThinkingEffort  string `json:"thinkingEffort"` // "low", "medium", "high", "max"
+		ThinkingBudget  int    `json:"thinkingBudget"` // budget_tokens для non-adaptive
+	} `json:"claudeOauth"`
 	Ollama struct {
 		BaseURL string `json:"baseUrl"`
 		Model   string `json:"model"`
 	} `json:"ollama"`
-	Timeout              int  `json:"timeout"`
-	EnableAutoResponder  bool `json:"enableAutoResponder"`
+	Timeout             int  `json:"timeout"`
+	EnableAutoResponder bool `json:"enableAutoResponder"`
+
+	// Role-based provider assignments
+	Roles struct {
+		Translator RoleSettingsJSON `json:"translator"`
+		Responder  RoleSettingsJSON `json:"responder"`
+		Director   RoleSettingsJSON `json:"director"`
+	} `json:"roles"`
 }
 
 // GetLLMSettingsSimple получает LLM настройки в формате для фронтенда
@@ -141,6 +168,12 @@ func GetLLMSettingsSimple(c *gin.Context) {
 	response.OpenAI.Model = database.GetSetting("OPENAI_MODEL", "gpt-4o-mini")
 	response.OpenAI.BaseURL = database.GetSetting("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
+	// OpenAI OAuth
+	response.OpenAIOAuth.Model = database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-4o")
+	response.OpenAIOAuth.ReasoningEffort = database.GetSetting("OPENAI_OAUTH_REASONING_EFFORT", "")
+	response.OpenAIOAuth.ReasoningSummary = database.GetSetting("OPENAI_OAUTH_REASONING_SUMMARY", "auto")
+	response.OpenAIOAuth.TextVerbosity = database.GetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", "medium")
+
 	// LM Studio
 	response.LMStudio.BaseURL = database.GetSetting("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 	response.LMStudio.Model = database.GetSetting("LMSTUDIO_MODEL", "local-model")
@@ -149,6 +182,12 @@ func GetLLMSettingsSimple(c *gin.Context) {
 	// Claude
 	response.Claude.APIKey = maskAPIKey(database.GetSetting("ANTHROPIC_API_KEY", ""))
 	response.Claude.Model = database.GetSetting("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+
+	// Claude OAuth
+	response.ClaudeOAuth.Model = database.GetSetting("CLAUDE_OAUTH_MODEL", "claude-sonnet-4-20250514")
+	response.ClaudeOAuth.ThinkingEnabled = database.GetSettingBool("CLAUDE_OAUTH_THINKING_ENABLED", false)
+	response.ClaudeOAuth.ThinkingEffort = database.GetSetting("CLAUDE_OAUTH_THINKING_EFFORT", "")
+	response.ClaudeOAuth.ThinkingBudget = database.GetSettingInt("CLAUDE_OAUTH_THINKING_BUDGET", 8192)
 
 	// Ollama
 	response.Ollama.BaseURL = database.GetSetting("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -159,6 +198,26 @@ func GetLLMSettingsSimple(c *gin.Context) {
 
 	// Auto Responder
 	response.EnableAutoResponder = database.GetSettingBool("ENABLE_AUTO_RESPONDER", true)
+
+	// Role assignments
+	response.Roles.Translator = RoleSettingsJSON{
+		Provider: database.GetSetting("TRANSLATOR_PROVIDER", ""),
+		Model:    database.GetSetting("TRANSLATOR_MODEL", ""),
+		BaseURL:  database.GetSetting("TRANSLATOR_BASE_URL", ""),
+		APIKey:   maskAPIKey(database.GetSetting("TRANSLATOR_API_KEY", "")),
+	}
+	response.Roles.Responder = RoleSettingsJSON{
+		Provider: database.GetSetting("RESPONDER_PROVIDER", ""),
+		Model:    database.GetSetting("RESPONDER_MODEL", ""),
+		BaseURL:  database.GetSetting("RESPONDER_BASE_URL", ""),
+		APIKey:   maskAPIKey(database.GetSetting("RESPONDER_API_KEY", "")),
+	}
+	response.Roles.Director = RoleSettingsJSON{
+		Provider: database.GetSetting("DIRECTOR_PROVIDER", ""),
+		Model:    database.GetSetting("DIRECTOR_MODEL", ""),
+		BaseURL:  database.GetSetting("DIRECTOR_BASE_URL", ""),
+		APIKey:   maskAPIKey(database.GetSetting("DIRECTOR_API_KEY", "")),
+	}
 
 	c.JSON(http.StatusOK, response)
 }
@@ -176,6 +235,12 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 			Model   string `json:"model"`
 			BaseURL string `json:"baseUrl"`
 		} `json:"openai"`
+		OpenAIOAuth struct {
+			Model            string `json:"model"`
+			ReasoningEffort  string `json:"reasoningEffort"`
+			ReasoningSummary string `json:"reasoningSummary"`
+			TextVerbosity    string `json:"textVerbosity"`
+		} `json:"openaiOauth"`
 		LMStudio struct {
 			BaseURL string `json:"baseUrl"`
 			Model   string `json:"model"`
@@ -185,6 +250,12 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 			APIKey string `json:"apiKey"`
 			Model  string `json:"model"`
 		} `json:"claude"`
+		ClaudeOAuth struct {
+			Model           string `json:"model"`
+			ThinkingEnabled bool   `json:"thinkingEnabled"`
+			ThinkingEffort  string `json:"thinkingEffort"`
+			ThinkingBudget  int    `json:"thinkingBudget"`
+		} `json:"claudeOauth"`
 		Ollama struct {
 			BaseURL string `json:"baseUrl"`
 			Model   string `json:"model"`
@@ -192,6 +263,11 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 		Timeout             int  `json:"timeout"`
 		EnableAutoResponder bool `json:"enableAutoResponder"`
 		HotSwap             bool `json:"hotSwap"`
+		Roles               struct {
+			Translator RoleSettingsJSON `json:"translator"`
+			Responder  RoleSettingsJSON `json:"responder"`
+			Director   RoleSettingsJSON `json:"director"`
+		} `json:"roles"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -241,6 +317,26 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 		}
 	}
 
+	// Сохраняем OpenAI OAuth настройки
+	if request.OpenAIOAuth.Model != "" {
+		if err := database.SetSetting("OPENAI_OAUTH_MODEL", request.OpenAIOAuth.Model, "OpenAI OAuth Model"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save OPENAI_OAUTH_MODEL: %v", err)})
+			return
+		}
+	}
+	if err := database.SetSetting("OPENAI_OAUTH_REASONING_EFFORT", request.OpenAIOAuth.ReasoningEffort, "OpenAI OAuth Reasoning Effort"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save OPENAI_OAUTH_REASONING_EFFORT: %v", err)})
+		return
+	}
+	if err := database.SetSetting("OPENAI_OAUTH_REASONING_SUMMARY", request.OpenAIOAuth.ReasoningSummary, "OpenAI OAuth Reasoning Summary"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save OPENAI_OAUTH_REASONING_SUMMARY: %v", err)})
+		return
+	}
+	if err := database.SetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", request.OpenAIOAuth.TextVerbosity, "OpenAI OAuth Text Verbosity"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save OPENAI_OAUTH_TEXT_VERBOSITY: %v", err)})
+		return
+	}
+
 	// Сохраняем LM Studio настройки
 	if request.LMStudio.BaseURL != "" {
 		if err := database.SetSetting("LMSTUDIO_BASE_URL", request.LMStudio.BaseURL, "LM Studio Base URL"); err != nil {
@@ -275,6 +371,32 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 		}
 	}
 
+	// Сохраняем Claude OAuth настройки
+	if request.ClaudeOAuth.Model != "" {
+		if err := database.SetSetting("CLAUDE_OAUTH_MODEL", request.ClaudeOAuth.Model, "Claude OAuth Model"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save CLAUDE_OAUTH_MODEL: %v", err)})
+			return
+		}
+	}
+	thinkingEnabledVal := "false"
+	if request.ClaudeOAuth.ThinkingEnabled {
+		thinkingEnabledVal = "true"
+	}
+	if err := database.SetSetting("CLAUDE_OAUTH_THINKING_ENABLED", thinkingEnabledVal, "Claude OAuth Thinking Enabled"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save CLAUDE_OAUTH_THINKING_ENABLED: %v", err)})
+		return
+	}
+	if err := database.SetSetting("CLAUDE_OAUTH_THINKING_EFFORT", request.ClaudeOAuth.ThinkingEffort, "Claude OAuth Thinking Effort"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save CLAUDE_OAUTH_THINKING_EFFORT: %v", err)})
+		return
+	}
+	if request.ClaudeOAuth.ThinkingBudget > 0 {
+		if err := database.SetSetting("CLAUDE_OAUTH_THINKING_BUDGET", fmt.Sprintf("%d", request.ClaudeOAuth.ThinkingBudget), "Claude OAuth Thinking Budget"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save CLAUDE_OAUTH_THINKING_BUDGET: %v", err)})
+			return
+		}
+	}
+
 	// Сохраняем Ollama настройки
 	if request.Ollama.BaseURL != "" {
 		if err := database.SetSetting("OLLAMA_BASE_URL", request.Ollama.BaseURL, "Ollama Base URL"); err != nil {
@@ -305,6 +427,26 @@ func UpdateLLMSettingsSimple(c *gin.Context) {
 	if err := database.SetSetting("ENABLE_AUTO_RESPONDER", enableAutoResponderValue, "Enable Auto Responder"); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save ENABLE_AUTO_RESPONDER: %v", err)})
 		return
+	}
+
+	// Сохраняем Role assignments
+	for _, roleData := range []struct {
+		role llm.ProviderRole
+		cfg  RoleSettingsJSON
+	}{
+		{llm.RoleTranslator, request.Roles.Translator},
+		{llm.RoleResponder, request.Roles.Responder},
+		{llm.RoleDirector, request.Roles.Director},
+	} {
+		if err := llm.SaveRoleConfig(roleData.role, llm.RoleConfig{
+			Provider: roleData.cfg.Provider,
+			Model:    roleData.cfg.Model,
+			BaseURL:  roleData.cfg.BaseURL,
+			APIKey:   roleData.cfg.APIKey,
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save %s role: %v", roleData.role, err)})
+			return
+		}
 	}
 
 	// Инвалидируем кеш

@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/egor/ecochatserver/llm/toon"
 )
@@ -21,14 +20,10 @@ func (c *GeminiClient) DetectAndTranslateTOON(ctx context.Context, text, targetL
 		return nil, fmt.Errorf("текст для перевода пуст")
 	}
 
-	// 🎯 КОМПАКТНЫЙ ПРОМПТ С TOON (используем общий промпт из toon/prompts.go)
 	prompt := toon.BuildDetectAndTranslatePrompt(text, targetLang)
 
-	// Retry логика: 3 попытки с экспоненциальной задержкой
-	maxRetries := 3
-	var lastErr error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	var result *TranslationResult
+	err := withRetry(ctx, 3, "DetectAndTranslateTOON", func(attempt int) error {
 		reqBody := GeminiRequest{
 			Contents: []GeminiMessage{{
 				Role:  "user",
@@ -47,93 +42,53 @@ func (c *GeminiClient) DetectAndTranslateTOON(ctx context.Context, text, targetL
 
 		payload, err := json.Marshal(reqBody)
 		if err != nil {
-			return nil, fmt.Errorf("marshal request: %w", err)
+			return fmt.Errorf("marshal request: %w", err)
 		}
 
 		endpoint := c.getEndpoint()
-
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		if err != nil {
-			return nil, fmt.Errorf("create request: %w", err)
+			return fmt.Errorf("create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("x-goog-api-key", c.apiKey)
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("API request failed: %w", err)
-			if attempt < maxRetries {
-				log.Printf("DetectAndTranslateTOON: попытка %d/%d провалилась: %v, повтор через %d сек...", attempt, maxRetries, err, attempt)
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			return nil, lastErr
+			return fmt.Errorf("API request failed: %w", err)
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			lastErr = fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
-			if attempt < maxRetries {
-				log.Printf("DetectAndTranslateTOON: попытка %d/%d провалилась: статус %d, повтор через %d сек...", attempt, maxRetries, resp.StatusCode, attempt)
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			return nil, lastErr
+			return fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
 		}
 
 		var geminiResp GeminiResponse
 		if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
 			resp.Body.Close()
-			lastErr = fmt.Errorf("decode response: %w", err)
-			if attempt < maxRetries {
-				log.Printf("DetectAndTranslateTOON: попытка %d/%d провалилась: ошибка декодирования, повтор через %d сек...", attempt, maxRetries, attempt)
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			return nil, lastErr
+			return fmt.Errorf("decode response: %w", err)
 		}
 		resp.Body.Close()
 
 		if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-			lastErr = fmt.Errorf("empty response from Gemini")
-			if attempt < maxRetries {
-				log.Printf("DetectAndTranslateTOON: попытка %d/%d провалилась: пустой ответ, повтор через %d сек...", attempt, maxRetries, attempt)
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			return nil, lastErr
+			return fmt.Errorf("empty response from Gemini")
 		}
 
-		logGeminiUsage(ctx, &geminiResp, c.getModelName(),"translation_toon")
+		logGeminiUsage(ctx, &geminiResp, c.getModelName(), "translation_toon")
 
 		responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
 		if !ok {
-			lastErr = fmt.Errorf("invalid response format")
-			if attempt < maxRetries {
-				log.Printf("DetectAndTranslateTOON: попытка %d/%d провалилась: невалидный формат, повтор через %d сек...", attempt, maxRetries, attempt)
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			return nil, lastErr
+			return fmt.Errorf("invalid response format")
 		}
 
-		// 🎯 ПАРСИМ TOON ОТВЕТ
 		responseText = toon.CleanLLMResponse(responseText)
 		parsed, err := toon.ParseSimpleObject(responseText)
 		if err != nil {
-			log.Printf("DetectAndTranslateTOON: failed to parse TOON on attempt %d/%d: %v", attempt, maxRetries, err)
-			log.Printf("Raw response: %s", responseText)
-			lastErr = fmt.Errorf("failed to parse TOON response: %w", err)
-			if attempt < maxRetries {
-				log.Printf("DetectAndTranslateTOON: повтор через %d сек...", attempt)
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			return nil, lastErr
+			log.Printf("DetectAndTranslateTOON: raw response: %s", responseText)
+			return fmt.Errorf("failed to parse TOON response: %w", err)
 		}
 
-		// Извлекаем данные
 		detectedLang := parsed["lang"]
 		translation := parsed["text"]
 
@@ -142,18 +97,14 @@ func (c *GeminiClient) DetectAndTranslateTOON(ctx context.Context, text, targetL
 			detectedLang = "unknown"
 		}
 
-		// Успех!
-		if attempt > 1 {
-			log.Printf("DetectAndTranslateTOON: успех после %d попыток", attempt)
-		}
-
-		return &TranslationResult{
+		result = &TranslationResult{
 			DetectedLang: strings.ToLower(strings.TrimSpace(detectedLang)),
 			Translation:  translation,
-		}, nil
-	}
+		}
+		return nil
+	})
 
-	return nil, fmt.Errorf("DetectAndTranslateTOON failed after %d attempts: %w", maxRetries, lastErr)
+	return result, err
 }
 
 // TranslateBatchTOON - TOON версия batch перевода
@@ -167,7 +118,6 @@ func (c *GeminiClient) TranslateBatchTOON(ctx context.Context, texts []string, f
 		return texts, nil
 	}
 
-	// 🎯 УПРОЩЕННЫЙ ПРОМПТ (используем общий промпт из toon/prompts.go)
 	prompt := toon.BuildBatchTranslatePrompt(texts, fromLang, toLang)
 
 	reqBody := GeminiRequest{
@@ -220,14 +170,13 @@ func (c *GeminiClient) TranslateBatchTOON(ctx context.Context, texts []string, f
 		return nil, fmt.Errorf("empty response from Gemini")
 	}
 
-	logGeminiUsage(ctx, &geminiResp, c.getModelName(),"translation_batch_toon")
+	logGeminiUsage(ctx, &geminiResp, c.getModelName(), "translation_batch_toon")
 
 	responseText, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid response format")
 	}
 
-	// 🎯 ПАРСИМ TOON СПИСОК
 	responseText = toon.CleanLLMResponse(responseText)
 	translations, err := toon.ParseSimpleList(responseText)
 	if err != nil {
@@ -236,20 +185,7 @@ func (c *GeminiClient) TranslateBatchTOON(ctx context.Context, texts []string, f
 		return nil, fmt.Errorf("failed to parse TOON response: %w", err)
 	}
 
-	// Проверка количества
-	if len(translations) != len(texts) {
-		log.Printf("TranslateBatchTOON: WARNING - expected %d, got %d translations", len(texts), len(translations))
-		// Дополняем оригиналами если не хватает
-		for len(translations) < len(texts) {
-			translations = append(translations, texts[len(translations)])
-		}
-		// Обрезаем если больше
-		if len(translations) > len(texts) {
-			translations = translations[:len(texts)]
-		}
-	}
-
-	return translations, nil
+	return NormalizeBatchTranslations(translations, texts), nil
 }
 
 // TranslateTextTOON - TOON версия простого перевода
@@ -263,11 +199,10 @@ func (c *GeminiClient) TranslateTextTOON(ctx context.Context, text, fromLang, to
 		return text, nil
 	}
 
-	// 🎯 МАКСИМАЛЬНО ПРОСТОЙ ПРОМПТ (используем общий промпт из toon/prompts.go)
 	prompt := toon.BuildSimpleTranslatePrompt(text, fromLang, toLang)
 
-	// Простой вызов с retry (3 попытки)
-	for attempt := 1; attempt <= 3; attempt++ {
+	var result string
+	err := withRetry(ctx, 3, "TranslateTextTOON", func(attempt int) error {
 		reqBody := GeminiRequest{
 			Contents: []GeminiMessage{{
 				Role:  "user",
@@ -290,35 +225,31 @@ func (c *GeminiClient) TranslateTextTOON(ctx context.Context, text, fromLang, to
 		req.Header.Set("x-goog-api-key", c.apiKey)
 
 		resp, err := c.client.Do(req)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			if attempt < 3 {
-				time.Sleep(time.Duration(attempt) * time.Second)
-				continue
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
-			return "", fmt.Errorf("API request failed after 3 retries")
+		if err != nil {
+			return fmt.Errorf("API request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(body))
 		}
 
 		var geminiResp GeminiResponse
 		json.NewDecoder(resp.Body).Decode(&geminiResp)
-		resp.Body.Close()
 
-		logGeminiUsage(ctx, &geminiResp, c.getModelName(),"translation_toon")
+		logGeminiUsage(ctx, &geminiResp, c.getModelName(), "translation_toon")
 
 		if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-			if text, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok && text != "" {
-				// Очищаем от возможных кавычек и markdown
-				text = toon.CleanLLMResponse(text)
-				return strings.Trim(strings.TrimSpace(text), "\"'"), nil
+			if t, ok := geminiResp.Candidates[0].Content.Parts[0]["text"].(string); ok && t != "" {
+				t = toon.CleanLLMResponse(t)
+				result = strings.Trim(strings.TrimSpace(t), "\"'")
+				return nil
 			}
 		}
 
-		if attempt < 3 {
-			time.Sleep(time.Duration(attempt) * time.Second)
-		}
-	}
+		return fmt.Errorf("empty or invalid response")
+	})
 
-	return "", fmt.Errorf("translation failed after 3 attempts")
+	return result, err
 }

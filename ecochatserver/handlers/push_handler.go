@@ -63,14 +63,8 @@ var (
 
 // PushSubscribeHandler сохраняет подписку браузера администратора
 func PushSubscribeHandler(c *gin.Context) {
-	adminIDStr, ok := c.Get("adminID")
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	adminID, ok := parseUUIDString(c, adminIDStr.(string))
-	if !ok {
+	adminID, err := getAdminID(c)
+	if err != nil {
 		return
 	}
 
@@ -99,14 +93,8 @@ func PushSubscribeHandler(c *gin.Context) {
 
 // PushUnsubscribeHandler удаляет подписку на push-уведомления
 func PushUnsubscribeHandler(c *gin.Context) {
-	adminIDStr, ok := c.Get("adminID")
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	adminID, ok := parseUUIDString(c, adminIDStr.(string))
-	if !ok {
+	adminID, err := getAdminID(c)
+	if err != nil {
 		return
 	}
 
@@ -129,14 +117,8 @@ func PushUnsubscribeHandler(c *gin.Context) {
 // PushSendHandler обрабатывает запрос на отправку push-уведомления
 // Реальная доставка push зависит от наличия VAPID ключей. Если они не настроены, просто логируем событие.
 func PushSendHandler(c *gin.Context) {
-	adminIDStr, ok := c.Get("adminID")
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	adminID, ok := parseUUIDString(c, adminIDStr.(string))
-	if !ok {
+	adminID, err := getAdminID(c)
+	if err != nil {
 		return
 	}
 

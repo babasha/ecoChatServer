@@ -31,21 +31,22 @@ var Translator *TranslationService
 
 // InitAutoResponder инициализирует автоответчик (LLMклиент + конфиг)
 func InitAutoResponder() {
-	// Инициализируем Translator для перевода и определения языка клиента
-	// ВАЖНО: Переводчик работает независимо от автоответчика!
-	translatorProvider, err := llm.NewProvider(nil)
+	// Инициализируем Translator с отдельным провайдером (TRANSLATOR_PROVIDER/MODEL)
+	// Если TRANSLATOR_PROVIDER не задан — используется глобальный провайдер
+	translatorProvider, err := llm.NewProviderForRole(llm.RoleTranslator)
 	if err != nil {
 		log.Printf("⚠️ InitAutoResponder: не удалось создать провайдера для переводчика: %v", err)
 		log.Printf("⚠️ Переводчик будет недоступен")
 	} else {
-		// 🎯 TOON FORMAT: читаем настройку из БД
-		// Для LM Studio/Ollama (локальные модели) — включаем TOON автоматически,
-		// т.к. маленькие модели гораздо стабильнее с key:value чем с JSON
+		// 🎯 TOON FORMAT: для локальных моделей включаем TOON автоматически
 		useTOON := database.GetSettingBool("USE_TOON_FORMAT", false)
-		providerType := database.GetSetting("LLM_PROVIDER", "gemini")
-		if providerType == "lmstudio" || providerType == "ollama" {
+		translatorType := database.GetSetting("TRANSLATOR_PROVIDER", "")
+		if translatorType == "" {
+			translatorType = database.GetSetting("LLM_PROVIDER", "gemini")
+		}
+		if translatorType == "lmstudio" || translatorType == "ollama" {
 			useTOON = true
-			log.Printf("🎯 TOON автоматически включен для локального провайдера: %s", providerType)
+			log.Printf("🎯 TOON автоматически включен для локального переводчика: %s", translatorType)
 		}
 		Translator = NewTranslationServiceWithTOON(translatorProvider, WebSocketHub, useTOON)
 

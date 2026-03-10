@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/egor/ecochatserver/llm/toon"
 )
@@ -13,14 +12,10 @@ import (
 // DetectAndTranslateTOON - TOON версия определения языка и перевода для OpenAI
 // Экономит ~45-50% токенов по сравнению с JSON версией
 func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, targetLang string) (*TranslationResult, error) {
-	// 🎯 КОМПАКТНЫЙ ПРОМПТ (используем общий промпт из toon/prompts.go)
 	prompt := toon.BuildDetectAndTranslatePrompt(text, targetLang)
 
-	// Retry logic: до 2 попыток
-	maxRetries := 2
-	var lastErr error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	var result *TranslationResult
+	err := withRetry(ctx, 2, "DetectAndTranslateTOON", func(attempt int) error {
 		messages := []openAIMessage{
 			{
 				Role:    "system",
@@ -36,7 +31,7 @@ func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, target
 			Model:       a.model,
 			Messages:    messages,
 			Temperature: 0.3,
-			MaxTokens:   2000, // thinking-модели (Qwen3.5) тратят ~500 токенов на размышления
+			MaxTokens:   2000,
 			ChatTemplateKwargs: map[string]interface{}{
 				"enable_thinking": false,
 			},
@@ -44,19 +39,11 @@ func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, target
 
 		chatResp, err := a.sendRequest(ctx, req)
 		if err != nil {
-			lastErr = err
-			if attempt < maxRetries {
-				log.Printf("[OPENAI_TOON] DetectAndTranslate attempt %d failed: %v, retrying...", attempt, err)
-				time.Sleep(time.Second * time.Duration(attempt))
-				continue
-			}
-			return nil, fmt.Errorf("translation service unavailable after %d attempts: %w", maxRetries, lastErr)
+			return err
 		}
 
-		// Парсим ответ
 		resp := a.parseResponse(chatResp)
 
-		// Логируем использование токенов
 		if resp != nil && resp.Usage != nil {
 			_ = LogUsage(ctx, UsageLogEntry{
 				Provider:         "openai",
@@ -68,21 +55,13 @@ func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, target
 			})
 		}
 
-		// 🎯 ПАРСИМ TOON ОТВЕТ
 		cleanedText := toon.CleanLLMResponse(resp.Text)
 		parsed, err := toon.ParseSimpleObject(cleanedText)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to parse TOON response: %w", err)
-			if attempt < maxRetries {
-				log.Printf("[OPENAI_TOON] Parse failed on attempt %d: %v, retrying...", attempt, err)
-				log.Printf("[OPENAI_TOON] Raw: %s, Cleaned: %s", resp.Text, cleanedText)
-				time.Sleep(time.Second * time.Duration(attempt))
-				continue
-			}
-			return nil, lastErr
+			log.Printf("[OPENAI_TOON] Parse failed: %v, Raw: %s, Cleaned: %s", err, resp.Text, cleanedText)
+			return fmt.Errorf("failed to parse TOON response: %w", err)
 		}
 
-		// Извлекаем данные
 		detectedLang := parsed["lang"]
 		translation := parsed["text"]
 
@@ -91,13 +70,14 @@ func (a *OpenAIAdapter) DetectAndTranslateTOON(ctx context.Context, text, target
 			detectedLang = "unknown"
 		}
 
-		return &TranslationResult{
+		result = &TranslationResult{
 			DetectedLang: strings.ToLower(strings.TrimSpace(detectedLang)),
 			Translation:  translation,
-		}, nil
-	}
+		}
+		return nil
+	})
 
-	return nil, fmt.Errorf("DetectAndTranslateTOON failed after %d attempts: %w", maxRetries, lastErr)
+	return result, err
 }
 
 // TranslateBatchTOON - TOON версия batch перевода для OpenAI
@@ -111,7 +91,6 @@ func (a *OpenAIAdapter) TranslateBatchTOON(ctx context.Context, texts []string, 
 		return texts, nil
 	}
 
-	// 🎯 УПРОЩЕННЫЙ ПРОМПТ (используем общий промпт из toon/prompts.go)
 	prompt := toon.BuildBatchTranslatePrompt(texts, fromLang, toLang)
 
 	messages := []openAIMessage{
@@ -142,7 +121,6 @@ func (a *OpenAIAdapter) TranslateBatchTOON(ctx context.Context, texts []string, 
 
 	resp := a.parseResponse(chatResp)
 
-	// Логируем использование токенов
 	if resp != nil && resp.Usage != nil {
 		_ = LogUsage(ctx, UsageLogEntry{
 			Provider:         "openai",
@@ -154,7 +132,6 @@ func (a *OpenAIAdapter) TranslateBatchTOON(ctx context.Context, texts []string, 
 		})
 	}
 
-	// 🎯 ПАРСИМ TOON СПИСОК
 	cleanedText := toon.CleanLLMResponse(resp.Text)
 	translations, err := toon.ParseSimpleList(cleanedText)
 	if err != nil {
@@ -163,25 +140,12 @@ func (a *OpenAIAdapter) TranslateBatchTOON(ctx context.Context, texts []string, 
 		return nil, fmt.Errorf("failed to parse translations: %w", err)
 	}
 
-	// Проверка количества
-	if len(translations) != len(texts) {
-		log.Printf("[OPENAI_TOON] WARNING - expected %d, got %d translations", len(texts), len(translations))
-		// Дополняем или обрезаем
-		for len(translations) < len(texts) {
-			translations = append(translations, texts[len(translations)])
-		}
-		if len(translations) > len(texts) {
-			translations = translations[:len(texts)]
-		}
-	}
-
-	return translations, nil
+	return NormalizeBatchTranslations(translations, texts), nil
 }
 
 // TranslateTextTOON - TOON версия простого перевода для OpenAI
 // Максимальная экономия ~50-60% токенов
 func (a *OpenAIAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, toLang string) (string, error) {
-	// 🎯 МАКСИМАЛЬНО ПРОСТОЙ ПРОМПТ (используем общий промпт из toon/prompts.go)
 	prompt := toon.BuildSimpleTranslatePrompt(text, fromLang, toLang)
 
 	messages := []openAIMessage{
@@ -199,7 +163,7 @@ func (a *OpenAIAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, t
 		Model:       a.model,
 		Messages:    messages,
 		Temperature: 0.3,
-		MaxTokens:   2000, // thinking-модели (Qwen3.5) тратят ~500 токенов на размышления
+		MaxTokens:   2000,
 		ChatTemplateKwargs: map[string]interface{}{
 			"enable_thinking": false,
 		},
@@ -212,7 +176,6 @@ func (a *OpenAIAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, t
 
 	resp := a.parseResponse(chatResp)
 
-	// Логируем использование токенов
 	if resp != nil && resp.Usage != nil {
 		_ = LogUsage(ctx, UsageLogEntry{
 			Provider:         "openai",
@@ -224,7 +187,6 @@ func (a *OpenAIAdapter) TranslateTextTOON(ctx context.Context, text, fromLang, t
 		})
 	}
 
-	// Очищаем от возможных кавычек и markdown
 	result := toon.CleanLLMResponse(resp.Text)
 	return strings.Trim(strings.TrimSpace(result), "\"'"), nil
 }

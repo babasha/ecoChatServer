@@ -30,11 +30,7 @@ type LoginResponse struct {
 // POST /api/auth/login
 func LoginHandler(c *gin.Context) {
 	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("LoginHandler: ошибка парсинга JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Некорректный формат данных",
-		})
+	if !bindJSON(c, &req) {
 		return
 	}
 
