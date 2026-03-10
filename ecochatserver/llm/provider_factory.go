@@ -69,7 +69,7 @@ func LoadConfigFromEnv() *ProviderConfig {
 	case ProviderGeminiOAuth:
 		config.Model = database.GetSetting("GEMINI_OAUTH_MODEL", "gemini-2.5-flash")
 	case ProviderOpenAIOAuth:
-		config.Model = database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-4o")
+		config.Model = database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-5.2-codex")
 	case ProviderClaudeOAuth:
 		config.Model = database.GetSetting("CLAUDE_OAUTH_MODEL", "claude-sonnet-4-20250514")
 	case ProviderOpenAI:
@@ -220,7 +220,7 @@ func newGeminiOAuthProvider(config *ProviderConfig) (Provider, error) {
 func newOpenAIOAuthProvider(config *ProviderConfig) (Provider, error) {
 	model := config.Model
 	if model == "" {
-		model = "gpt-4o"
+		model = "gpt-5.2-codex"
 	}
 
 	adapter := NewOpenAICodexAdapter(model, GetDefaultTimeout(config))
@@ -328,7 +328,7 @@ func NewProviderForRole(role ProviderRole) (Provider, error) {
 	case ProviderGeminiOAuth:
 		config.Model = firstNonEmpty(model, database.GetSetting("GEMINI_OAUTH_MODEL", "gemini-2.5-flash"))
 	case ProviderOpenAIOAuth:
-		config.Model = firstNonEmpty(model, database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-4o"))
+		config.Model = firstNonEmpty(model, database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-5.2-codex"))
 	case ProviderClaudeOAuth:
 		config.Model = firstNonEmpty(model, database.GetSetting("CLAUDE_OAUTH_MODEL", "claude-sonnet-4-20250514"))
 	case ProviderOpenAI:
