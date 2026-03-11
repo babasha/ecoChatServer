@@ -539,6 +539,7 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/director/chat/history", handlers.DirectorChatHistory)
 			admin.DELETE("/director/chat/history", handlers.DirectorChatClear)
 			admin.POST("/director/analyze", handlers.DirectorAnalyze)
+			admin.GET("/director/data", handlers.DirectorData)
 
 			// AI Chat (generalized role-based chat: Director, Responder, Translator, Global)
 			admin.POST("/ai/chat", handlers.AIChatMessage)
