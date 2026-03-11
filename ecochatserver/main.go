@@ -48,6 +48,15 @@ func main() {
 	}
 	defer llm.CloseUsageLogger()
 
+	// Wire embedding function to break database→llm import cycle
+	database.EmbedFunc = func(ctx context.Context, text string) ([]float64, error) {
+		client := llm.GetEmbeddingClient()
+		if client == nil {
+			return nil, nil
+		}
+		return client.Embed(ctx, text)
+	}
+
 	// Периодически обновляем партиции
 	go func(ctx context.Context) {
 		ticker := time.NewTicker(1 * time.Hour)

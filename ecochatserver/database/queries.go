@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/egor/ecochatserver/database/queries"
-	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
 	"github.com/google/uuid"
 )
+
+// EmbedFunc is a callback for generating embeddings, set externally to avoid import cycle.
+// Signature: func(ctx context.Context, text string) ([]float64, error)
+var EmbedFunc func(ctx context.Context, text string) ([]float64, error)
 
 // ============================================================================
 // Director Reports (Level 2 agent)
@@ -90,17 +93,15 @@ func GetPromptVersionMetrics(agentName string, version int) (*models.PromptMetri
 
 // UpsertMemory saves a memory, auto-generating embedding if available.
 func UpsertMemory(m *models.DirectorMemory) error {
-	// Auto-generate embedding if not set and client is available
-	if len(m.Embedding) == 0 {
-		if client := llm.GetEmbeddingClient(); client != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			emb, err := client.Embed(ctx, m.Content)
-			cancel()
-			if err == nil {
-				m.Embedding = emb
-			} else {
-				log.Printf("[MEMORY] Embedding generation skipped: %v", err)
-			}
+	// Auto-generate embedding if not set and callback is available
+	if len(m.Embedding) == 0 && EmbedFunc != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		emb, err := EmbedFunc(ctx, m.Content)
+		cancel()
+		if err == nil {
+			m.Embedding = emb
+		} else {
+			log.Printf("[MEMORY] Embedding generation skipped: %v", err)
 		}
 	}
 	return queries.UpsertMemory(DB, m)
@@ -116,9 +117,9 @@ func RecallMemories(query string, category string, limit int) ([]models.Director
 func RecallMemoriesHybrid(query string, category string, limit int) ([]models.DirectorMemory, error) {
 	var queryEmbedding []float64
 
-	if client := llm.GetEmbeddingClient(); client != nil && query != "" {
+	if EmbedFunc != nil && query != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		emb, err := client.Embed(ctx, query)
+		emb, err := EmbedFunc(ctx, query)
 		cancel()
 		if err == nil {
 			queryEmbedding = emb
