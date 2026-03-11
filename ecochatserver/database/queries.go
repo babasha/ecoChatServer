@@ -304,6 +304,22 @@ func GetNegativeOutcomesByType(since time.Time) (map[string]int, error) {
 }
 
 // ============================================================================
+// Director Chat Messages (persistent conversation history)
+// ============================================================================
+
+func SaveDirectorChatMessage(adminID, role, content string) error {
+	return queries.SaveDirectorChatMessage(DB, adminID, role, content)
+}
+
+func LoadDirectorChatHistory(adminID string, limit int) ([]queries.DirectorChatMsg, error) {
+	return queries.LoadDirectorChatHistory(DB, adminID, limit)
+}
+
+func ClearDirectorChatHistory(adminID string) error {
+	return queries.ClearDirectorChatHistory(DB, adminID)
+}
+
+// ============================================================================
 // Director Identity (personality/soul system) — stored in UsersDB (ballast)
 // ============================================================================
 

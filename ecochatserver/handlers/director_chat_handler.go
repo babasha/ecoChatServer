@@ -1219,8 +1219,18 @@ func DirectorChatMessage(c *gin.Context) {
 		return
 	}
 
-	// Get chat history for this admin
+	// Get chat history for this admin (in-memory, fallback to DB)
 	directorChatHistoryMu.Lock()
+	if len(directorChatHistory[adminID]) == 0 {
+		// Try restoring from DB
+		if dbMsgs, err := database.LoadDirectorChatHistory(adminID, maxDirectorChatHistory); err == nil && len(dbMsgs) > 0 {
+			restored := make([]llm.Message, 0, len(dbMsgs))
+			for _, m := range dbMsgs {
+				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
+			}
+			directorChatHistory[adminID] = restored
+		}
+	}
 	history := make([]llm.Message, len(directorChatHistory[adminID]))
 	copy(history, directorChatHistory[adminID])
 	directorChatHistoryMu.Unlock()
@@ -1281,11 +1291,21 @@ func DirectorChatMessage(c *gin.Context) {
 		resp.Text = "I tried to gather data but reached the tool call limit. Please try again with a more specific question."
 	}
 
-	// Save both messages to history
+	// Save both messages to history (in-memory + DB)
 	directorChatHistoryMu.Lock()
 	h := directorChatHistory[adminID]
 	h = append(h, llm.Message{Role: "user", Content: request.Message})
 	h = append(h, llm.Message{Role: "assistant", Content: resp.Text})
+
+	// Persist to DB asynchronously
+	go func(aid, userMsg, assistantMsg string) {
+		if err := database.SaveDirectorChatMessage(aid, "user", userMsg); err != nil {
+			log.Printf("[DIRECTOR_CHAT] DB save user msg error: %v", err)
+		}
+		if err := database.SaveDirectorChatMessage(aid, "assistant", assistantMsg); err != nil {
+			log.Printf("[DIRECTOR_CHAT] DB save assistant msg error: %v", err)
+		}
+	}(adminID, request.Message, resp.Text)
 
 	// Proactive flush: trigger at soft threshold BEFORE messages are dropped
 	const softThreshold = 16 // flush when approaching maxDirectorChatHistory (20)
@@ -1345,6 +1365,26 @@ func DirectorChatHistory(c *gin.Context) {
 	history := directorChatHistory[adminID]
 	directorChatHistoryMu.RUnlock()
 
+	// If in-memory is empty, try loading from DB
+	if len(history) == 0 {
+		dbMsgs, err := database.LoadDirectorChatHistory(adminID, maxDirectorChatHistory)
+		if err != nil {
+			log.Printf("[DIRECTOR_CHAT] Failed to load history from DB: %v", err)
+		} else if len(dbMsgs) > 0 {
+			restored := make([]llm.Message, 0, len(dbMsgs))
+			for _, m := range dbMsgs {
+				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
+			}
+			directorChatHistoryMu.Lock()
+			// Double-check: another goroutine may have loaded it
+			if len(directorChatHistory[adminID]) == 0 {
+				directorChatHistory[adminID] = restored
+			}
+			history = directorChatHistory[adminID]
+			directorChatHistoryMu.Unlock()
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"messages": history,
 	})
@@ -1376,6 +1416,13 @@ func DirectorChatClear(c *gin.Context) {
 	delete(directorChatHistory, adminID)
 	delete(directorChatFlushedUpTo, adminID)
 	directorChatHistoryMu.Unlock()
+
+	// Clear from DB too
+	go func(aid string) {
+		if err := database.ClearDirectorChatHistory(aid); err != nil {
+			log.Printf("[DIRECTOR_CHAT] DB clear error: %v", err)
+		}
+	}(adminID)
 
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 }
