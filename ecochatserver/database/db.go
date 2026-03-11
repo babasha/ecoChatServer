@@ -80,6 +80,11 @@ func Init() error {
 		// Не прерываем запуск сервера из-за партиций
 	}
 
+	// Создаём таблицы для Director AI (если не существуют)
+	if err := ensureDirectorTables(); err != nil {
+		log.Printf("[database] Warning: не удалось создать таблицы Director: %v", err)
+	}
+
 	// Инициализируем Redis (опционально)
 	if err := InitRedis(); err != nil {
 		log.Printf("[REDIS] Warning: не удалось подключиться к Redis: %v", err)
@@ -185,4 +190,84 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// ensureDirectorTables creates tables needed by Director AI if they don't exist.
+func ensureDirectorTables() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ddl := `
+	CREATE TABLE IF NOT EXISTS director_reports (
+		id UUID PRIMARY KEY,
+		report_date TIMESTAMPTZ NOT NULL,
+		report_type VARCHAR(50) NOT NULL DEFAULT 'periodic',
+		trigger_event TEXT DEFAULT '',
+		summary_count INT NOT NULL DEFAULT 0,
+		analysis TEXT NOT NULL DEFAULT '',
+		directives JSONB DEFAULT '[]',
+		stats JSONB DEFAULT '{}',
+		customer_complaints JSONB DEFAULT '[]',
+		key_observations JSONB DEFAULT '[]',
+		prompt_changes JSONB DEFAULT '[]',
+		expectations TEXT DEFAULT '',
+		applied BOOLEAN NOT NULL DEFAULT FALSE,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS interaction_metrics (
+		id UUID PRIMARY KEY,
+		chat_id UUID NOT NULL,
+		message_id UUID,
+		agent_mode VARCHAR(50) NOT NULL DEFAULT '',
+		agent_name VARCHAR(100) NOT NULL DEFAULT '',
+		prompt_version INT,
+		tools_called JSONB DEFAULT '[]',
+		tool_count INT NOT NULL DEFAULT 0,
+		was_escalated BOOLEAN NOT NULL DEFAULT FALSE,
+		was_empty BOOLEAN NOT NULL DEFAULT FALSE,
+		response_length INT NOT NULL DEFAULT 0,
+		response_time_ms INT NOT NULL DEFAULT 0,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS agent_prompts (
+		id UUID PRIMARY KEY,
+		agent_name VARCHAR(100) NOT NULL,
+		version INT NOT NULL,
+		prompt TEXT NOT NULL,
+		created_by VARCHAR(50) NOT NULL DEFAULT 'human',
+		parent_version INT,
+		is_active BOOLEAN NOT NULL DEFAULT FALSE,
+		metrics JSONB DEFAULT '{}',
+		notes TEXT,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		UNIQUE (agent_name, version)
+	);
+
+	CREATE TABLE IF NOT EXISTS chat_summaries (
+		id UUID PRIMARY KEY,
+		chat_id UUID NOT NULL,
+		summary TEXT NOT NULL,
+		messages_from TIMESTAMPTZ NOT NULL,
+		messages_to TIMESTAMPTZ NOT NULL,
+		message_count INT NOT NULL DEFAULT 0,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_director_reports_created_at ON director_reports (created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_interaction_metrics_created_at ON interaction_metrics (created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_interaction_metrics_agent_name ON interaction_metrics (agent_name);
+	CREATE INDEX IF NOT EXISTS idx_interaction_metrics_chat_id ON interaction_metrics (chat_id);
+	CREATE INDEX IF NOT EXISTS idx_agent_prompts_agent_active ON agent_prompts (agent_name, is_active);
+	CREATE INDEX IF NOT EXISTS idx_chat_summaries_chat_id ON chat_summaries (chat_id);
+	CREATE INDEX IF NOT EXISTS idx_chat_summaries_created_at ON chat_summaries (created_at DESC);
+	`
+
+	_, err := DB.ExecContext(ctx, ddl)
+	if err != nil {
+		return fmt.Errorf("ensure director tables: %w", err)
+	}
+	log.Println("[database] Director tables ready ✓")
+	return nil
 }

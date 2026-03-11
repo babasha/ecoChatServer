@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
+	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/handlers"
 	"github.com/egor/ecochatserver/llm"
@@ -104,6 +105,34 @@ func main() {
 
 	// ─── Автоответчик (если используется) ───────────────────────────────────
 	handlers.InitAutoResponder()
+
+	// ─── Периодический анализ Director (каждые 6 часов) ─────────────────────
+	go func(ctx context.Context) {
+		// Первый запуск через 5 минут после старта (дать системе прогреться)
+		time.Sleep(5 * time.Minute)
+
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				adkAR, ok := handlers.AutoResponder.(*adkagent.ADKAutoResponderV2)
+				if ok && adkAR != nil {
+					log.Println("[DIRECTOR] Running scheduled analysis...")
+					analysisCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+					if err := adkAR.TriggerDirectorAnalysis(analysisCtx); err != nil {
+						log.Printf("[DIRECTOR] Scheduled analysis error: %v", err)
+					} else {
+						log.Println("[DIRECTOR] Scheduled analysis completed")
+					}
+					cancel()
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}(ctx)
 
 	// ─── Инициализация буферов логов ─────────────────────────────────────────
 	handlers.InitLogBuffers()
@@ -509,6 +538,7 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.POST("/director/chat", handlers.DirectorChatMessage)
 			admin.GET("/director/chat/history", handlers.DirectorChatHistory)
 			admin.DELETE("/director/chat/history", handlers.DirectorChatClear)
+			admin.POST("/director/analyze", handlers.DirectorAnalyze)
 
 			// AI Chat (generalized role-based chat: Director, Responder, Translator, Global)
 			admin.POST("/ai/chat", handlers.AIChatMessage)
