@@ -14,7 +14,6 @@ import (
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // directorChatHistory stores per-admin conversation history (in-memory, resets on restart)
@@ -402,8 +401,8 @@ func toolGetRecentChats(args map[string]interface{}) string {
 		}
 	}
 
-	// uuid.Nil = all chats (no client/admin filter)
-	chats, total, err := database.GetChats(uuid.Nil, uuid.Nil, 1, limit)
+	// Direct DB query, no cache, includes archived chats
+	chats, total, err := database.GetRecentChatsForDirector(limit)
 	if err != nil {
 		return fmt.Sprintf("Error querying chats: %v", err)
 	}

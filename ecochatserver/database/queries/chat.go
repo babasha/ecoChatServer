@@ -150,6 +150,95 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	return list, total, nil
 }
 
+// GetRecentChatsForDirector returns recent chats (including archived) without cache.
+// Used by Director AI tool to see all recent conversations.
+func GetRecentChatsForDirector(db *sql.DB, limit int) ([]models.ChatResponse, int, error) {
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
+	// Count total chats (all, including archived)
+	var total int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chats`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("error counting chats: %w", err)
+	}
+
+	q := `
+      SELECT
+        c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,
+        u.id,u.name,u.email,u.avatar,u.profile_url,
+        COUNT(CASE WHEN m.sender='user' AND m.read=false THEN 1 END) AS unread,
+        l.id,l.content,l.sender,l.timestamp
+      FROM chats c
+      JOIN users u ON c.user_id=u.id
+      LEFT JOIN messages m ON m.chat_id=c.id
+      LEFT JOIN LATERAL (
+        SELECT id,content,sender,timestamp
+          FROM messages
+         WHERE chat_id=c.id
+         ORDER BY timestamp DESC
+         LIMIT 1
+      ) l ON TRUE
+      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,u.profile_url,l.id,l.content,l.sender,l.timestamp
+      ORDER BY c.updated_at DESC
+      LIMIT $1
+    `
+
+	rows, err := db.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error querying chats for director: %w", err)
+	}
+	defer rows.Close()
+
+	var list []models.ChatResponse
+	for rows.Next() {
+		var (
+			chat           models.ChatResponse
+			user           models.User
+			avatarNull     sql.NullString
+			profileURLNull sql.NullString
+			unread         int
+			lastID         sql.NullString
+			lastCont       sql.NullString
+			lastSender     sql.NullString
+			lastTime       sql.NullTime
+		)
+		if err := rows.Scan(
+			&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status, &chat.Source, &chat.ClientID, &chat.AutoResponderEnabled,
+			&user.ID, &user.Name, &user.Email, &avatarNull, &profileURLNull,
+			&unread, &lastID, &lastCont, &lastSender, &lastTime,
+		); err != nil {
+			return nil, 0, fmt.Errorf("error scanning chat: %w", err)
+		}
+
+		user.Avatar = nullStringToPointer(avatarNull)
+		user.ProfileURL = nullStringToPointer(profileURLNull)
+		chat.User = user
+		chat.UnreadCount = unread
+
+		if lastID.Valid {
+			chat.LastMessage = &models.Message{
+				ID:        uuid.MustParse(lastID.String),
+				Content:   lastCont.String,
+				Sender:    lastSender.String,
+				Timestamp: lastTime.Time,
+				ChatID:    chat.ID,
+			}
+		}
+
+		list = append(list, chat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating chat rows: %w", err)
+	}
+
+	return list, total, nil
+}
+
 // GetChatByID получает чат с сообщениями (поддерживает infinite scroll через параметр beforeTimestamp)
 func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string) (*models.Chat, int, error) {
 	// DEBUG: log.Printf("GetChatByID: начало, chatID=%s, limit=%d, before=%s", chatID, limit, beforeTimestamp)

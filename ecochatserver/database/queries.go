@@ -158,6 +158,11 @@ func InvalidateChatsCache() {
 	InvalidateChatsCacheForAll()
 }
 
+// GetRecentChatsForDirector returns recent chats (including archived) without Redis cache.
+func GetRecentChatsForDirector(limit int) ([]models.ChatResponse, int, error) {
+	return queries.GetRecentChatsForDirector(DB, limit)
+}
+
 func GetChatByID(chatID uuid.UUID, limit int, beforeTimestamp string) (*models.Chat, int, error) {
 	return queries.GetChatByID(DB, chatID, limit, beforeTimestamp)
 }
