@@ -315,6 +315,9 @@ func LoadDirectorChatHistory(adminID string, limit int) ([]queries.DirectorChatM
 	return queries.LoadDirectorChatHistory(DB, adminID, limit)
 }
 
+// DirectorChatMsg re-exports the type for external packages.
+type DirectorChatMsg = queries.DirectorChatMsg
+
 func ClearDirectorChatHistory(adminID string) error {
 	return queries.ClearDirectorChatHistory(DB, adminID)
 }
