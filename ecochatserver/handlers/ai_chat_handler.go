@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -82,16 +83,60 @@ func AIChatMessage(c *gin.Context) {
 
 	// Build system prompt based on role
 	systemPrompt := buildAIChatSystemPrompt(request.Role)
-
-	resp, err := provider.GenerateResponse(c.Request.Context(), request.Message, history, &llm.GenerateOptions{
+	opts := &llm.GenerateOptions{
 		Temperature:  0.4,
 		MaxTokens:    2000,
 		SystemPrompt: systemPrompt,
-	})
-	if err != nil {
-		log.Printf("[AI_CHAT] %s LLM error: %v", request.Role, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
-		return
+	}
+
+	var resp *llm.Response
+	toolCallCount := 0
+
+	// DIRECTOR role uses tools; other roles use simple generation
+	if request.Role == "DIRECTOR" {
+		loopHistory := make([]llm.Message, len(history))
+		copy(loopHistory, history)
+
+		resp, err = provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, directorTools, opts)
+		if err != nil {
+			log.Printf("[AI_CHAT] DIRECTOR LLM error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
+			return
+		}
+
+		loopHistory = append(loopHistory, llm.Message{Role: "user", Content: request.Message})
+
+		for resp.FunctionCall != nil && toolCallCount < maxToolCalls {
+			toolCallCount++
+			fc := resp.FunctionCall
+			log.Printf("[AI_CHAT] DIRECTOR tool #%d: %s", toolCallCount, fc.Name)
+
+			result := executeDirectorTool(c.Request.Context(), fc)
+
+			fcArgsJSON, _ := json.Marshal(fc.Arguments)
+			loopHistory = append(loopHistory,
+				llm.Message{Role: "assistant", Content: fmt.Sprintf("[tool_call: %s(%s)]", fc.Name, string(fcArgsJSON))},
+				llm.Message{Role: "function", Content: result},
+			)
+
+			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, directorTools, opts)
+			if err != nil {
+				log.Printf("[AI_CHAT] DIRECTOR LLM error after tool: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error after tool execution"})
+				return
+			}
+		}
+
+		if resp.Text == "" && resp.FunctionCall != nil {
+			resp.Text = "Reached tool call limit. Please try a more specific question."
+		}
+	} else {
+		resp, err = provider.GenerateResponse(c.Request.Context(), request.Message, history, opts)
+		if err != nil {
+			log.Printf("[AI_CHAT] %s LLM error: %v", request.Role, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
+			return
+		}
 	}
 
 	// Save both messages to history
@@ -109,13 +154,14 @@ func AIChatMessage(c *gin.Context) {
 	if len(idPreview) > 8 {
 		idPreview = idPreview[:8]
 	}
-	log.Printf("[AI_CHAT] %s admin=%s: %d chars -> %d chars (provider=%s)",
-		request.Role, idPreview, len(request.Message), len(resp.Text), provider.GetName())
+	log.Printf("[AI_CHAT] %s admin=%s: %d chars -> %d chars (provider=%s, tools=%d)",
+		request.Role, idPreview, len(request.Message), len(resp.Text), provider.GetName(), toolCallCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":  resp.Text,
-		"usage":    resp.Usage,
-		"provider": provider.GetName(),
+		"message":    resp.Text,
+		"usage":      resp.Usage,
+		"provider":   provider.GetName(),
+		"tools_used": toolCallCount,
 	})
 }
 
