@@ -206,8 +206,7 @@ func AIChatRoles(c *gin.Context) {
 func buildAIChatSystemPrompt(role string) string {
 	switch role {
 	case "DIRECTOR":
-		contextInfo := buildDirectorChatContext()
-		return buildDirectorChatSystemPrompt(contextInfo)
+		return buildDirectorChatSystemPrompt()
 
 	case "RESPONDER":
 		return `You are the Auto-Responder (РОП/Level 1) AI agent for Zefir IoT customer support.
