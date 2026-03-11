@@ -14,6 +14,7 @@ import (
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // directorChatHistory stores per-admin conversation history (in-memory, resets on restart)
@@ -115,6 +116,19 @@ var directorTools = []llm.Tool{
 			},
 		},
 	},
+	{
+		Name:        "get_recent_chats",
+		Description: "Get recent customer support chats with user info, last message, source, and status. Use when asked about recent client messages, conversations, who wrote last, or chat activity.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"limit": map[string]interface{}{
+					"type":        "number",
+					"description": "Number of recent chats to return (1-50). Default 10.",
+				},
+			},
+		},
+	},
 }
 
 // ============================================================================
@@ -139,6 +153,8 @@ func executeDirectorTool(ctx context.Context, call *llm.FunctionCall) string {
 		return toolRunAnalysis(ctx)
 	case "get_interaction_details":
 		return toolGetInteractionDetails(call.Arguments)
+	case "get_recent_chats":
+		return toolGetRecentChats(call.Arguments)
 	default:
 		return fmt.Sprintf("Unknown tool: %s", call.Name)
 	}
@@ -377,6 +393,46 @@ func toolGetInteractionDetails(args map[string]interface{}) string {
 	return sb.String()
 }
 
+func toolGetRecentChats(args map[string]interface{}) string {
+	limit := 10
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	// uuid.Nil = all chats (no client/admin filter)
+	chats, total, err := database.GetChats(uuid.Nil, uuid.Nil, 1, limit)
+	if err != nil {
+		return fmt.Sprintf("Error querying chats: %v", err)
+	}
+	if len(chats) == 0 {
+		return "No active chats found."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Recent chats (%d shown, %d total active):\n\n", len(chats), total))
+
+	for i, ch := range chats {
+		sb.WriteString(fmt.Sprintf("%d. [%s] %s", i+1, ch.Source, ch.User.Name))
+		if ch.User.Email != "" {
+			sb.WriteString(fmt.Sprintf(" (%s)", ch.User.Email))
+		}
+		sb.WriteString(fmt.Sprintf("\n   Status: %s | Unread: %d | Updated: %s\n",
+			ch.Status, ch.UnreadCount, ch.UpdatedAt.Format("2006-01-02 15:04")))
+		if ch.LastMessage != nil {
+			preview := ch.LastMessage.Content
+			if len(preview) > 200 {
+				preview = preview[:200] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("   Last [%s]: %s\n", ch.LastMessage.Sender, preview))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
 // ============================================================================
 // Director Chat Handler — with tool-calling loop
 // ============================================================================
@@ -574,6 +630,7 @@ Your role:
 - You can explain your decisions, reasoning, and expected outcomes
 
 You have TOOLS available to query real data from the database. USE THEM ACTIVELY:
+- get_recent_chats: See recent customer conversations (who wrote, last message, source)
 - get_agent_metrics: Get performance stats (calls, escalations, empty responses, response times)
 - get_latest_report: Get your latest analysis report
 - get_active_prompts: See current prompt versions for all agents
