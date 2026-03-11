@@ -322,6 +322,34 @@ func ClearDirectorChatHistory(adminID string) error {
 	return queries.ClearDirectorChatHistory(DB, adminID)
 }
 
+func DeleteOldDirectorChatMessages(adminID string, olderThan time.Time) (int64, error) {
+	return queries.DeleteOldDirectorChatMessages(DB, adminID, olderThan)
+}
+
+// ============================================================================
+// Director Chat Compactions (summarized old messages)
+// ============================================================================
+
+// DirectorChatCompaction re-exports the type for external packages.
+type DirectorChatCompaction = queries.DirectorChatCompaction
+
+func SaveCompaction(adminID, summary string, messagesFrom, messagesTo time.Time,
+	messageCount int, sourceMessages json.RawMessage, previousID *uuid.UUID) (uuid.UUID, error) {
+	return queries.SaveCompaction(DB, adminID, summary, messagesFrom, messagesTo, messageCount, sourceMessages, previousID)
+}
+
+func GetLatestCompaction(adminID string) (*queries.DirectorChatCompaction, error) {
+	return queries.GetLatestCompaction(DB, adminID)
+}
+
+func DeleteCompactionsForAdmin(adminID string) error {
+	return queries.DeleteCompactionsForAdmin(DB, adminID)
+}
+
+func DeleteOldCompactions(retentionDays int) (int64, error) {
+	return queries.DeleteOldCompactions(DB, retentionDays)
+}
+
 // ============================================================================
 // Director Identity (personality/soul system) — stored in UsersDB (ballast)
 // ============================================================================

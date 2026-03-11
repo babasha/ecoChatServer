@@ -492,6 +492,30 @@ func ensureDirectorTables() error {
 				FOR EACH ROW EXECUTE FUNCTION director_digests_search_trigger();
 		END IF;
 	END $$;
+
+	-- Director chat messages (persistent conversation history)
+	CREATE TABLE IF NOT EXISTS director_chat_messages (
+		id SERIAL PRIMARY KEY,
+		admin_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_director_chat_admin ON director_chat_messages(admin_id, created_at);
+
+	-- Director chat compactions (summarized old messages)
+	CREATE TABLE IF NOT EXISTS director_chat_compactions (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		admin_id TEXT NOT NULL,
+		summary TEXT NOT NULL,
+		messages_from TIMESTAMPTZ NOT NULL,
+		messages_to TIMESTAMPTZ NOT NULL,
+		message_count INT NOT NULL DEFAULT 0,
+		source_messages JSONB,
+		previous_compaction_id UUID REFERENCES director_chat_compactions(id) ON DELETE SET NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_director_chat_compactions_admin ON director_chat_compactions(admin_id, created_at DESC);
 	`
 
 	_, err := DB.ExecContext(ctx, ddl)
