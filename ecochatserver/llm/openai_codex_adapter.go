@@ -71,15 +71,12 @@ type codexTextConfig struct {
 	Verbosity string `json:"verbosity,omitempty"`
 }
 
+// codexTool — Responses API format (name/description/parameters at top level)
 type codexTool struct {
-	Type     string          `json:"type"`
-	Function *codexFunction  `json:"function,omitempty"`
-}
-
-type codexFunction struct {
+	Type        string                 `json:"type"`
 	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Description string                 `json:"description,omitempty"`
+	Parameters  map[string]interface{} `json:"parameters,omitempty"`
 }
 
 // Responses API input items
@@ -312,18 +309,16 @@ func (a *OpenAICodexAdapter) doRequest(
 		body.Temperature = &opts.Temperature
 	}
 
-	// Tools
+	// Tools (Responses API format: name/description/parameters at top level)
 	if len(tools) > 0 {
 		body.ToolChoice = "auto"
 		body.ParallelToolCalls = true
 		for _, t := range tools {
 			body.Tools = append(body.Tools, codexTool{
-				Type: "function",
-				Function: &codexFunction{
-					Name:        t.Name,
-					Description: t.Description,
-					Parameters:  t.Parameters,
-				},
+				Type:        "function",
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
 			})
 		}
 	}
