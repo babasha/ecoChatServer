@@ -465,13 +465,6 @@ func (d *Director) selfReflect(ctx context.Context) {
 		}
 
 		// Save learning to memory
-		importance := 6
-		if effectiveness == "positive" {
-			importance = 8
-		} else if effectiveness == "negative" {
-			importance = 9 // remember failures even more
-		}
-
 		content := fmt.Sprintf("Директива '%s' — %s. %s",
 			truncateStr(o.DirectiveInstruction, 100), effectiveness, notes)
 
@@ -646,7 +639,7 @@ func (d *Director) generateDigest(periodType string, from, to time.Time) {
 	if err != nil {
 		log.Printf("[DIRECTOR] Error generating digest summary: %v", err)
 		// Save with raw stats even without LLM summary
-		resp = &llm.LLMResponse{
+		resp = &llm.Response{
 			Text: fmt.Sprintf("Автоматический дайджест: %d взаимодействий, эскалация %.1f%%, пустые %.1f%%",
 				data.TotalInteractions, data.AvgEscalationRate*100, data.AvgEmptyRate*100),
 		}
