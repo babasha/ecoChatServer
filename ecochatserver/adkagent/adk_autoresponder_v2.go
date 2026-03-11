@@ -270,9 +270,13 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response = strings.ReplaceAll(response, "#escalate", "")
 		response = strings.TrimSpace(response)
 
-		// Track escalation event for Director
+		// Track escalation event for Director (with context for episodic memory)
 		if ar.director != nil {
-			ar.director.Tracker().RecordEscalation(chatKey)
+			clientName := ""
+			if chat.User.Name != "" {
+				clientName = chat.User.Name
+			}
+			ar.director.Tracker().RecordEscalationWithContext(chatKey, clientName, agentType)
 		}
 	}
 
@@ -283,9 +287,9 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		response = "Sorry, I couldn't generate a response. Please try rephrasing your question or contact support@zefir.app"
 		wasEmptyResponse = true
 
-		// Track empty response event for Director
+		// Track empty response event for Director (with agent context)
 		if ar.director != nil {
-			ar.director.Tracker().RecordEmptyResponse(chatKey)
+			ar.director.Tracker().RecordEmptyResponseWithContext(chatKey, agentType)
 		}
 	}
 

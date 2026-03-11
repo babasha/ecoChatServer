@@ -115,6 +115,9 @@ func (s *ChatSummarizer) Summarize(ctx context.Context, chatID uuid.UUID) error 
 	log.Printf("[SUMMARIZER] Created summary for chat %s: %d messages → %d chars",
 		chatID, len(messages), len(summaryText))
 
+	// Extract metadata from summary and save to Director memory (async)
+	go extractAndSaveMetadata(chatID, summaryText)
+
 	return nil
 }
 
@@ -204,7 +207,8 @@ func formatMessagesForSummary(messages []models.Message) string {
 	return sb.String()
 }
 
-// generateSummary calls the LLM to produce a conversation summary
+// generateSummary calls the LLM to produce a conversation summary with structured metadata.
+// Returns summary text that includes extracted metadata tags at the end.
 func generateSummary(ctx context.Context, provider llm.Provider, conversationText string) (string, error) {
 	prompt := fmt.Sprintf(`Summarize the following customer support conversation in 2-5 sentences.
 Focus on:
@@ -212,19 +216,78 @@ Focus on:
 - What was resolved or answered
 - Any pending issues or important details
 
-Keep it concise and in the same language as the conversation.
+After the summary, on a new line add metadata tags (only if clearly present in the conversation):
+ISSUE_TYPE: <one of: device_problem, plant_care, billing, firmware, setup, general_question, complaint>
+DEVICE_MODEL: <device model if mentioned, e.g. "Zefir Pro", "Zefir Mini">
+RESOLUTION: <resolved, pending, escalated>
+CLIENT_SENTIMENT: <positive, neutral, negative, frustrated>
+
+Keep it concise and in the same language as the conversation. If metadata is not clear from the conversation, omit that tag.
 
 Conversation:
 %s`, conversationText)
 
 	resp, err := provider.GenerateResponse(ctx, prompt, nil, &llm.GenerateOptions{
 		Temperature: 0.1,
-		MaxTokens:   500,
-		SystemPrompt: "You are a conversation summarizer. Output only the summary, nothing else.",
+		MaxTokens:   600,
+		SystemPrompt: "You are a conversation summarizer. Output the summary followed by metadata tags.",
 	})
 	if err != nil {
 		return "", err
 	}
 
 	return resp.Text, nil
+}
+
+// extractAndSaveMetadata parses metadata tags from summary and saves to Director memory.
+func extractAndSaveMetadata(chatID uuid.UUID, summaryText string) {
+	tags := map[string]string{}
+	for _, line := range strings.Split(summaryText, "\n") {
+		line = strings.TrimSpace(line)
+		for _, prefix := range []string{"ISSUE_TYPE:", "DEVICE_MODEL:", "RESOLUTION:", "CLIENT_SENTIMENT:"} {
+			if strings.HasPrefix(line, prefix) {
+				value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+				if value != "" && value != "N/A" && value != "unknown" {
+					tags[prefix[:len(prefix)-1]] = value
+				}
+			}
+		}
+	}
+
+	if len(tags) == 0 {
+		return
+	}
+
+	chatShort := chatID.String()[:8]
+	dateKey := time.Now().Format("20060102")
+
+	// Save device model pattern if found
+	if model, ok := tags["DEVICE_MODEL"]; ok {
+		memTags := []string{"device", "model:" + model}
+		if issueType, ok2 := tags["ISSUE_TYPE"]; ok2 {
+			memTags = append(memTags, "issue:"+issueType)
+		}
+		content := fmt.Sprintf("Обращение по устройству %s", model)
+		if issueType, ok2 := tags["ISSUE_TYPE"]; ok2 {
+			content += fmt.Sprintf(", проблема: %s", issueType)
+		}
+		if res, ok2 := tags["RESOLUTION"]; ok2 {
+			content += fmt.Sprintf(", статус: %s", res)
+		}
+		database.SaveAutoMemory("fact",
+			fmt.Sprintf("device_issue:%s:%s", dateKey, chatShort),
+			content, memTags, nil)
+	}
+
+	// Save frustrated customer as pattern
+	if sentiment, ok := tags["CLIENT_SENTIMENT"]; ok && (sentiment == "negative" || sentiment == "frustrated") {
+		content := fmt.Sprintf("Негативный клиент в чате %s", chatShort)
+		if issueType, ok2 := tags["ISSUE_TYPE"]; ok2 {
+			content += fmt.Sprintf(", тема: %s", issueType)
+		}
+		expires := time.Now().Add(14 * 24 * time.Hour)
+		database.SaveAutoMemory("fact",
+			fmt.Sprintf("negative_sentiment:%s:%s", dateKey, chatShort),
+			content, []string{"sentiment", "negative"}, &expires)
+	}
 }

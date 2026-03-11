@@ -1,11 +1,13 @@
 package database
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/egor/ecochatserver/database/queries"
+	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
 	"github.com/google/uuid"
 )
@@ -83,6 +85,104 @@ func GetPromptVersionMetrics(agentName string, version int) (*models.PromptMetri
 }
 
 // ============================================================================
+// Director Memory (persistent long-term memory)
+// ============================================================================
+
+// UpsertMemory saves a memory, auto-generating embedding if available.
+func UpsertMemory(m *models.DirectorMemory) error {
+	// Auto-generate embedding if not set and client is available
+	if len(m.Embedding) == 0 {
+		if client := llm.GetEmbeddingClient(); client != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			emb, err := client.Embed(ctx, m.Content)
+			cancel()
+			if err == nil {
+				m.Embedding = emb
+			} else {
+				log.Printf("[MEMORY] Embedding generation skipped: %v", err)
+			}
+		}
+	}
+	return queries.UpsertMemory(DB, m)
+}
+
+// RecallMemories searches memories (FTS only, legacy).
+func RecallMemories(query string, category string, limit int) ([]models.DirectorMemory, error) {
+	return queries.RecallMemories(DB, query, category, limit)
+}
+
+// RecallMemoriesHybrid performs hybrid FTS + vector search with MMR diversity.
+// Automatically generates query embedding if embedding client is available.
+func RecallMemoriesHybrid(query string, category string, limit int) ([]models.DirectorMemory, error) {
+	var queryEmbedding []float64
+
+	if client := llm.GetEmbeddingClient(); client != nil && query != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		emb, err := client.Embed(ctx, query)
+		cancel()
+		if err == nil {
+			queryEmbedding = emb
+		} else {
+			log.Printf("[MEMORY] Query embedding failed, using FTS only: %v", err)
+		}
+	}
+
+	return queries.RecallMemoriesHybrid(DB, query, queryEmbedding, category, limit)
+}
+
+func DeleteMemory(category, key string) error {
+	return queries.DeleteMemory(DB, category, key)
+}
+
+func ListMemories(category string, limit int) ([]models.DirectorMemory, error) {
+	return queries.ListMemories(DB, category, limit)
+}
+
+func GetHotMemories(limit int) ([]models.DirectorMemory, error) {
+	return queries.GetHotMemories(DB, limit)
+}
+
+func GetMemoryStats() (map[string]int, error) {
+	return queries.GetMemoryStats(DB)
+}
+
+func DecayMemories() (int64, int64, error) {
+	return queries.DecayMemories(DB)
+}
+
+func SaveAutoMemory(category, key, content string, tags []string, expiresAt *time.Time) error {
+	return queries.SaveAutoMemory(DB, category, key, content, tags, expiresAt)
+}
+
+func SearchReports(query string, limit int) ([]models.DirectorReport, error) {
+	return queries.SearchReports(DB, query, limit)
+}
+
+func GetReportsByDateRange(from, to time.Time, limit int) ([]models.DirectorReport, error) {
+	return queries.GetReportsByDateRange(DB, from, to, limit)
+}
+
+// ============================================================================
+// Directive Outcomes (self-reflection feedback loop)
+// ============================================================================
+
+func InsertDirectiveOutcome(reportID uuid.UUID, directiveType, instruction string,
+	escRateBefore, emptyRateBefore, avgMsBefore float64) error {
+	return queries.InsertDirectiveOutcome(DB, reportID, directiveType, instruction,
+		escRateBefore, emptyRateBefore, avgMsBefore)
+}
+
+func GetPendingDirectiveOutcomes() ([]models.DirectiveOutcome, error) {
+	return queries.GetPendingDirectiveOutcomes(DB)
+}
+
+func EvaluateDirectiveOutcome(id uuid.UUID, effectiveness, notes string,
+	escRateAfter, emptyRateAfter, avgMsAfter float64) error {
+	return queries.EvaluateDirectiveOutcome(DB, id, effectiveness, notes,
+		escRateAfter, emptyRateAfter, avgMsAfter)
+}
+
+// ============================================================================
 // Chat Summaries (session pruning)
 // ============================================================================
 
@@ -112,6 +212,134 @@ func GetRecentMessages(chatID uuid.UUID, limit int) ([]models.Message, error) {
 
 func GetMessagesForSummary(chatID uuid.UUID, since time.Time, limit int) ([]models.Message, error) {
 	return queries.GetMessagesForSummary(DB, chatID, since, limit)
+}
+
+// ============================================================================
+// Deep Search & Timeline (unified search + historical browsing)
+// ============================================================================
+
+func DeepSearch(query string, sourceType string, timeRange string, limit int) ([]models.DeepSearchResult, error) {
+	return queries.DeepSearch(DB, query, sourceType, timeRange, limit)
+}
+
+func GetTimelineData(from, to time.Time, detail string) (*models.TimelineData, error) {
+	return queries.GetTimelineData(DB, from, to, detail)
+}
+
+func InsertDigest(d *models.DirectorDigest) error {
+	return queries.InsertDigest(DB, d)
+}
+
+func GetDigestForPeriod(periodType string, periodStart time.Time) (*models.DirectorDigest, error) {
+	return queries.GetDigestForPeriod(DB, periodType, periodStart)
+}
+
+func ListDigests(periodType string, limit int) ([]models.DirectorDigest, error) {
+	return queries.ListDigests(DB, periodType, limit)
+}
+
+func CountChatsInPeriod(from, to time.Time) (int, error) {
+	return queries.CountChatsInPeriod(DB, from, to)
+}
+
+func ParsePeriod(period string) (time.Time, time.Time, error) {
+	return queries.ParsePeriod(period)
+}
+
+// ============================================================================
+// Director Skills (self-created tools)
+// ============================================================================
+
+func CreateSkill(skill *models.DirectorSkill) error {
+	return queries.CreateSkill(DB, skill)
+}
+
+func GetEnabledSkills() ([]models.DirectorSkill, error) {
+	return queries.GetEnabledSkills(DB)
+}
+
+func GetAllSkills() ([]models.DirectorSkill, error) {
+	return queries.GetAllSkills(DB)
+}
+
+func GetSkillByName(name string) (*models.DirectorSkill, error) {
+	return queries.GetSkillByName(DB, name)
+}
+
+func UpdateSkill(name string, description, parameters, code *string, enabled *bool, tags []string) error {
+	return queries.UpdateSkill(DB, name, description, parameters, code, enabled, tags)
+}
+
+func DeleteSkill(name string) error {
+	return queries.DeleteSkill(DB, name)
+}
+
+func RecordSkillUsage(name string, lastError string) error {
+	return queries.RecordSkillUsage(DB, name, lastError)
+}
+
+func ToggleSkill(name string, enabled bool) error {
+	return queries.ToggleSkill(DB, name, enabled)
+}
+
+func LogDirectorToolCall(toolName, argsJSON string, resultLen int, success bool) error {
+	return queries.LogDirectorToolCall(DB, toolName, argsJSON, resultLen, success)
+}
+
+func GetRepeatingToolPatterns(since time.Time, minCount int) ([]models.ToolPattern, error) {
+	return queries.GetRepeatingToolPatterns(DB, since, minCount)
+}
+
+func CountAutoCreatedSkills() (int, error) {
+	return queries.CountAutoCreatedSkills(DB)
+}
+
+func GetNegativeOutcomesSince(since time.Time) ([]models.DirectiveOutcome, error) {
+	return queries.GetNegativeOutcomesSince(DB, since)
+}
+
+func GetNegativeOutcomesByType(since time.Time) (map[string]int, error) {
+	return queries.GetNegativeOutcomesByType(DB, since)
+}
+
+// ============================================================================
+// Director Identity (personality/soul system) — stored in UsersDB (ballast)
+// ============================================================================
+
+func GetIdentity(key string) (*models.DirectorIdentity, error) {
+	return queries.GetIdentity(UsersDB, key)
+}
+
+func GetAllIdentity() ([]models.DirectorIdentity, error) {
+	return queries.GetAllIdentity(UsersDB)
+}
+
+func UpsertIdentity(key, content, updatedBy, reason string) error {
+	return queries.UpsertIdentity(UsersDB, key, content, updatedBy, reason)
+}
+
+func GetIdentityHistory(key string, limit int) ([]models.DirectorIdentityHistory, error) {
+	return queries.GetIdentityHistory(UsersDB, key, limit)
+}
+
+func RollbackIdentity(key string, targetVersion int) error {
+	return queries.RollbackIdentity(UsersDB, key, targetVersion)
+}
+
+func IsIdentityBootstrapped() (bool, error) {
+	return queries.IsIdentityBootstrapped(UsersDB)
+}
+
+func GetIdentityForPrompt() (map[string]string, error) {
+	return queries.GetIdentityForPrompt(UsersDB)
+}
+
+func SeedIdentity() error {
+	return queries.SeedIdentity(UsersDB)
+}
+
+func GetIdentityUpdatedSince(since time.Time) ([]models.DirectorIdentity, error) {
+	return queries.GetIdentityUpdatedSince(UsersDB, since)
 }
 
 // Экспортируем константы

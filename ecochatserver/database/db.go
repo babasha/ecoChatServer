@@ -262,6 +262,236 @@ func ensureDirectorTables() error {
 	CREATE INDEX IF NOT EXISTS idx_agent_prompts_agent_active ON agent_prompts (agent_name, is_active);
 	CREATE INDEX IF NOT EXISTS idx_chat_summaries_chat_id ON chat_summaries (chat_id);
 	CREATE INDEX IF NOT EXISTS idx_chat_summaries_created_at ON chat_summaries (created_at DESC);
+
+	CREATE TABLE IF NOT EXISTS director_memories (
+		id UUID PRIMARY KEY,
+		category VARCHAR(20) NOT NULL,
+		key TEXT NOT NULL,
+		content TEXT NOT NULL,
+		importance SMALLINT NOT NULL DEFAULT 5,
+		access_count INT NOT NULL DEFAULT 0,
+		source VARCHAR(50) NOT NULL DEFAULT 'chat',
+		tags TEXT[] DEFAULT '{}',
+		pinned BOOLEAN NOT NULL DEFAULT FALSE,
+		embedding float8[],
+		search_vector tsvector,
+		expires_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		UNIQUE(category, key)
+	);
+
+	-- Add embedding column if table already exists (migration)
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='director_memories' AND column_name='embedding') THEN
+			ALTER TABLE director_memories ADD COLUMN embedding float8[];
+		END IF;
+	END $$;
+
+	CREATE INDEX IF NOT EXISTS idx_director_memories_category ON director_memories (category);
+	CREATE INDEX IF NOT EXISTS idx_director_memories_importance ON director_memories (importance DESC);
+	CREATE INDEX IF NOT EXISTS idx_director_memories_tags ON director_memories USING GIN (tags);
+	CREATE INDEX IF NOT EXISTS idx_director_memories_updated_at ON director_memories (updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_director_memories_expires ON director_memories (expires_at) WHERE expires_at IS NOT NULL;
+	CREATE INDEX IF NOT EXISTS idx_director_memories_fts ON director_memories USING GIN (search_vector);
+
+	-- Auto-update search_vector on insert/update
+	CREATE OR REPLACE FUNCTION director_memories_search_trigger() RETURNS trigger AS $$
+	BEGIN
+		NEW.search_vector := to_tsvector('russian', coalesce(NEW.content, '') || ' ' || coalesce(NEW.key, ''));
+		RETURN NEW;
+	END
+	$$ LANGUAGE plpgsql;
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_director_memories_search') THEN
+			CREATE TRIGGER trg_director_memories_search
+				BEFORE INSERT OR UPDATE OF content, key ON director_memories
+				FOR EACH ROW EXECUTE FUNCTION director_memories_search_trigger();
+		END IF;
+	END $$;
+
+	-- FTS for director_reports (search old reports)
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='director_reports' AND column_name='search_vector') THEN
+			ALTER TABLE director_reports ADD COLUMN search_vector tsvector;
+		END IF;
+	END $$;
+	CREATE INDEX IF NOT EXISTS idx_director_reports_fts ON director_reports USING GIN (search_vector);
+
+	CREATE OR REPLACE FUNCTION director_reports_search_trigger() RETURNS trigger AS $$
+	BEGIN
+		NEW.search_vector := to_tsvector('russian',
+			coalesce(NEW.analysis, '') || ' ' ||
+			coalesce(NEW.expectations, '') || ' ' ||
+			coalesce(NEW.trigger_event, ''));
+		RETURN NEW;
+	END
+	$$ LANGUAGE plpgsql;
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_director_reports_search') THEN
+			CREATE TRIGGER trg_director_reports_search
+				BEFORE INSERT OR UPDATE OF analysis, expectations, trigger_event ON director_reports
+				FOR EACH ROW EXECUTE FUNCTION director_reports_search_trigger();
+		END IF;
+	END $$;
+
+	CREATE TABLE IF NOT EXISTS directive_outcomes (
+		id UUID PRIMARY KEY,
+		report_id UUID NOT NULL,
+		directive_type VARCHAR(50) NOT NULL,
+		directive_instruction TEXT NOT NULL,
+		escalation_rate_before FLOAT,
+		empty_rate_before FLOAT,
+		avg_response_ms_before FLOAT,
+		escalation_rate_after FLOAT,
+		empty_rate_after FLOAT,
+		avg_response_ms_after FLOAT,
+		effectiveness VARCHAR(20) NOT NULL DEFAULT 'pending',
+		evaluation_notes TEXT,
+		evaluated_at TIMESTAMPTZ,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_directive_outcomes_report ON directive_outcomes (report_id);
+	CREATE INDEX IF NOT EXISTS idx_directive_outcomes_effectiveness ON directive_outcomes (effectiveness);
+	CREATE INDEX IF NOT EXISTS idx_directive_outcomes_created ON directive_outcomes (created_at DESC);
+
+	-- FTS for chat_summaries
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='chat_summaries' AND column_name='search_vector') THEN
+			ALTER TABLE chat_summaries ADD COLUMN search_vector tsvector;
+		END IF;
+	END $$;
+	CREATE INDEX IF NOT EXISTS idx_chat_summaries_fts ON chat_summaries USING GIN (search_vector);
+
+	CREATE OR REPLACE FUNCTION chat_summaries_search_trigger() RETURNS trigger AS $$
+	BEGIN
+		NEW.search_vector := to_tsvector('russian', coalesce(NEW.summary, ''));
+		RETURN NEW;
+	END
+	$$ LANGUAGE plpgsql;
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_chat_summaries_search') THEN
+			CREATE TRIGGER trg_chat_summaries_search
+				BEFORE INSERT OR UPDATE OF summary ON chat_summaries
+				FOR EACH ROW EXECUTE FUNCTION chat_summaries_search_trigger();
+		END IF;
+	END $$;
+
+	-- Backfill search_vector for existing chat_summaries
+	UPDATE chat_summaries SET search_vector = to_tsvector('russian', coalesce(summary, ''))
+	WHERE search_vector IS NULL;
+
+	-- FTS for directive_outcomes
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='directive_outcomes' AND column_name='search_vector') THEN
+			ALTER TABLE directive_outcomes ADD COLUMN search_vector tsvector;
+		END IF;
+	END $$;
+	CREATE INDEX IF NOT EXISTS idx_directive_outcomes_fts ON directive_outcomes USING GIN (search_vector);
+
+	CREATE OR REPLACE FUNCTION directive_outcomes_search_trigger() RETURNS trigger AS $$
+	BEGIN
+		NEW.search_vector := to_tsvector('russian',
+			coalesce(NEW.directive_instruction, '') || ' ' ||
+			coalesce(NEW.directive_type, '') || ' ' ||
+			coalesce(NEW.evaluation_notes, ''));
+		RETURN NEW;
+	END
+	$$ LANGUAGE plpgsql;
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_directive_outcomes_search') THEN
+			CREATE TRIGGER trg_directive_outcomes_search
+				BEFORE INSERT OR UPDATE OF directive_instruction, evaluation_notes ON directive_outcomes
+				FOR EACH ROW EXECUTE FUNCTION directive_outcomes_search_trigger();
+		END IF;
+	END $$;
+
+	-- Backfill search_vector for existing directive_outcomes
+	UPDATE directive_outcomes SET search_vector = to_tsvector('russian',
+		coalesce(directive_instruction, '') || ' ' ||
+		coalesce(directive_type, '') || ' ' ||
+		coalesce(evaluation_notes, ''))
+	WHERE search_vector IS NULL;
+
+	-- Director skills (self-created tools)
+	CREATE TABLE IF NOT EXISTS director_skills (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		name VARCHAR(100) NOT NULL UNIQUE,
+		description TEXT NOT NULL,
+		parameters JSONB NOT NULL DEFAULT '{}',
+		skill_type VARCHAR(20) NOT NULL,
+		code TEXT NOT NULL,
+		version INT NOT NULL DEFAULT 1,
+		enabled BOOLEAN NOT NULL DEFAULT TRUE,
+		created_by VARCHAR(50) NOT NULL DEFAULT 'director',
+		usage_count INT NOT NULL DEFAULT 0,
+		last_used_at TIMESTAMPTZ,
+		last_error TEXT,
+		tags TEXT[] DEFAULT '{}',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_director_skills_enabled ON director_skills (enabled, usage_count DESC);
+	CREATE INDEX IF NOT EXISTS idx_director_skills_name ON director_skills (name);
+
+	-- Director tool log (for self-building pattern detection)
+	CREATE TABLE IF NOT EXISTS director_tool_log (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		tool_name VARCHAR(100) NOT NULL,
+		arguments JSONB DEFAULT '{}',
+		result_length INT DEFAULT 0,
+		success BOOLEAN DEFAULT TRUE,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_director_tool_log_name ON director_tool_log (tool_name, created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_director_tool_log_created ON director_tool_log (created_at DESC);
+
+	-- Auto-cleanup: keep only last 30 days of tool log
+	DELETE FROM director_tool_log WHERE created_at < NOW() - INTERVAL '30 days';
+
+	-- Director digests (consolidated period summaries)
+	CREATE TABLE IF NOT EXISTS director_digests (
+		id UUID PRIMARY KEY,
+		period_type VARCHAR(10) NOT NULL,
+		period_start DATE NOT NULL,
+		period_end DATE NOT NULL,
+		total_chats INT DEFAULT 0,
+		total_interactions INT DEFAULT 0,
+		avg_escalation_rate FLOAT DEFAULT 0,
+		avg_empty_rate FLOAT DEFAULT 0,
+		avg_response_ms FLOAT DEFAULT 0,
+		summary TEXT NOT NULL DEFAULT '',
+		key_events TEXT[] DEFAULT '{}',
+		trends TEXT[] DEFAULT '{}',
+		lessons TEXT[] DEFAULT '{}',
+		search_vector tsvector,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		UNIQUE(period_type, period_start)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_director_digests_period ON director_digests (period_type, period_start DESC);
+	CREATE INDEX IF NOT EXISTS idx_director_digests_fts ON director_digests USING GIN (search_vector);
+
+	CREATE OR REPLACE FUNCTION director_digests_search_trigger() RETURNS trigger AS $$
+	BEGIN
+		NEW.search_vector := to_tsvector('russian',
+			coalesce(NEW.summary, '') || ' ' ||
+			coalesce(array_to_string(NEW.key_events, ' '), '') || ' ' ||
+			coalesce(array_to_string(NEW.trends, ' '), '') || ' ' ||
+			coalesce(array_to_string(NEW.lessons, ' '), ''));
+		RETURN NEW;
+	END
+	$$ LANGUAGE plpgsql;
+	DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_director_digests_search') THEN
+			CREATE TRIGGER trg_director_digests_search
+				BEFORE INSERT OR UPDATE OF summary, key_events, trends, lessons ON director_digests
+				FOR EACH ROW EXECUTE FUNCTION director_digests_search_trigger();
+		END IF;
+	END $$;
 	`
 
 	_, err := DB.ExecContext(ctx, ddl)
@@ -269,5 +499,50 @@ func ensureDirectorTables() error {
 		return fmt.Errorf("ensure director tables: %w", err)
 	}
 	log.Println("[database] Director tables ready ✓")
+
+	// Identity tables live in UsersDB (ballast)
+	if err := ensureIdentityTables(); err != nil {
+		log.Printf("[database] Warning: не удалось создать таблицы Identity: %v", err)
+	}
+
+	return nil
+}
+
+// ensureIdentityTables creates identity tables in UsersDB (ballast).
+func ensureIdentityTables() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ddl := `
+	CREATE TABLE IF NOT EXISTS director_identity (
+		id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		key         TEXT NOT NULL UNIQUE,
+		content     TEXT NOT NULL,
+		version     INT NOT NULL DEFAULT 1,
+		updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_by  TEXT NOT NULL DEFAULT 'system',
+		change_reason TEXT,
+		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS director_identity_history (
+		id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		identity_key    TEXT NOT NULL,
+		version         INT NOT NULL,
+		content         TEXT NOT NULL,
+		changed_by      TEXT NOT NULL,
+		change_reason   TEXT,
+		created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_identity_history_key ON director_identity_history (identity_key, version DESC);
+	CREATE INDEX IF NOT EXISTS idx_identity_history_created ON director_identity_history (created_at DESC);
+	`
+
+	_, err := UsersDB.ExecContext(ctx, ddl)
+	if err != nil {
+		return fmt.Errorf("ensure identity tables: %w", err)
+	}
+	log.Println("[database] Identity tables ready ✓")
 	return nil
 }

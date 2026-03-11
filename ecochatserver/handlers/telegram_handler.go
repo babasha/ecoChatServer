@@ -89,6 +89,23 @@ func InitAutoResponder() {
 	AutoResponder = adkAutoResponder
 	log.Printf("✅ ADK AutoResponder инициализирован с hot-swap поддержкой")
 
+	// Initialize embedding client for Director semantic memory search
+	// Priority: EMBEDDING_* settings → DIRECTOR_* settings → LLM_* settings
+	embProvider := database.GetSetting("EMBEDDING_PROVIDER", "")
+	embKey := database.GetSetting("EMBEDDING_API_KEY", "")
+	embModel := database.GetSetting("EMBEDDING_MODEL", "")
+	if embProvider == "" {
+		// Fallback to Director or global LLM settings
+		embProvider = database.GetSetting("DIRECTOR_PROVIDER", database.GetSetting("LLM_PROVIDER", ""))
+		embKey = database.GetSetting("DIRECTOR_API_KEY", database.GetSetting("LLM_API_KEY", ""))
+	}
+	// Only openai and gemini support embeddings
+	if embProvider == "openai" || embProvider == "gemini" {
+		llm.InitEmbeddingClient(embProvider, embKey, embModel)
+	} else if embProvider != "" {
+		log.Printf("[EMBEDDING] Provider '%s' does not support embeddings, semantic search disabled", embProvider)
+	}
+
 	log.Println("✅ Автоответчик успешно инициализирован")
 }
 

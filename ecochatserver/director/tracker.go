@@ -1,9 +1,12 @@
 package director
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
+
+	"github.com/egor/ecochatserver/database"
 )
 
 // EventType represents the type of tracked event
@@ -64,32 +67,53 @@ func NewEventTracker(config TrackerConfig) *EventTracker {
 	return t
 }
 
-// RecordEscalation records an escalation event
+// RecordEscalation records an escalation event and saves to persistent memory.
 func (t *EventTracker) RecordEscalation(chatID string) {
+	t.RecordEscalationWithContext(chatID, "", "")
+}
+
+// RecordEscalationWithContext records an escalation with client/agent context for memory.
+func (t *EventTracker) RecordEscalationWithContext(chatID, clientName, agentName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	now := time.Now()
 	t.escalations = append(t.escalations, now)
 	log.Printf("[EVENT_TRACKER] Escalation recorded for chat %s", chatID)
+
+	// Save episodic memory (fire-and-forget)
+	if clientName != "" || agentName != "" {
+		go saveEscalationMemory(chatID, clientName, agentName, now)
+	}
 }
 
-// RecordEmptyResponse records when the agent returned an empty/fallback response
+// RecordEmptyResponse records when the agent returned an empty/fallback response.
 func (t *EventTracker) RecordEmptyResponse(chatID string) {
+	t.RecordEmptyResponseWithContext(chatID, "")
+}
+
+// RecordEmptyResponseWithContext records an empty response with agent context for memory.
+func (t *EventTracker) RecordEmptyResponseWithContext(chatID, agentName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	t.emptyResponses = append(t.emptyResponses, time.Now())
 	log.Printf("[EVENT_TRACKER] Empty response recorded for chat %s", chatID)
+
+	if agentName != "" {
+		go saveEmptyResponseMemory(chatID, agentName)
+	}
 }
 
-// RecordToolFailure records when a tool call failed
+// RecordToolFailure records when a tool call failed.
 func (t *EventTracker) RecordToolFailure(chatID string, toolName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	t.toolFailures = append(t.toolFailures, time.Now())
 	log.Printf("[EVENT_TRACKER] Tool failure recorded: %s in chat %s", toolName, chatID)
+
+	go saveToolFailureMemory(chatID, toolName)
 }
 
 // RecordTopic records a topic/intent from a conversation
@@ -219,4 +243,70 @@ func pruneOlderThan(events []time.Time, cutoff time.Time) []time.Time {
 func startOfTomorrow() time.Time {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+}
+
+// ============================================================================
+// Episodic memory — save concrete events for Director's long-term recall
+// ============================================================================
+
+func saveEscalationMemory(chatID, clientName, agentName string, when time.Time) {
+	dateKey := when.Format("20060102-1504")
+	chatShort := chatID
+	if len(chatShort) > 8 {
+		chatShort = chatShort[:8]
+	}
+
+	content := fmt.Sprintf("Эскалация в чате %s", chatShort)
+	tags := []string{"escalation"}
+	if clientName != "" {
+		content += fmt.Sprintf(", клиент: %s", clientName)
+		tags = append(tags, "client:"+clientName)
+	}
+	if agentName != "" {
+		content += fmt.Sprintf(", агент: %s", agentName)
+		tags = append(tags, "agent:"+agentName)
+	}
+
+	expires := when.Add(14 * 24 * time.Hour) // episodic events expire in 14 days
+	if err := database.SaveAutoMemory("fact",
+		fmt.Sprintf("escalation:%s:%s", dateKey, chatShort),
+		content, tags, &expires); err != nil {
+		log.Printf("[EVENT_TRACKER] Failed to save escalation memory: %v", err)
+	}
+}
+
+func saveEmptyResponseMemory(chatID, agentName string) {
+	now := time.Now()
+	dateKey := now.Format("20060102-1504")
+	chatShort := chatID
+	if len(chatShort) > 8 {
+		chatShort = chatShort[:8]
+	}
+
+	content := fmt.Sprintf("Пустой ответ от агента %s в чате %s", agentName, chatShort)
+	expires := now.Add(7 * 24 * time.Hour)
+
+	if err := database.SaveAutoMemory("fact",
+		fmt.Sprintf("empty_response:%s:%s", dateKey, chatShort),
+		content, []string{"empty_response", "agent:" + agentName}, &expires); err != nil {
+		log.Printf("[EVENT_TRACKER] Failed to save empty response memory: %v", err)
+	}
+}
+
+func saveToolFailureMemory(chatID, toolName string) {
+	now := time.Now()
+	dateKey := now.Format("20060102-1504")
+	chatShort := chatID
+	if len(chatShort) > 8 {
+		chatShort = chatShort[:8]
+	}
+
+	content := fmt.Sprintf("Ошибка tool %s в чате %s", toolName, chatShort)
+	expires := now.Add(7 * 24 * time.Hour)
+
+	if err := database.SaveAutoMemory("fact",
+		fmt.Sprintf("tool_failure:%s:%s:%s", dateKey, toolName, chatShort),
+		content, []string{"tool_failure", "tool:" + toolName}, &expires); err != nil {
+		log.Printf("[EVENT_TRACKER] Failed to save tool failure memory: %v", err)
+	}
 }
