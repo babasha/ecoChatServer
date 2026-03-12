@@ -5,12 +5,41 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/egor/ecochatserver/llm"
 	"github.com/gin-gonic/gin"
 )
+
+// textToolCallRe matches "[tool_call: name({...})]" patterns
+// that models sometimes output as text instead of using the function calling API.
+// Uses \{.*?\} (non-greedy) to capture the JSON args between { and }.
+var textToolCallRe = regexp.MustCompile(`\[tool_call:\s*(\w+)\((\{.*?\})\)\]`)
+
+// parseTextToolCall attempts to extract a function call from plain text output.
+// Returns nil if no tool call pattern is found.
+func parseTextToolCall(text string) *llm.FunctionCall {
+	matches := textToolCallRe.FindStringSubmatch(text)
+	if len(matches) < 3 {
+		return nil
+	}
+
+	name := matches[1]
+	argsStr := matches[2]
+
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+		log.Printf("[AI_CHAT] parseTextToolCall: failed to parse args for %s: %v (raw: %s)", name, err, argsStr)
+		args = make(map[string]interface{})
+	}
+
+	return &llm.FunctionCall{
+		Name:      name,
+		Arguments: args,
+	}
+}
 
 // aiChatHistory stores per-admin, per-role conversation history (in-memory, resets on restart)
 var (
@@ -97,11 +126,23 @@ func AIChatMessage(c *gin.Context) {
 		loopHistory := make([]llm.Message, len(history))
 		copy(loopHistory, history)
 
-		resp, err = provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, directorTools, opts)
+		// Use dynamic tools: built-in + custom skills from DB
+		allTools := getDirectorToolsWithSkills()
+
+		resp, err = provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, allTools, opts)
 		if err != nil {
 			log.Printf("[AI_CHAT] DIRECTOR LLM error: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
 			return
+		}
+
+		// Fallback: if model outputs tool call as text instead of using function calling API,
+		// parse it from the text and execute it
+		if resp.FunctionCall == nil && resp.Text != "" {
+			if fc := parseTextToolCall(resp.Text); fc != nil {
+				log.Printf("[AI_CHAT] DIRECTOR text-fallback tool detected: %s", fc.Name)
+				resp.FunctionCall = fc
+			}
 		}
 
 		loopHistory = append(loopHistory, llm.Message{Role: "user", Content: request.Message})
@@ -119,11 +160,19 @@ func AIChatMessage(c *gin.Context) {
 				llm.Message{Role: "function", Content: result},
 			)
 
-			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, directorTools, opts)
+			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, allTools, opts)
 			if err != nil {
 				log.Printf("[AI_CHAT] DIRECTOR LLM error after tool: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error after tool execution"})
 				return
+			}
+
+			// Fallback for subsequent calls too
+			if resp.FunctionCall == nil && resp.Text != "" {
+				if fc := parseTextToolCall(resp.Text); fc != nil {
+					log.Printf("[AI_CHAT] DIRECTOR text-fallback tool detected: %s", fc.Name)
+					resp.FunctionCall = fc
+				}
 			}
 		}
 

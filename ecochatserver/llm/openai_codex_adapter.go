@@ -480,6 +480,13 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 
 		eventType, _ := event["type"].(string)
 
+		// Debug: log non-delta events to trace function calling
+		if eventType != "response.output_text.delta" &&
+			eventType != "response.function_call_arguments.delta" &&
+			eventType != "" {
+			log.Printf("[CODEX_DEBUG] SSE event: %s", eventType)
+		}
+
 		switch eventType {
 		case "response.output_text.delta":
 			if delta, ok := event["delta"].(string); ok {
@@ -489,25 +496,32 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 		case "response.function_call_arguments.delta":
 			if delta, ok := event["delta"].(string); ok {
 				funcCallArgs.WriteString(delta)
+				log.Printf("[CODEX_DEBUG] func_call args delta: %s", delta)
 			}
 
 		case "response.output_item.added":
 			// Function call started
 			if item, ok := event["item"].(map[string]interface{}); ok {
-				if itemType, _ := item["type"].(string); itemType == "function_call" {
+				itemType, _ := item["type"].(string)
+				log.Printf("[CODEX_DEBUG] output_item.added: type=%s", itemType)
+				if itemType == "function_call" {
 					funcCallName, _ = item["name"].(string)
+					log.Printf("[CODEX_DEBUG] Function call started: %s", funcCallName)
 				}
 			}
 
 		case "response.output_item.done":
 			// Function call complete — parse accumulated args
 			if funcCallName != "" && funcCallArgs.Len() > 0 {
+				log.Printf("[CODEX_DEBUG] Function call done: %s args=%s", funcCallName, funcCallArgs.String())
 				var args map[string]interface{}
 				if err := json.Unmarshal([]byte(funcCallArgs.String()), &args); err == nil {
 					funcCall = &FunctionCall{
 						Name:      funcCallName,
 						Arguments: args,
 					}
+				} else {
+					log.Printf("[CODEX_DEBUG] Failed to parse func args: %v", err)
 				}
 			}
 
@@ -560,6 +574,19 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 		FunctionCall: funcCall,
 		FinishReason: finishReason,
 		Usage:        usage,
+	}
+
+	// Debug: log final parse result
+	if funcCall != nil {
+		log.Printf("[CODEX_DEBUG] Final result: text=%d chars, funcCall=%s, finish=%s",
+			len(result.Text), funcCall.Name, finishReason)
+	} else {
+		textPreview := result.Text
+		if len(textPreview) > 200 {
+			textPreview = textPreview[:200] + "..."
+		}
+		log.Printf("[CODEX_DEBUG] Final result: text=%d chars (preview: %s), funcCall=nil, finish=%s",
+			len(result.Text), textPreview, finishReason)
 	}
 
 	// Log usage

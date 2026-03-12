@@ -165,6 +165,14 @@ func DirectorChatMessage(c *gin.Context) {
 		return
 	}
 
+	// Fallback: if model outputs tool call as text instead of using function calling API
+	if resp.FunctionCall == nil && resp.Text != "" {
+		if fc := parseTextToolCall(resp.Text); fc != nil {
+			log.Printf("[DIRECTOR_CHAT] Text-fallback tool detected: %s (model didn't use function calling API)", fc.Name)
+			resp.FunctionCall = fc
+		}
+	}
+
 	// Tool-calling loop: execute tools and continue until we get a text response
 	toolCallCount := 0
 	loopHistory = append(loopHistory, llm.Message{Role: "user", Content: request.Message})
@@ -218,6 +226,14 @@ func DirectorChatMessage(c *gin.Context) {
 			log.Printf("[DIRECTOR_CHAT] LLM error after tool call: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after tool execution"})
 			return
+		}
+
+		// Fallback for subsequent calls too
+		if resp.FunctionCall == nil && resp.Text != "" {
+			if fc := parseTextToolCall(resp.Text); fc != nil {
+				log.Printf("[DIRECTOR_CHAT] Text-fallback tool detected: %s", fc.Name)
+				resp.FunctionCall = fc
+			}
 		}
 	}
 
