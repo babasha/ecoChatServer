@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
@@ -247,25 +246,19 @@ func DirectorChatMessage(c *gin.Context) {
 	h = append(h, llm.Message{Role: "user", Content: request.Message})
 	h = append(h, llm.Message{Role: "assistant", Content: resp.Text})
 
-	// Persist to DB asynchronously with retry
-	go func(aid, userMsg, assistantMsg string) {
-		saveWithRetry := func(role, content string) {
-			var lastErr error
-			for attempt := 1; attempt <= 3; attempt++ {
-				if err := database.SaveDirectorChatMessage(aid, role, content); err != nil {
-					lastErr = err
-					log.Printf("[DIRECTOR_CHAT] DB save %s msg error (attempt %d/3, admin=%s): %v", role, attempt, aid, err)
-					time.Sleep(time.Duration(attempt) * time.Second) // backoff: 1s, 2s, 3s
-					continue
-				}
-				log.Printf("[DIRECTOR_CHAT] DB saved %s msg for admin=%s (%d chars)", role, aid, len(content))
-				return
+	// Extract recent user messages for auto-memory (while holding lock)
+	var recentUserMsgs []string
+	topicCount := 0
+	for i := len(h) - 1; i >= 0 && topicCount < 5; i-- {
+		if h[i].Role == "user" {
+			msg := h[i].Content
+			if len(msg) > 150 {
+				msg = msg[:150]
 			}
-			log.Printf("[DIRECTOR_CHAT] DB save %s msg FAILED after 3 retries (admin=%s): %v", role, aid, lastErr)
+			recentUserMsgs = append([]string{msg}, recentUserMsgs...)
+			topicCount++
 		}
-		saveWithRetry("user", userMsg)
-		saveWithRetry("assistant", assistantMsg)
-	}(adminID, request.Message, resp.Text)
+	}
 
 	// Compaction: trigger based on TOTAL token budget (history + system prompt + compaction context overhead)
 	historyTokens := estimateHistoryTokens(h)
@@ -309,6 +302,24 @@ func DirectorChatMessage(c *gin.Context) {
 	} else {
 		directorChatHistory[adminID] = h
 		directorChatHistoryMu.Unlock()
+	}
+
+	// Persist to DB synchronously — ensures messages survive server restarts
+	if err := database.SaveDirectorChatMessage(adminID, "user", request.Message); err != nil {
+		log.Printf("[DIRECTOR_CHAT] DB save user msg error (admin=%s): %v", adminID, err)
+	}
+	if err := database.SaveDirectorChatMessage(adminID, "assistant", resp.Text); err != nil {
+		log.Printf("[DIRECTOR_CHAT] DB save assistant msg error (admin=%s): %v", adminID, err)
+	}
+
+	// Auto-save recent chat context to director_memories for recall
+	if len(recentUserMsgs) > 0 {
+		go func(topics []string) {
+			content := "Недавние темы чата с админом:\n" + strings.Join(topics, "\n")
+			if err := database.SaveAutoMemory("fact", "recent_chat_context", content, []string{"chat", "context"}, nil); err != nil {
+				log.Printf("[DIRECTOR_CHAT] Auto-save chat topics error: %v", err)
+			}
+		}(recentUserMsgs)
 	}
 
 	idPreview := adminID
@@ -512,7 +523,9 @@ IDENTITY GUIDELINES:
 
 MEMORY GUIDELINES:
 - remember: сохраняй важное, category+key для дедупликации, pinned для вечного
-- recall: ищи перед ответами о прошлых событиях
+- recall: ВСЕГДА используй recall перед ответами о прошлых событиях/разговорах
+- При значимых обсуждениях — сохраняй ключевые решения и темы через remember
+- Если админ спрашивает "помнишь?/мы обсуждали?" — сначала recall, потом отвечай
 - Компактно: 1-2 предложения на запись
 
 IMPORTANT:
