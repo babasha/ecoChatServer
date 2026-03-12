@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
@@ -17,9 +18,8 @@ import (
 
 // directorChatHistory stores per-admin conversation history (in-memory, resets on restart)
 var (
-	directorChatHistory     = map[string][]llm.Message{} // adminID → messages
-	directorChatHistoryMu   sync.RWMutex
-	directorChatFlushedUpTo = map[string]int{} // adminID → index up to which we've proactively flushed
+	directorChatHistory   = map[string][]llm.Message{} // adminID → messages
+	directorChatHistoryMu sync.RWMutex
 )
 
 const maxDirectorTokenBudget = 12000 // max ~tokens for chat history before compaction triggers
@@ -140,18 +140,22 @@ func DirectorChatMessage(c *gin.Context) {
 		})
 	}
 
+	compactionPrefixTokens := estimateHistoryTokens(loopHistory) // tokens from compaction context only
 	loopHistory = append(loopHistory, history...)
 
-	// Log token budget before LLM call (with 25% headroom for tokenizer variance)
+	// Token budget estimation
 	promptTokens := estimateTokens(systemPrompt)
 	histTokens := estimateHistoryTokens(loopHistory)
 	msgTokens := estimateTokens(request.Message)
-	effectiveBudget := int(float64(promptTokens+histTokens+msgTokens) / contextHeadroom)
-	log.Printf("[DIRECTOR_CHAT] Token budget: system~%d + history~%d + msg~%d = ~%d tokens (effective ~%d with headroom, %d messages)",
-		promptTokens, histTokens, msgTokens, promptTokens+histTokens+msgTokens, effectiveBudget, len(loopHistory)+1)
 
 	// Load all tools: built-in + custom skills from DB
 	allTools := getDirectorToolsWithSkills()
+
+	// Estimate tool definitions overhead (~300 tokens per tool on average)
+	toolsTokens := len(allTools) * 300
+	totalEstimate := promptTokens + histTokens + msgTokens + toolsTokens
+	log.Printf("[DIRECTOR_CHAT] Full context estimate: system~%d + history~%d + msg~%d + tools~%d(%d defs) = ~%d tokens",
+		promptTokens, histTokens, msgTokens, toolsTokens, len(allTools), totalEstimate)
 
 	// First call with tools
 	resp, err := provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, allTools, opts)
@@ -227,23 +231,43 @@ func DirectorChatMessage(c *gin.Context) {
 	h = append(h, llm.Message{Role: "user", Content: request.Message})
 	h = append(h, llm.Message{Role: "assistant", Content: resp.Text})
 
-	// Persist to DB asynchronously
+	// Persist to DB asynchronously with retry
 	go func(aid, userMsg, assistantMsg string) {
-		if err := database.SaveDirectorChatMessage(aid, "user", userMsg); err != nil {
-			log.Printf("[DIRECTOR_CHAT] DB save user msg error: %v", err)
+		saveWithRetry := func(role, content string) {
+			var lastErr error
+			for attempt := 1; attempt <= 3; attempt++ {
+				if err := database.SaveDirectorChatMessage(aid, role, content); err != nil {
+					lastErr = err
+					log.Printf("[DIRECTOR_CHAT] DB save %s msg error (attempt %d/3, admin=%s): %v", role, attempt, aid, err)
+					time.Sleep(time.Duration(attempt) * time.Second) // backoff: 1s, 2s, 3s
+					continue
+				}
+				log.Printf("[DIRECTOR_CHAT] DB saved %s msg for admin=%s (%d chars)", role, aid, len(content))
+				return
+			}
+			log.Printf("[DIRECTOR_CHAT] DB save %s msg FAILED after 3 retries (admin=%s): %v", role, aid, lastErr)
 		}
-		if err := database.SaveDirectorChatMessage(aid, "assistant", assistantMsg); err != nil {
-			log.Printf("[DIRECTOR_CHAT] DB save assistant msg error: %v", err)
-		}
+		saveWithRetry("user", userMsg)
+		saveWithRetry("assistant", assistantMsg)
 	}(adminID, request.Message, resp.Text)
 
-	// Compaction: trigger based on token budget, not message count
+	// Compaction: trigger based on TOTAL token budget (history + system prompt + compaction context overhead)
 	historyTokens := estimateHistoryTokens(h)
-	if historyTokens > maxDirectorTokenBudget && len(h) >= minCompactMessages {
+	// Account for system prompt, compaction context, and tool definitions that also consume context window
+	overheadTokens := promptTokens + compactionPrefixTokens + toolsTokens
+	effectiveHistoryBudget := maxDirectorTokenBudget - overheadTokens
+	if effectiveHistoryBudget < 2000 {
+		effectiveHistoryBudget = 2000 // minimum budget to avoid excessive compaction
+	}
+	if historyTokens > effectiveHistoryBudget && len(h) >= minCompactMessages {
 		// Remove oldest messages until we're within keepRecentTokenBudget
+		effectiveKeepBudget := keepRecentTokenBudget
+		if effectiveKeepBudget > effectiveHistoryBudget/2 {
+			effectiveKeepBudget = effectiveHistoryBudget / 2
+		}
 		compactIdx := 0
 		keptTokens := historyTokens
-		for compactIdx < len(h)-2 && keptTokens > keepRecentTokenBudget {
+		for compactIdx < len(h)-2 && keptTokens > effectiveKeepBudget {
 			keptTokens -= estimateTokens(h[compactIdx].Content)
 			compactIdx++
 		}
@@ -259,12 +283,11 @@ func DirectorChatMessage(c *gin.Context) {
 		copy(toCompact, h[:compactIdx])
 
 		h = h[compactIdx:]
-		directorChatFlushedUpTo[adminID] = 0
 		directorChatHistory[adminID] = h
 		directorChatHistoryMu.Unlock()
 
-		log.Printf("[DIRECTOR_CHAT] Compaction triggered: %d tokens → compacting %d msgs, keeping %d msgs (~%d tokens)",
-			historyTokens, len(toCompact), len(h), estimateHistoryTokens(h))
+		log.Printf("[DIRECTOR_CHAT] Compaction triggered: history %d tokens (budget %d, overhead %d) → compacting %d msgs, keeping %d msgs (~%d tokens)",
+			historyTokens, effectiveHistoryBudget, overheadTokens, len(toCompact), len(h), estimateHistoryTokens(h))
 
 		go runCompaction(provider, adminID, toCompact)
 	} else {
@@ -298,7 +321,9 @@ func DirectorChatHistory(c *gin.Context) {
 	}
 
 	directorChatHistoryMu.RLock()
-	history := directorChatHistory[adminID]
+	src := directorChatHistory[adminID]
+	history := make([]llm.Message, len(src))
+	copy(history, src)
 	directorChatHistoryMu.RUnlock()
 
 	// If in-memory is empty, try loading from DB
@@ -316,8 +341,17 @@ func DirectorChatHistory(c *gin.Context) {
 			if len(directorChatHistory[adminID]) == 0 {
 				directorChatHistory[adminID] = restored
 			}
-			history = directorChatHistory[adminID]
+			history = make([]llm.Message, len(directorChatHistory[adminID]))
+			copy(history, directorChatHistory[adminID])
 			directorChatHistoryMu.Unlock()
+		}
+	}
+
+	// Filter out messages with empty content (defensive)
+	filtered := make([]llm.Message, 0, len(history))
+	for _, m := range history {
+		if m.Content != "" && (m.Role == "user" || m.Role == "assistant") {
+			filtered = append(filtered, m)
 		}
 	}
 
@@ -328,7 +362,7 @@ func DirectorChatHistory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"messages":   history,
+		"messages":   filtered,
 		"compaction": compactionSummary,
 	})
 }
@@ -357,7 +391,6 @@ func DirectorChatClear(c *gin.Context) {
 		}
 	}
 	delete(directorChatHistory, adminID)
-	delete(directorChatFlushedUpTo, adminID)
 	directorChatHistoryMu.Unlock()
 
 	// Clear from DB too (messages + compactions)

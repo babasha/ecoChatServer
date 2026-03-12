@@ -15,18 +15,18 @@ import (
 )
 
 // ============================================================================
-// Compaction — summarize old messages instead of dropping them
+// Compaction — summarize old messages + extract memories in a SINGLE LLM call
 // ============================================================================
 
-// runCompaction summarizes old messages via LLM and saves to DB.
+// runCompaction summarizes old messages via LLM, saves summary to DB,
+// extracts key facts to persistent memory, and cleans up compacted messages from DB.
 // Runs in a goroutine to not block the chat response.
-// Also flushes key facts to persistent memory.
 func runCompaction(provider llm.Provider, adminID string, messagesToCompact []llm.Message) {
 	if len(messagesToCompact) < 2 {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
 	// 1. Load existing compaction for merge
@@ -38,14 +38,29 @@ func runCompaction(provider llm.Provider, adminID string, messagesToCompact []ll
 		previousID = &existingCompaction.ID
 	}
 
-	// 2. Build summarization prompt
+	// 2. Fetch existing hot memories for deduplication awareness
+	existingMemories := ""
+	if hotMems, err := database.GetHotMemories(5); err == nil && len(hotMems) > 0 {
+		var memSB strings.Builder
+		memSB.WriteString("\nУже сохранено в памяти (НЕ дублируй):\n")
+		for _, m := range hotMems {
+			content := m.Content
+			if len(content) > 100 {
+				content = content[:100] + "..."
+			}
+			memSB.WriteString(fmt.Sprintf("- [%s/%s] %s\n", m.Category, m.Key, content))
+		}
+		existingMemories = memSB.String()
+	}
+
+	// 3. Build COMBINED prompt: summarization + memory extraction in one LLM call
 	var sb strings.Builder
 	if existingSummary != "" {
 		sb.WriteString("Предыдущая сводка разговора:\n---\n")
 		sb.WriteString(existingSummary)
 		sb.WriteString("\n---\n\n")
 	}
-	sb.WriteString("Новые сообщения для включения в сводку:\n---\n")
+	sb.WriteString("Новые сообщения для обработки:\n---\n")
 	for _, m := range messagesToCompact {
 		content := m.Content
 		if len(content) > 500 {
@@ -53,8 +68,13 @@ func runCompaction(provider llm.Provider, adminID string, messagesToCompact []ll
 		}
 		sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, content))
 	}
-	sb.WriteString("---\n\n")
-	sb.WriteString(`Создай ОБЪЕДИНЁННУЮ сводку разговора:
+	sb.WriteString("---\n")
+	sb.WriteString(existingMemories)
+	sb.WriteString(`
+Выполни ДВЕ задачи:
+
+=== ЗАДАЧА 1: СВОДКА ===
+Создай ОБЪЕДИНЁННУЮ сводку разговора:
 1. Сохрани все ключевые решения, факты и контекст из предыдущей сводки
 2. Добавь новую информацию из сообщений выше
 3. Отметь незавершённые темы и открытые вопросы
@@ -62,28 +82,39 @@ func runCompaction(provider llm.Provider, adminID string, messagesToCompact []ll
 5. Используй буллеты для структуры
 6. Пиши на языке разговора
 
-Выведи ТОЛЬКО сводку, без преамбулы.`)
+=== ЗАДАЧА 2: ПАМЯТЬ ===
+Извлеки важные факты для долгосрочной памяти (макс 3 штуки).
+Пропускай приветствия, рутинные вопросы, вывод инструментов.
+НЕ дублируй то что уже сохранено (см. выше).
 
-	// 3. Call LLM for summarization
+=== ФОРМАТ ОТВЕТА ===
+SUMMARY:
+<сводка здесь>
+
+MEMORIES:
+REMEMBER: category=<fact|decision|pattern|insight|preference> key=<unique_key> importance=<1-10> content=<краткий текст до 200 символов>
+(или NOTHING если нечего запоминать)`)
+
+	// 4. Single LLM call for both tasks
 	resp, err := provider.GenerateResponse(ctx, sb.String(), nil, &llm.GenerateOptions{
 		Temperature: 0.1,
-		MaxTokens:   800,
+		MaxTokens:   1200,
 	})
 	if err != nil {
-		log.Printf("[COMPACTION] LLM summarization failed: %v", err)
-		// Fallback: still flush to memory
-		go flushMemoryBeforeCompaction(provider, messagesToCompact)
+		log.Printf("[COMPACTION] LLM call failed: %v", err)
 		return
 	}
 
-	summary := resp.Text
+	// 5. Parse response: split into summary and memories
+	summary, memories := parseCompactionResponse(resp.Text)
+
 	if len(summary) > 3000 {
 		summary = summary[:3000]
 	}
 
-	// 4. Save compaction to DB
+	// 6. Save compaction to DB
 	now := time.Now()
-	messagesFrom := now.Add(-time.Duration(len(messagesToCompact)) * time.Minute) // approximate
+	messagesFrom := now.Add(-time.Duration(len(messagesToCompact)) * time.Minute)
 	_, err = database.SaveCompaction(adminID, summary, messagesFrom, now,
 		len(messagesToCompact), nil, previousID)
 	if err != nil {
@@ -91,19 +122,68 @@ func runCompaction(provider llm.Provider, adminID string, messagesToCompact []ll
 	} else {
 		log.Printf("[COMPACTION] Saved compaction: %d messages → %d chars summary (admin=%s)",
 			len(messagesToCompact), len(summary), adminID[:min(8, len(adminID))])
+
+		// 7. Clean up compacted messages from DB (only after successful compaction save)
+		if deleted, err := database.DeleteOldDirectorChatMessages(adminID, now); err != nil {
+			log.Printf("[COMPACTION] DB cleanup failed: %v", err)
+		} else if deleted > 0 {
+			log.Printf("[COMPACTION] Cleaned up %d compacted messages from DB", deleted)
+		}
 	}
 
-	// 5. Also flush key facts to persistent memory
-	go flushMemoryBeforeCompaction(provider, messagesToCompact)
+	// 8. Save extracted memories
+	saved := 0
+	for _, line := range memories {
+		mem := parseFlushMemoryLine(line)
+		if mem == nil {
+			continue
+		}
+		if err := database.UpsertMemory(mem); err != nil {
+			log.Printf("[COMPACTION] Memory save error: %v", err)
+		} else {
+			saved++
+		}
+	}
+	if saved > 0 {
+		log.Printf("[COMPACTION] Saved %d memories from compacted context", saved)
+	}
+
+	// 9. Auto-adapt style (lightweight, no LLM call)
+	go autoAdaptStyle(messagesToCompact)
+}
+
+// parseCompactionResponse splits the combined LLM response into summary and memory lines.
+func parseCompactionResponse(text string) (summary string, memoryLines []string) {
+	// Find SUMMARY: and MEMORIES: sections
+	summaryIdx := strings.Index(text, "SUMMARY:")
+	memoriesIdx := strings.Index(text, "MEMORIES:")
+
+	if summaryIdx >= 0 && memoriesIdx > summaryIdx {
+		// Both sections found
+		summary = strings.TrimSpace(text[summaryIdx+8 : memoriesIdx])
+		memoriesSection := text[memoriesIdx+9:]
+		for _, line := range strings.Split(memoriesSection, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "REMEMBER:") {
+				memoryLines = append(memoryLines, strings.TrimSpace(strings.TrimPrefix(line, "REMEMBER:")))
+			}
+		}
+	} else if summaryIdx >= 0 {
+		// Only summary
+		summary = strings.TrimSpace(text[summaryIdx+8:])
+	} else {
+		// No markers — treat entire response as summary
+		summary = strings.TrimSpace(text)
+	}
+	return
 }
 
 // ============================================================================
-// Memory Flush — extract key facts from compacted messages into persistent memory
+// Standalone Memory Flush — used only by DirectorChatClear (not compaction)
 // ============================================================================
 
 // flushMemoryBeforeCompaction extracts important information from messages
-// about to be compacted and saves it to persistent memory.
-// Runs in a goroutine to not block the chat response.
+// about to be cleared and saves it to persistent memory.
 func flushMemoryBeforeCompaction(provider llm.Provider, dropped []llm.Message) {
 	if len(dropped) < 2 {
 		return
@@ -112,7 +192,6 @@ func flushMemoryBeforeCompaction(provider llm.Provider, dropped []llm.Message) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Build a compact representation of dropped messages
 	var sb strings.Builder
 	for _, m := range dropped {
 		content := m.Content
@@ -122,7 +201,6 @@ func flushMemoryBeforeCompaction(provider llm.Provider, dropped []llm.Message) {
 		sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, content))
 	}
 
-	// Fetch existing hot memories for deduplication awareness
 	existingContext := ""
 	if hotMems, err := database.GetHotMemories(5); err == nil && len(hotMems) > 0 {
 		var existingSB strings.Builder
@@ -167,7 +245,6 @@ Rules:
 		return
 	}
 
-	// Parse REMEMBER lines
 	saved := 0
 	for _, line := range strings.Split(resp.Text, "\n") {
 		line = strings.TrimSpace(line)
@@ -190,12 +267,15 @@ Rules:
 	}
 
 	if saved > 0 {
-		log.Printf("[MEMORY_FLUSH] Saved %d memories from compacted context", saved)
+		log.Printf("[MEMORY_FLUSH] Saved %d memories from cleared context", saved)
 	}
 
-	// Auto-adapt: analyze admin communication patterns
 	go autoAdaptStyle(dropped)
 }
+
+// ============================================================================
+// Auto-adapt & helpers
+// ============================================================================
 
 // autoAdaptStyle analyzes dropped messages for admin communication patterns
 // and suggests style updates to the Director's identity.
@@ -206,13 +286,11 @@ func autoAdaptStyle(messages []llm.Message) {
 		return
 	}
 
-	// Check if we already have this style note
 	current, _ := database.GetIdentity("style")
 	if current == nil {
 		return
 	}
 
-	// Only update if suggestion contains something not already in style
 	alreadyHas := true
 	for _, line := range strings.Split(suggestion, "\n") {
 		line = strings.TrimSpace(line)
@@ -228,7 +306,6 @@ func autoAdaptStyle(messages []llm.Message) {
 		return
 	}
 
-	// Append adaptation notes to style
 	newStyle := current.Content + "\n\n[Авто-адаптация по паттернам общения]\n" + suggestion
 	if _, err := director.UpdateIdentityChecked("style", newStyle, "system",
 		fmt.Sprintf("авто-адаптация: %d сообщений проанализировано", stats.TotalMessages)); err != nil {
@@ -247,7 +324,6 @@ func parseFlushMemoryLine(line string) *models.DirectorMemory {
 		Source:     "context_flush",
 	}
 
-	// Extract content= (last field, may contain spaces and = signs)
 	contentIdx := strings.Index(line, "content=")
 	if contentIdx < 0 {
 		return nil
@@ -260,7 +336,6 @@ func parseFlushMemoryLine(line string) *models.DirectorMemory {
 		m.Content = m.Content[:500]
 	}
 
-	// Parse key=value pairs from the part before content=
 	prefix := line[:contentIdx]
 	for _, token := range strings.Fields(prefix) {
 		if strings.HasPrefix(token, "category=") {
@@ -272,7 +347,6 @@ func parseFlushMemoryLine(line string) *models.DirectorMemory {
 		}
 	}
 
-	// Clamp importance to valid range [1, 10]
 	if m.Importance < 1 {
 		m.Importance = 1
 	}
@@ -280,7 +354,6 @@ func parseFlushMemoryLine(line string) *models.DirectorMemory {
 		m.Importance = 10
 	}
 
-	// Validate required fields
 	validCategories := map[string]bool{"fact": true, "decision": true, "pattern": true, "insight": true, "preference": true}
 	if !validCategories[m.Category] || m.Key == "" {
 		return nil

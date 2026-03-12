@@ -72,6 +72,7 @@ func SessionMiddleware() gin.HandlerFunc {
 
 		// Устанавливаем данные пользователя в контексте
 		c.Set("adminID", claims.AdminID)
+		c.Set("adminId", claims.AdminID)  // camelCase — используется в director/ai chat handlers
 		c.Set("admin_id", claims.AdminID) // Для совместимости
 		c.Set("clientID", claims.ClientID)
 		c.Set("role", claims.Role)
@@ -105,6 +106,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Устанавливаем данные пользователя в контексте
 		c.Set("adminID", claims.AdminID)
+		c.Set("adminId", claims.AdminID) // camelCase — используется в director/ai chat handlers
 		c.Set("clientID", claims.ClientID)
 		c.Set("role", claims.Role)
 
