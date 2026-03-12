@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/gin-gonic/gin"
 )
@@ -104,11 +105,20 @@ func AIChatMessage(c *gin.Context) {
 	// Get chat history for this admin + role
 	historyKey := fmt.Sprintf("%s:%s", adminID, request.Role)
 
-	aiChatHistoryMu.RLock()
-	existingHistory := aiChatHistory[historyKey]
-	history := make([]llm.Message, len(existingHistory))
-	copy(history, existingHistory)
-	aiChatHistoryMu.RUnlock()
+	aiChatHistoryMu.Lock()
+	if len(aiChatHistory[historyKey]) == 0 && request.Role == "DIRECTOR" {
+		// Restore DIRECTOR history from DB on first access
+		if dbMsgs, err := database.LoadDirectorChatHistory(adminID, 50); err == nil && len(dbMsgs) > 0 {
+			restored := make([]llm.Message, 0, len(dbMsgs))
+			for _, m := range dbMsgs {
+				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
+			}
+			aiChatHistory[historyKey] = restored
+		}
+	}
+	history := make([]llm.Message, len(aiChatHistory[historyKey]))
+	copy(history, aiChatHistory[historyKey])
+	aiChatHistoryMu.Unlock()
 
 	// Build system prompt based on role
 	systemPrompt := buildAIChatSystemPrompt(request.Role)
@@ -188,7 +198,7 @@ func AIChatMessage(c *gin.Context) {
 		}
 	}
 
-	// Save both messages to history
+	// Save both messages to history (in-memory)
 	aiChatHistoryMu.Lock()
 	h := aiChatHistory[historyKey]
 	h = append(h, llm.Message{Role: "user", Content: request.Message})
@@ -196,8 +206,45 @@ func AIChatMessage(c *gin.Context) {
 	if len(h) > maxAIChatHistory {
 		h = h[len(h)-maxAIChatHistory:]
 	}
+
+	// Extract recent user messages for auto-memory (DIRECTOR only)
+	var recentUserMsgs []string
+	if request.Role == "DIRECTOR" {
+		topicCount := 0
+		for i := len(h) - 1; i >= 0 && topicCount < 5; i-- {
+			if h[i].Role == "user" {
+				msg := h[i].Content
+				if len(msg) > 150 {
+					msg = msg[:150]
+				}
+				recentUserMsgs = append([]string{msg}, recentUserMsgs...)
+				topicCount++
+			}
+		}
+	}
+
 	aiChatHistory[historyKey] = h
 	aiChatHistoryMu.Unlock()
+
+	// Persist DIRECTOR messages to DB synchronously
+	if request.Role == "DIRECTOR" {
+		if err := database.SaveDirectorChatMessage(adminID, "user", request.Message); err != nil {
+			log.Printf("[AI_CHAT] DB save user msg error (admin=%s): %v", adminID, err)
+		}
+		if err := database.SaveDirectorChatMessage(adminID, "assistant", resp.Text); err != nil {
+			log.Printf("[AI_CHAT] DB save assistant msg error (admin=%s): %v", adminID, err)
+		}
+
+		// Auto-save recent chat context to director_memories for recall
+		if len(recentUserMsgs) > 0 {
+			go func(topics []string) {
+				content := "Недавние темы чата с админом:\n" + strings.Join(topics, "\n")
+				if err := database.SaveAutoMemory("fact", "recent_chat_context", content, []string{"chat", "context"}, nil); err != nil {
+					log.Printf("[AI_CHAT] Auto-save chat topics error: %v", err)
+				}
+			}(recentUserMsgs)
+		}
+	}
 
 	idPreview := adminID
 	if len(idPreview) > 8 {
@@ -228,9 +275,21 @@ func AIChatHistory(c *gin.Context) {
 
 	historyKey := fmt.Sprintf("%s:%s", adminID, role)
 
-	aiChatHistoryMu.RLock()
+	aiChatHistoryMu.Lock()
 	history := aiChatHistory[historyKey]
-	aiChatHistoryMu.RUnlock()
+
+	// Restore DIRECTOR history from DB if in-memory is empty
+	if len(history) == 0 && role == "DIRECTOR" {
+		if dbMsgs, err := database.LoadDirectorChatHistory(adminID, 50); err == nil && len(dbMsgs) > 0 {
+			restored := make([]llm.Message, 0, len(dbMsgs))
+			for _, m := range dbMsgs {
+				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
+			}
+			aiChatHistory[historyKey] = restored
+			history = restored
+		}
+	}
+	aiChatHistoryMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
 		"messages": history,
@@ -257,11 +316,23 @@ func AIChatClear(c *gin.Context) {
 			}
 		}
 		aiChatHistoryMu.Unlock()
+
+		// Also clear DIRECTOR messages from DB
+		if err := database.ClearDirectorChatHistory(adminID); err != nil {
+			log.Printf("[AI_CHAT] DB clear director history error (admin=%s): %v", adminID, err)
+		}
 	} else {
 		historyKey := fmt.Sprintf("%s:%s", adminID, role)
 		aiChatHistoryMu.Lock()
 		delete(aiChatHistory, historyKey)
 		aiChatHistoryMu.Unlock()
+
+		// Clear DIRECTOR messages from DB when clearing DIRECTOR role
+		if role == "DIRECTOR" {
+			if err := database.ClearDirectorChatHistory(adminID); err != nil {
+				log.Printf("[AI_CHAT] DB clear director history error (admin=%s): %v", adminID, err)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
