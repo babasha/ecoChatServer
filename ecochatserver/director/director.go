@@ -181,6 +181,12 @@ func (d *Director) periodicCleanup() {
 			} else if decayed > 0 || purged > 0 {
 				log.Printf("[DIRECTOR] Memory maintenance: decayed=%d, purged=%d", decayed, purged)
 			}
+			// Embedding cache cleanup
+			if client := llm.GetEmbeddingClient(); client != nil && client.Cache() != nil {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				client.Cache().Cleanup(cleanupCtx)
+				cleanupCancel()
+			}
 			// Compaction retention cleanup
 			retentionDays := database.GetSettingInt("director_compaction_retention_days", 0)
 			if retentionDays > 0 {

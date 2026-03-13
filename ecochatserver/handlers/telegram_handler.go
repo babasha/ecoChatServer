@@ -102,6 +102,13 @@ func InitAutoResponder() {
 	// Only openai and gemini support embeddings
 	if embProvider == "openai" || embProvider == "gemini" {
 		llm.InitEmbeddingClient(embProvider, embKey, embModel)
+
+		// Initialize embedding cache (L1 in-memory + L2 PostgreSQL)
+		if client := llm.GetEmbeddingClient(); client != nil {
+			cache := llm.NewEmbeddingCache(database.DB, client.Provider(), client.Model())
+			client.SetCache(cache)
+			log.Printf("[EMBED_CACHE] Initialized for %s/%s", client.Provider(), client.Model())
+		}
 	} else if embProvider != "" {
 		log.Printf("[EMBEDDING] Provider '%s' does not support embeddings, semantic search disabled", embProvider)
 	}

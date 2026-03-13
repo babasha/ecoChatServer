@@ -44,6 +44,15 @@ func validateSQLSafety(query string) error {
 		"LOCK":     true,
 		"CALL":     true,
 		"DO":       true,
+		"EXPLAIN":  true,
+		"VACUUM":   true,
+		"ANALYZE":  true,
+		"REINDEX":  true,
+		"CLUSTER":  true,
+		"LISTEN":   true,
+		"NOTIFY":   true,
+		"PREPARE":  true,
+		"DEALLOCATE": true,
 	}
 
 	for i, tok := range tokens {

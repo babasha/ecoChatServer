@@ -26,6 +26,7 @@ type EmbeddingClient struct {
 	model    string
 	dim      int
 	client   *http.Client
+	cache    *EmbeddingCache
 }
 
 var (
@@ -96,45 +97,133 @@ func (c *EmbeddingClient) Dimension() int {
 	return c.dim
 }
 
+// Provider returns the provider name.
+func (c *EmbeddingClient) Provider() string {
+	return c.provider
+}
+
+// Model returns the model name.
+func (c *EmbeddingClient) Model() string {
+	return c.model
+}
+
+// SetCache attaches an embedding cache to the client.
+func (c *EmbeddingClient) SetCache(cache *EmbeddingCache) {
+	c.cache = cache
+}
+
+// Cache returns the attached embedding cache (may be nil).
+func (c *EmbeddingClient) Cache() *EmbeddingCache {
+	return c.cache
+}
+
 // Embed generates an embedding for a single text.
+// Uses cache (L1 in-memory → L2 PostgreSQL) if available.
 func (c *EmbeddingClient) Embed(ctx context.Context, text string) ([]float64, error) {
 	if text == "" {
 		return nil, fmt.Errorf("empty text")
 	}
 
+	// Check cache
+	if c.cache != nil {
+		if emb, ok := c.cache.Get(ctx, text); ok {
+			return emb, nil
+		}
+	}
+
+	// API call
+	var emb []float64
+	var err error
 	switch c.provider {
 	case "openai":
-		return c.embedOpenAI(ctx, text)
+		emb, err = c.embedOpenAI(ctx, text)
 	case "gemini":
-		return c.embedGemini(ctx, text)
+		emb, err = c.embedGemini(ctx, text)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", c.provider)
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache
+	if c.cache != nil {
+		c.cache.Put(ctx, text, emb)
+	}
+
+	return emb, nil
 }
 
 // EmbedBatch generates embeddings for multiple texts in one API call.
+// Uses cache to skip already-cached texts and only call API for misses.
 func (c *EmbeddingClient) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
 
+	results := make([][]float64, len(texts))
+
+	// Check cache for all texts
+	var uncachedIndices []int
+	if c.cache != nil {
+		cached, uncached := c.cache.GetBatch(ctx, texts)
+		for idx, emb := range cached {
+			results[idx] = emb
+		}
+		uncachedIndices = uncached
+	} else {
+		for i := range texts {
+			uncachedIndices = append(uncachedIndices, i)
+		}
+	}
+
+	// All cached — done
+	if len(uncachedIndices) == 0 {
+		return results, nil
+	}
+
+	// Collect uncached texts for API call
+	uncachedTexts := make([]string, len(uncachedIndices))
+	for i, idx := range uncachedIndices {
+		uncachedTexts[i] = texts[idx]
+	}
+
+	// API call for uncached only
+	var apiResults [][]float64
+	var err error
 	switch c.provider {
 	case "openai":
-		return c.embedBatchOpenAI(ctx, texts)
+		apiResults, err = c.embedBatchOpenAI(ctx, uncachedTexts)
 	case "gemini":
-		// Gemini doesn't support batch embedding in one call, fall back to sequential
-		results := make([][]float64, len(texts))
-		for i, text := range texts {
-			emb, err := c.embedGemini(ctx, text)
-			if err != nil {
-				return nil, fmt.Errorf("embed text %d: %w", i, err)
+		apiResults = make([][]float64, len(uncachedTexts))
+		for i, text := range uncachedTexts {
+			emb, embErr := c.embedGemini(ctx, text)
+			if embErr != nil {
+				err = fmt.Errorf("embed text %d: %w", uncachedIndices[i], embErr)
+				break
 			}
-			results[i] = emb
+			apiResults[i] = emb
 		}
-		return results, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", c.provider)
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Place API results back and cache them
+	for i, idx := range uncachedIndices {
+		if i < len(apiResults) {
+			results[idx] = apiResults[i]
+		}
+	}
+
+	// Store new embeddings in cache
+	if c.cache != nil {
+		c.cache.PutBatch(ctx, uncachedTexts, apiResults)
+	}
+
+	return results, nil
 }
 
 // ── OpenAI Embedding API ─────────────────────────────────────────────────────

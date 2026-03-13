@@ -516,6 +516,21 @@ func ensureDirectorTables() error {
 		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	);
 	CREATE INDEX IF NOT EXISTS idx_director_chat_compactions_admin ON director_chat_compactions(admin_id, created_at DESC);
+
+	-- Embedding cache (L2 persistent cache for vector embeddings)
+	CREATE TABLE IF NOT EXISTS embedding_cache (
+		hash        VARCHAR(64) NOT NULL,
+		provider    VARCHAR(20) NOT NULL,
+		model       VARCHAR(50) NOT NULL,
+		dim         INT NOT NULL,
+		embedding   float8[] NOT NULL,
+		text_preview VARCHAR(100) DEFAULT '',
+		hit_count   INT NOT NULL DEFAULT 0,
+		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		last_used   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		PRIMARY KEY (hash, provider, model)
+	);
+	CREATE INDEX IF NOT EXISTS idx_embedding_cache_last_used ON embedding_cache (last_used);
 	`
 
 	_, err := DB.ExecContext(ctx, ddl)

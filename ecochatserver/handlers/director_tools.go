@@ -510,12 +510,7 @@ var directorTools = []llm.Tool{
 func executeDirectorTool(ctx context.Context, call *llm.FunctionCall) string {
 	log.Printf("[DIRECTOR_CHAT] Executing tool: %s args=%v", call.Name, call.Arguments)
 
-	// Log tool call for self-building pattern detection
 	argsJSON, _ := json.Marshal(call.Arguments)
-	defer func() {
-		// Logged asynchronously after execution completes
-	}()
-
 	result := executeDirectorToolInner(ctx, call)
 
 	// Async log for pattern analysis

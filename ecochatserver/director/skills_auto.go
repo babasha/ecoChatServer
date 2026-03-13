@@ -240,7 +240,8 @@ If no skill would help, respond with: NO_SKILL_NEEDED`)
 
 // parseSkillProposal extracts a skill definition from LLM response text.
 func parseSkillProposal(text string) *models.DirectorSkill {
-	extract := func(label string) string {
+	// extractSingle extracts a single-line value after "LABEL: "
+	extractSingle := func(label string) string {
 		idx := strings.Index(text, label+":")
 		if idx < 0 {
 			return ""
@@ -253,22 +254,41 @@ func parseSkillProposal(text string) *models.DirectorSkill {
 		return strings.TrimSpace(rest[:endIdx])
 	}
 
-	name := extract("SKILL_NAME")
-	skillType := extract("SKILL_TYPE")
-	description := extract("DESCRIPTION")
-	reason := extract("REASON")
-
-	// CODE might be multiline — extract until next label
-	codeStart := strings.Index(text, "CODE:")
-	paramsStart := strings.Index(text, "PARAMETERS:")
-	var code string
-	if codeStart >= 0 && paramsStart >= 0 && paramsStart > codeStart {
-		code = strings.TrimSpace(text[codeStart+5 : paramsStart])
-	} else if codeStart >= 0 {
-		code = extract("CODE")
+	// extractMultiline extracts text between two labels (handles multiline values)
+	extractMultiline := func(startLabel, endLabel string) string {
+		startIdx := strings.Index(text, startLabel+":")
+		if startIdx < 0 {
+			return ""
+		}
+		content := text[startIdx+len(startLabel)+1:]
+		if endLabel != "" {
+			endIdx := strings.Index(content, endLabel+":")
+			if endIdx >= 0 {
+				content = content[:endIdx]
+			}
+		}
+		// Strip code block markers if LLM wraps in ```
+		content = strings.TrimSpace(content)
+		if strings.HasPrefix(content, "```") {
+			if idx := strings.Index(content[3:], "\n"); idx >= 0 {
+				content = content[3+idx+1:]
+			}
+			if idx := strings.LastIndex(content, "```"); idx >= 0 {
+				content = content[:idx]
+			}
+			content = strings.TrimSpace(content)
+		}
+		return content
 	}
 
-	params := extract("PARAMETERS")
+	name := extractSingle("SKILL_NAME")
+	skillType := extractSingle("SKILL_TYPE")
+	description := extractSingle("DESCRIPTION")
+	reason := extractSingle("REASON")
+
+	// CODE and PARAMETERS might be multiline
+	code := extractMultiline("CODE", "PARAMETERS")
+	params := extractMultiline("PARAMETERS", "REASON")
 
 	if name == "" || skillType == "" || code == "" {
 		return nil
