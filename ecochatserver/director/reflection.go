@@ -33,57 +33,42 @@ func (d *Director) selfReflect(ctx context.Context) {
 		return
 	}
 
-	// Aggregate current rates
-	var totalCalls, totalEscalations, totalEmpty int
-	var totalResponseMs float64
-	for _, s := range currentStats {
-		totalCalls += s.TotalCalls
-		totalEscalations += s.Escalations
-		totalEmpty += s.EmptyResponses
-		totalResponseMs += s.AvgResponseMs * float64(s.TotalCalls)
-	}
-
-	var currentEscRate, currentEmptyRate, currentAvgMs float64
-	if totalCalls > 0 {
-		currentEscRate = float64(totalEscalations) / float64(totalCalls)
-		currentEmptyRate = float64(totalEmpty) / float64(totalCalls)
-		currentAvgMs = totalResponseMs / float64(totalCalls)
-	}
+	agg := AggregateAgentStats(currentStats)
 
 	for _, o := range outcomes {
 		effectiveness := "neutral"
 		var notes string
 
 		// Compare before vs after
-		escDelta := currentEscRate - o.EscalationRateBefore
-		emptyDelta := currentEmptyRate - o.EmptyRateBefore
+		escDelta := agg.EscRate - o.EscalationRateBefore
+		emptyDelta := agg.EmptyRate - o.EmptyRateBefore
 
 		if escDelta < -0.05 || emptyDelta < -0.05 {
 			effectiveness = "positive"
 			notes = fmt.Sprintf("Улучшение: esc %.0f%%→%.0f%%, empty %.0f%%→%.0f%%",
-				o.EscalationRateBefore*100, currentEscRate*100,
-				o.EmptyRateBefore*100, currentEmptyRate*100)
+				o.EscalationRateBefore*100, agg.EscRate*100,
+				o.EmptyRateBefore*100, agg.EmptyRate*100)
 		} else if escDelta > 0.1 || emptyDelta > 0.1 {
 			effectiveness = "negative"
 			notes = fmt.Sprintf("Ухудшение: esc %.0f%%→%.0f%%, empty %.0f%%→%.0f%%",
-				o.EscalationRateBefore*100, currentEscRate*100,
-				o.EmptyRateBefore*100, currentEmptyRate*100)
+				o.EscalationRateBefore*100, agg.EscRate*100,
+				o.EmptyRateBefore*100, agg.EmptyRate*100)
 		} else {
 			notes = fmt.Sprintf("Без изменений: esc %.0f%%→%.0f%%, empty %.0f%%→%.0f%%",
-				o.EscalationRateBefore*100, currentEscRate*100,
-				o.EmptyRateBefore*100, currentEmptyRate*100)
+				o.EscalationRateBefore*100, agg.EscRate*100,
+				o.EmptyRateBefore*100, agg.EmptyRate*100)
 		}
 
 		// Update outcome in DB
 		if err := database.EvaluateDirectiveOutcome(o.ID, effectiveness, notes,
-			currentEscRate, currentEmptyRate, currentAvgMs); err != nil {
+			agg.EscRate, agg.EmptyRate, agg.AvgMs); err != nil {
 			log.Printf("[DIRECTOR] Self-reflection: failed to evaluate outcome: %v", err)
 			continue
 		}
 
 		// Save learning to memory
 		content := fmt.Sprintf("Директива '%s' — %s. %s",
-			truncateStr(o.DirectiveInstruction, 100), effectiveness, notes)
+			truncate(o.DirectiveInstruction, 100), effectiveness, notes)
 
 		database.SaveAutoMemory("insight",
 			fmt.Sprintf("directive_result:%s:%s", o.CreatedAt.Format("20060102"), o.DirectiveType),

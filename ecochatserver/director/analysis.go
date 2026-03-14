@@ -82,8 +82,7 @@ func (d *Director) analyze(ctx context.Context, reportType, triggerEvent string)
 
 	// Prompt optimization: only for daily reports (not event-triggered)
 	if reportType == "daily" && d.optimizer != nil {
-		agents := []string{"zefir_support", "plant_expert", "device_specialist", "support_specialist", "orchestrator"}
-		for _, agentName := range agents {
+		for _, agentName := range AgentNames {
 			// First: evaluate current vs parent, rollback if worse
 			if rollbackResult, err := d.optimizer.EvaluateAndRollback(ctx, agentName); err != nil {
 				log.Printf("[DIRECTOR] Rollback check failed for %s: %v", agentName, err)
@@ -259,26 +258,12 @@ func (d *Director) saveDirectiveBaselines(report *Report) {
 		return
 	}
 
-	var totalCalls, totalEscalations, totalEmpty int
-	var totalResponseMs float64
-	for _, s := range stats {
-		totalCalls += s.TotalCalls
-		totalEscalations += s.Escalations
-		totalEmpty += s.EmptyResponses
-		totalResponseMs += s.AvgResponseMs * float64(s.TotalCalls)
-	}
-
-	var escRate, emptyRate, avgMs float64
-	if totalCalls > 0 {
-		escRate = float64(totalEscalations) / float64(totalCalls)
-		emptyRate = float64(totalEmpty) / float64(totalCalls)
-		avgMs = totalResponseMs / float64(totalCalls)
-	}
+	agg := AggregateAgentStats(stats)
 
 	for _, dir := range report.Directives {
 		if err := database.InsertDirectiveOutcome(
 			report.ID, dir.Type, dir.Instruction,
-			escRate, emptyRate, avgMs,
+			agg.EscRate, agg.EmptyRate, agg.AvgMs,
 		); err != nil {
 			log.Printf("[DIRECTOR] Failed to save directive baseline: %v", err)
 		}
@@ -298,14 +283,10 @@ func (d *Director) saveAnalysisToMemory(parsed *ParsedDirectorResponse, reportTy
 			break
 		}
 		key := fmt.Sprintf("directive:%s:%s:%d", dateKey, dir.Type, i)
-		content := dir.Instruction
-		if len(content) > 300 {
-			content = content[:300]
-		}
 		tags := []string{"directive", dir.Type, dir.Priority}
 		expires := time.Now().Add(7 * 24 * time.Hour)
 
-		if err := database.SaveAutoMemory("decision", key, content, tags, &expires); err != nil {
+		if err := database.SaveAutoMemory("decision", key, truncate(dir.Instruction, 300), tags, &expires); err != nil {
 			log.Printf("[DIRECTOR] Failed to save directive memory: %v", err)
 		}
 	}
@@ -316,23 +297,15 @@ func (d *Director) saveAnalysisToMemory(parsed *ParsedDirectorResponse, reportTy
 			break
 		}
 		key := fmt.Sprintf("observation:%s:%d", dateKey, i)
-		content := obs
-		if len(content) > 300 {
-			content = content[:300]
-		}
-		if err := database.SaveAutoMemory("pattern", key, content, []string{"observation", reportType}, nil); err != nil {
+		if err := database.SaveAutoMemory("pattern", key, truncate(obs, 300), []string{"observation", reportType}, nil); err != nil {
 			log.Printf("[DIRECTOR] Failed to save observation memory: %v", err)
 		}
 	}
 
 	// Save analysis summary as insight
 	if parsed.Analysis != "" {
-		summary := parsed.Analysis
-		if len(summary) > 400 {
-			summary = summary[:400]
-		}
 		key := fmt.Sprintf("analysis_summary:%s", dateKey)
-		if err := database.SaveAutoMemory("insight", key, summary, []string{"analysis", reportType, trigger}, nil); err != nil {
+		if err := database.SaveAutoMemory("insight", key, truncate(parsed.Analysis, 400), []string{"analysis", reportType, trigger}, nil); err != nil {
 			log.Printf("[DIRECTOR] Failed to save analysis memory: %v", err)
 		}
 	}

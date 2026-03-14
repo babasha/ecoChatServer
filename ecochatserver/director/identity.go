@@ -138,7 +138,7 @@ func (d *Director) Introspect(ctx context.Context) (string, error) {
 	if latestReport != nil {
 		sb.WriteString(fmt.Sprintf("\nПоследний отчёт (%s): %s\n",
 			latestReport.CreatedAt.Format("2006-01-02"),
-			truncateForPrompt(latestReport.Analysis, 300)))
+			truncate(latestReport.Analysis, 300)))
 	}
 
 	sb.WriteString(`
@@ -170,7 +170,7 @@ REASON: <почему>
 	// Save introspection result to memory
 	database.SaveAutoMemory("insight",
 		fmt.Sprintf("introspect:%s", time.Now().Format("2006-01-02")),
-		truncateForPrompt(resp.Text, 400),
+		truncate(resp.Text, 400),
 		[]string{"introspection", "self_reflection", "identity"},
 		nil)
 
@@ -188,7 +188,7 @@ func (d *Director) PeriodicIntrospect() {
 		return
 	}
 
-	log.Printf("[DIRECTOR] Periodic introspect completed: %s", truncateForPrompt(result, 200))
+	log.Printf("[DIRECTOR] Periodic introspect completed: %s", truncate(result, 200))
 }
 
 // ============================================================================
@@ -447,33 +447,27 @@ func BuildCurrentStateContext() string {
 		return ""
 	}
 
-	var totalCalls, totalEsc, totalEmpty int
-	for _, s := range stats {
-		totalCalls += s.TotalCalls
-		totalEsc += s.Escalations
-		totalEmpty += s.EmptyResponses
-	}
-
-	if totalCalls == 0 {
+	agg := AggregateAgentStats(stats)
+	if agg.TotalCalls == 0 {
 		return "[ТЕКУЩЕЕ СОСТОЯНИЕ: тихо — нет активности за последние 24ч]\n"
 	}
 
-	escRate := float64(totalEsc) / float64(totalCalls) * 100
-	emptyRate := float64(totalEmpty) / float64(totalCalls) * 100
+	escRate := agg.EscRate * 100
+	emptyRate := agg.EmptyRate * 100
 
 	var state string
 	switch {
 	case escRate > 30 || emptyRate > 20:
 		state = fmt.Sprintf("ТРЕВОГА — эскалации %.0f%%, пустые %.0f%% (%d вызовов). Приоритет: разобраться в причинах.",
-			escRate, emptyRate, totalCalls)
+			escRate, emptyRate, agg.TotalCalls)
 	case escRate > 15 || emptyRate > 10:
 		state = fmt.Sprintf("ВНИМАНИЕ — эскалации %.0f%%, пустые %.0f%% (%d вызовов). Есть над чем работать.",
-			escRate, emptyRate, totalCalls)
-	case totalCalls < 5:
-		state = fmt.Sprintf("МАЛО ДАННЫХ — только %d вызовов за 24ч. Недостаточно для выводов.", totalCalls)
+			escRate, emptyRate, agg.TotalCalls)
+	case agg.TotalCalls < 5:
+		state = fmt.Sprintf("МАЛО ДАННЫХ — только %d вызовов за 24ч. Недостаточно для выводов.", agg.TotalCalls)
 	default:
 		state = fmt.Sprintf("НОРМА — эскалации %.0f%%, пустые %.0f%% (%d вызовов). Система работает стабильно.",
-			escRate, emptyRate, totalCalls)
+			escRate, emptyRate, agg.TotalCalls)
 	}
 
 	return fmt.Sprintf("[ТЕКУЩЕЕ СОСТОЯНИЕ: %s]\n", state)
@@ -529,9 +523,3 @@ func currentVersion(id *models.DirectorIdentity) int {
 	return id.Version
 }
 
-func truncateForPrompt(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}

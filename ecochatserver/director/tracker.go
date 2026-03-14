@@ -249,12 +249,25 @@ func startOfTomorrow() time.Time {
 // Episodic memory — save concrete events for Director's long-term recall
 // ============================================================================
 
+// truncateID returns the first maxLen characters of an ID string.
+func truncateID(id string, maxLen int) string {
+	if len(id) > maxLen {
+		return id[:maxLen]
+	}
+	return id
+}
+
+// saveEpisodicMemory saves a short-lived event to persistent memory.
+func saveEpisodicMemory(eventType, memoryKey, content string, tags []string, ttl time.Duration) {
+	expires := time.Now().Add(ttl)
+	if err := database.SaveAutoMemory("fact", memoryKey, content, tags, &expires); err != nil {
+		log.Printf("[EVENT_TRACKER] Failed to save %s memory: %v", eventType, err)
+	}
+}
+
 func saveEscalationMemory(chatID, clientName, agentName string, when time.Time) {
 	dateKey := when.Format("20060102-1504")
-	chatShort := chatID
-	if len(chatShort) > 8 {
-		chatShort = chatShort[:8]
-	}
+	chatShort := truncateID(chatID, 8)
 
 	content := fmt.Sprintf("Эскалация в чате %s", chatShort)
 	tags := []string{"escalation"}
@@ -267,46 +280,27 @@ func saveEscalationMemory(chatID, clientName, agentName string, when time.Time) 
 		tags = append(tags, "agent:"+agentName)
 	}
 
-	expires := when.Add(14 * 24 * time.Hour) // episodic events expire in 14 days
-	if err := database.SaveAutoMemory("fact",
+	saveEpisodicMemory("escalation",
 		fmt.Sprintf("escalation:%s:%s", dateKey, chatShort),
-		content, tags, &expires); err != nil {
-		log.Printf("[EVENT_TRACKER] Failed to save escalation memory: %v", err)
-	}
+		content, tags, 14*24*time.Hour)
 }
 
 func saveEmptyResponseMemory(chatID, agentName string) {
-	now := time.Now()
-	dateKey := now.Format("20060102-1504")
-	chatShort := chatID
-	if len(chatShort) > 8 {
-		chatShort = chatShort[:8]
-	}
+	dateKey := time.Now().Format("20060102-1504")
+	chatShort := truncateID(chatID, 8)
 
-	content := fmt.Sprintf("Пустой ответ от агента %s в чате %s", agentName, chatShort)
-	expires := now.Add(7 * 24 * time.Hour)
-
-	if err := database.SaveAutoMemory("fact",
+	saveEpisodicMemory("empty_response",
 		fmt.Sprintf("empty_response:%s:%s", dateKey, chatShort),
-		content, []string{"empty_response", "agent:" + agentName}, &expires); err != nil {
-		log.Printf("[EVENT_TRACKER] Failed to save empty response memory: %v", err)
-	}
+		fmt.Sprintf("Пустой ответ от агента %s в чате %s", agentName, chatShort),
+		[]string{"empty_response", "agent:" + agentName}, 7*24*time.Hour)
 }
 
 func saveToolFailureMemory(chatID, toolName string) {
-	now := time.Now()
-	dateKey := now.Format("20060102-1504")
-	chatShort := chatID
-	if len(chatShort) > 8 {
-		chatShort = chatShort[:8]
-	}
+	dateKey := time.Now().Format("20060102-1504")
+	chatShort := truncateID(chatID, 8)
 
-	content := fmt.Sprintf("Ошибка tool %s в чате %s", toolName, chatShort)
-	expires := now.Add(7 * 24 * time.Hour)
-
-	if err := database.SaveAutoMemory("fact",
+	saveEpisodicMemory("tool_failure",
 		fmt.Sprintf("tool_failure:%s:%s:%s", dateKey, toolName, chatShort),
-		content, []string{"tool_failure", "tool:" + toolName}, &expires); err != nil {
-		log.Printf("[EVENT_TRACKER] Failed to save tool failure memory: %v", err)
-	}
+		fmt.Sprintf("Ошибка tool %s в чате %s", toolName, chatShort),
+		[]string{"tool_failure", "tool:" + toolName}, 7*24*time.Hour)
 }

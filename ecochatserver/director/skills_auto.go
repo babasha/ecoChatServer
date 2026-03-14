@@ -180,12 +180,12 @@ func (d *Director) suggestSkillsFromReflection(ctx context.Context) {
 			break
 		}
 		sb.WriteString(fmt.Sprintf("- [%s] %s — %s\n",
-			o.DirectiveType, truncateStr(o.DirectiveInstruction, 100), o.EvaluationNotes))
+			o.DirectiveType, truncate(o.DirectiveInstruction, 100), o.EvaluationNotes))
 	}
 	if len(gapMemories) > 0 {
 		sb.WriteString("\nKnown gaps from memory:\n")
 		for _, m := range gapMemories {
-			sb.WriteString(fmt.Sprintf("- %s\n", truncateStr(m.Content, 120)))
+			sb.WriteString(fmt.Sprintf("- %s\n", truncate(m.Content, 120)))
 		}
 	}
 

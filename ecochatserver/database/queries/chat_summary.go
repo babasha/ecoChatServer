@@ -214,8 +214,7 @@ func SearchChatSummariesByText(db *sql.DB, query string, chatID *uuid.UUID, limi
 	var summaries []models.ChatSummary
 	for rows.Next() {
 		var s models.ChatSummary
-		var rank float64
-		if err := rows.Scan(&s.ID, &s.ChatID, &s.Summary, &s.MessagesFrom, &s.MessagesTo, &s.MessageCount, &s.CreatedAt, &rank); err != nil {
+		if err := rows.Scan(&s.ID, &s.ChatID, &s.Summary, &s.MessagesFrom, &s.MessagesTo, &s.MessageCount, &s.CreatedAt, &s.Rank); err != nil {
 			return nil, fmt.Errorf("scan chat summary: %w", err)
 		}
 		summaries = append(summaries, s)
@@ -247,8 +246,7 @@ func SearchChatSummariesAcrossChats(db *sql.DB, query string, excludeChatID uuid
 	var summaries []models.ChatSummary
 	for rows.Next() {
 		var s models.ChatSummary
-		var rank float64
-		if err := rows.Scan(&s.ID, &s.ChatID, &s.Summary, &s.MessagesFrom, &s.MessagesTo, &s.MessageCount, &s.CreatedAt, &rank); err != nil {
+		if err := rows.Scan(&s.ID, &s.ChatID, &s.Summary, &s.MessagesFrom, &s.MessagesTo, &s.MessageCount, &s.CreatedAt, &s.Rank); err != nil {
 			return nil, fmt.Errorf("scan chat summary: %w", err)
 		}
 		summaries = append(summaries, s)

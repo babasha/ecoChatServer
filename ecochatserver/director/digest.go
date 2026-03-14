@@ -127,52 +127,16 @@ func (d *Director) generateDigest(periodType string, from, to time.Time) {
 
 // parseDigestResponse extracts structured sections from the LLM digest response.
 func parseDigestResponse(text string) (summary string, keyEvents, trends, lessons []string) {
-	sections := map[string]*[]string{
-		"KEY_EVENTS:": &keyEvents,
-		"TRENDS:":     &trends,
-		"LESSONS:":    &lessons,
-	}
+	p := NewSectionParser(text, []string{"SUMMARY:", "KEY_EVENTS:", "TRENDS:", "LESSONS:"})
 
-	// Extract SUMMARY
-	if idx := strings.Index(text, "SUMMARY:"); idx >= 0 {
-		rest := text[idx+8:]
-		endIdx := len(rest)
-		for section := range sections {
-			if si := strings.Index(rest, section); si >= 0 && si < endIdx {
-				endIdx = si
-			}
-		}
-		summary = strings.TrimSpace(rest[:endIdx])
-	} else {
-		summary = text
-		if len(summary) > 500 {
-			summary = summary[:500]
-		}
+	summary = p.Get("SUMMARY:")
+	if summary == "" {
+		summary = truncate(text, 500)
 		return
 	}
 
-	// Extract bullet lists
-	for section, target := range sections {
-		idx := strings.Index(text, section)
-		if idx < 0 {
-			continue
-		}
-		rest := text[idx+len(section):]
-		endIdx := len(rest)
-		for other := range sections {
-			if other == section {
-				continue
-			}
-			if si := strings.Index(rest, other); si >= 0 && si < endIdx {
-				endIdx = si
-			}
-		}
-		for _, line := range strings.Split(rest[:endIdx], "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-				*target = append(*target, strings.TrimSpace(line[2:]))
-			}
-		}
-	}
+	keyEvents = p.GetBulletList("KEY_EVENTS:")
+	trends = p.GetBulletList("TRENDS:")
+	lessons = p.GetBulletList("LESSONS:")
 	return
 }

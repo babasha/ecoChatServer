@@ -131,6 +131,12 @@ func RecallMemoriesHybrid(query string, category string, limit int) ([]models.Di
 	return queries.RecallMemoriesHybrid(DB, query, queryEmbedding, category, limit)
 }
 
+// RecallMemoriesHybridWithEmbedding performs hybrid search using a pre-computed embedding.
+// Avoids duplicate embedding calls when the caller already has an embedding.
+func RecallMemoriesHybridWithEmbedding(query string, queryEmbedding []float64, category string, limit int) ([]models.DirectorMemory, error) {
+	return queries.RecallMemoriesHybrid(DB, query, queryEmbedding, category, limit)
+}
+
 func DeleteMemory(category, key string) error {
 	return queries.DeleteMemory(DB, category, key)
 }
@@ -611,4 +617,84 @@ func TouchPushSubscription(endpoint string) error {
 // Используется ТОЛЬКО для Instagram demo, не затрагивает widget систему
 func FindChatByUserSourceID(userSourceID, source string) (*models.Chat, error) {
 	return queries.FindChatByUserSourceID(DB, userSourceID, source)
+}
+
+// ============================================================================
+// Director Webhook Events (external trigger logging)
+// ============================================================================
+
+func InsertWebhookEvent(evt *models.WebhookEvent) error {
+	return queries.InsertWebhookEvent(DB, evt)
+}
+
+func CheckWebhookIdempotencyKey(key string) (bool, error) {
+	return queries.CheckIdempotencyKey(DB, key)
+}
+
+func UpdateWebhookEventStatus(id uuid.UUID, status, errMsg string) error {
+	return queries.UpdateWebhookEventStatus(DB, id, status, errMsg)
+}
+
+func GetRecentWebhookEvents(limit int) ([]models.WebhookEvent, error) {
+	return queries.GetRecentWebhookEvents(DB, limit)
+}
+
+func GetWebhookStats() (*models.WebhookStats, error) {
+	return queries.GetWebhookStats(DB)
+}
+
+func CleanupOldWebhookEvents(retentionDays int) (int64, error) {
+	return queries.CleanupOldWebhookEvents(DB, retentionDays)
+}
+
+// ============================================================================
+// Director Cron Jobs (flexible scheduling)
+// ============================================================================
+
+func InsertCronJob(job *models.CronJob) error {
+	return queries.InsertCronJob(DB, job)
+}
+
+func GetCronJob(id uuid.UUID) (*models.CronJob, error) {
+	return queries.GetCronJob(DB, id)
+}
+
+func GetCronJobByName(name string) (*models.CronJob, error) {
+	return queries.GetCronJobByName(DB, name)
+}
+
+func ListCronJobs() ([]models.CronJob, error) {
+	return queries.ListCronJobs(DB)
+}
+
+func GetEnabledCronJobs() ([]models.CronJob, error) {
+	return queries.GetEnabledCronJobs(DB)
+}
+
+func UpdateCronJob(id uuid.UUID, description, schedule, timezone, actionConfig *string, enabled *bool) error {
+	return queries.UpdateCronJob(DB, id, description, schedule, timezone, actionConfig, enabled)
+}
+
+func UpdateCronJobRun(id uuid.UUID, lastError string, nextRunAt *time.Time) error {
+	return queries.UpdateCronJobRun(DB, id, lastError, nextRunAt)
+}
+
+func DisableCronJob(id uuid.UUID) error {
+	return queries.DisableCronJob(DB, id)
+}
+
+func DeleteCronJob(id uuid.UUID) error {
+	return queries.DeleteCronJob(DB, id)
+}
+
+func InsertCronRunLog(l *models.CronRunLog) error {
+	return queries.InsertCronRunLog(DB, l)
+}
+
+func GetCronRunLogs(jobID uuid.UUID, limit int) ([]models.CronRunLog, error) {
+	return queries.GetCronRunLogs(DB, jobID, limit)
+}
+
+func CleanupOldCronRunLogs(retentionDays int) (int64, error) {
+	return queries.CleanupOldCronRunLogs(DB, retentionDays)
 }

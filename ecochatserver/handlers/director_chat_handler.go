@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/director"
 	"github.com/egor/ecochatserver/llm"
@@ -53,11 +52,10 @@ func estimateHistoryTokens(msgs []llm.Message) int {
 
 // getDirectorInstance returns the Director via AutoResponder.
 func getDirectorInstance() *director.Director {
-	adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2)
-	if !ok || adkAR == nil {
-		return nil
+	if ar := getAutoResponder(); ar != nil {
+		return ar.GetDirector()
 	}
-	return adkAR.GetDirector()
+	return nil
 }
 
 // ============================================================================
@@ -81,12 +79,7 @@ func DirectorChatMessage(c *gin.Context) {
 	}
 
 	// Get Director from AutoResponder
-	adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2)
-	if !ok || adkAR == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "autoresponder not initialized"})
-		return
-	}
-	dir := adkAR.GetDirector()
+	dir := getDirectorInstance()
 	if dir == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "director not initialized"})
 		return
@@ -101,12 +94,7 @@ func DirectorChatMessage(c *gin.Context) {
 	// Get chat history for this admin (in-memory, fallback to DB)
 	directorChatHistoryMu.Lock()
 	if len(directorChatHistory[adminID]) == 0 {
-		// Try restoring from DB
-		if dbMsgs, err := database.LoadDirectorChatHistory(adminID, 50); err == nil && len(dbMsgs) > 0 {
-			restored := make([]llm.Message, 0, len(dbMsgs))
-			for _, m := range dbMsgs {
-				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
-			}
+		if restored := loadHistoryFromDB(adminID, 50); len(restored) > 0 {
 			directorChatHistory[adminID] = restored
 		}
 	}
@@ -355,14 +343,7 @@ func DirectorChatHistory(c *gin.Context) {
 
 	// If in-memory is empty, try loading from DB
 	if len(history) == 0 {
-		dbMsgs, err := database.LoadDirectorChatHistory(adminID, 50)
-		if err != nil {
-			log.Printf("[DIRECTOR_CHAT] Failed to load history from DB: %v", err)
-		} else if len(dbMsgs) > 0 {
-			restored := make([]llm.Message, 0, len(dbMsgs))
-			for _, m := range dbMsgs {
-				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
-			}
+		if restored := loadHistoryFromDB(adminID, 50); len(restored) > 0 {
 			directorChatHistoryMu.Lock()
 			// Double-check: another goroutine may have loaded it
 			if len(directorChatHistory[adminID]) == 0 {
@@ -409,12 +390,8 @@ func DirectorChatClear(c *gin.Context) {
 		toFlush := make([]llm.Message, len(history))
 		copy(toFlush, history)
 
-		// Get provider for flush
-		adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2)
-		if ok && adkAR != nil {
-			if dir := adkAR.GetDirector(); dir != nil {
-				go flushMemoryBeforeCompaction(dir.Provider(), toFlush)
-			}
+		if dir := getDirectorInstance(); dir != nil {
+			go flushMemoryBeforeCompaction(dir.Provider(), toFlush)
 		}
 	}
 	delete(directorChatHistory, adminID)
@@ -439,8 +416,8 @@ func DirectorChatClear(c *gin.Context) {
 
 // DirectorAnalyze triggers a full Director analysis cycle via API.
 func DirectorAnalyze(c *gin.Context) {
-	adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2)
-	if !ok || adkAR == nil {
+	adkAR := getAutoResponder()
+	if adkAR == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "autoresponder not initialized"})
 		return
 	}
@@ -502,6 +479,10 @@ func buildDirectorChatSystemPrompt() string {
 DATA: get_recent_chats, get_agent_metrics, get_latest_report, get_active_prompts,
       get_prompt_history, get_tool_stats, get_interaction_details, run_analysis
 
+AGENTS: agent_send (задать вопрос L1 агенту о конкретном чате — LLM call с контекстом),
+        agent_list (список активных агентских сессий),
+        agent_context (raw контекст чата без LLM — сообщения + summary)
+
 MEMORY: remember (UPSERT), recall (FTS search), forget, list_memories, search_reports
 
 SEARCH: deep_search (unified FTS), timeline (historical data)
@@ -512,6 +493,12 @@ SKILLS: create_skill (sql_query|prompt_chain|http_api|composite), edit_skill,
 IDENTITY: get_identity (кто я), update_identity (изменить себя),
           introspect (саморефлексия), identity_history (эволюция),
           rollback_identity (откат)
+
+AGENT COMMUNICATION GUIDELINES:
+- agent_list: проверь кто сейчас онлайн, какие чаты обрабатываются
+- agent_context: загрузи raw данные чата (сообщения + summary) без LLM
+- agent_send: задай вопрос агенту о конкретном чате (с LLM call)
+- L1 агенты могут спрашивать тебя через ask_director (ты ответишь автоматически)
 
 IDENTITY GUIDELINES:
 - Используй get_identity чтобы вспомнить кто ты, свои цели и стиль

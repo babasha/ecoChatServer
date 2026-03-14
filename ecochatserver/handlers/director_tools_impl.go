@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egor/ecochatserver/adkagent"
+	"github.com/egor/ecochatserver/agentbus"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/director"
 	"github.com/egor/ecochatserver/models"
@@ -19,10 +19,7 @@ import (
 // ============================================================================
 
 func toolGetAgentMetrics(args map[string]interface{}) string {
-	hours := 24.0
-	if h, ok := args["hours"].(float64); ok && h > 0 {
-		hours = h
-	}
+	hours := argFloat(args, "hours", 24)
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
 	stats, err := database.GetAgentStatsSince(since)
@@ -94,7 +91,7 @@ func toolGetLatestReport() string {
 }
 
 func toolGetActivePrompts() string {
-	agents := []string{"zefir_support", "plant_expert", "device_specialist", "support_specialist", "orchestrator"}
+	agents := director.AgentNames
 	var sb strings.Builder
 	sb.WriteString("Active prompts:\n")
 
@@ -128,15 +125,12 @@ func toolGetActivePrompts() string {
 }
 
 func toolGetPromptHistory(args map[string]interface{}) string {
-	agentName, _ := args["agent_name"].(string)
+	agentName := argStr(args, "agent_name")
 	if agentName == "" {
 		return "Error: agent_name is required. Valid values: zefir_support, plant_expert, device_specialist, support_specialist, orchestrator"
 	}
 
-	limit := 5
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
+	limit := argInt(args, "limit", 5)
 
 	prompts, err := database.GetPromptHistory(agentName, limit)
 	if err != nil {
@@ -166,10 +160,7 @@ func toolGetPromptHistory(args map[string]interface{}) string {
 }
 
 func toolGetToolStats(args map[string]interface{}) string {
-	hours := 24.0
-	if h, ok := args["hours"].(float64); ok && h > 0 {
-		hours = h
-	}
+	hours := argFloat(args, "hours", 24)
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
 	stats, err := database.GetToolStatsSince(since)
@@ -190,8 +181,8 @@ func toolGetToolStats(args map[string]interface{}) string {
 }
 
 func toolRunAnalysis(ctx context.Context) string {
-	adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2)
-	if !ok || adkAR == nil {
+	adkAR := getAutoResponder()
+	if adkAR == nil {
 		return "Error: AutoResponder not initialized, cannot run analysis."
 	}
 
@@ -205,10 +196,7 @@ func toolRunAnalysis(ctx context.Context) string {
 }
 
 func toolGetInteractionDetails(args map[string]interface{}) string {
-	hours := 24.0
-	if h, ok := args["hours"].(float64); ok && h > 0 {
-		hours = h
-	}
+	hours := argFloat(args, "hours", 24)
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
 	stats, err := database.GetAgentStatsSince(since)
@@ -250,12 +238,9 @@ func toolGetInteractionDetails(args map[string]interface{}) string {
 }
 
 func toolGetRecentChats(args map[string]interface{}) string {
-	limit := 10
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-		if limit > 50 {
-			limit = 50
-		}
+	limit := argInt(args, "limit", 10)
+	if limit > 50 {
+		limit = 50
 	}
 
 	chats, total, err := database.GetRecentChatsForDirector(limit)
@@ -293,16 +278,15 @@ func toolGetRecentChats(args map[string]interface{}) string {
 // ============================================================================
 
 func toolRemember(args map[string]interface{}) string {
-	category, _ := args["category"].(string)
-	key, _ := args["key"].(string)
-	content, _ := args["content"].(string)
+	category := argStr(args, "category")
+	key := argStr(args, "key")
+	content := argStr(args, "content")
 
 	if category == "" || key == "" || content == "" {
 		return "Error: category, key, and content are required."
 	}
 
-	validCategories := map[string]bool{"fact": true, "decision": true, "pattern": true, "insight": true, "preference": true}
-	if !validCategories[category] {
+	if !director.ValidMemoryCategories[category] {
 		return "Error: invalid category. Use: fact, decision, pattern, insight, preference."
 	}
 
@@ -310,27 +294,19 @@ func toolRemember(args map[string]interface{}) string {
 		content = content[:500]
 	}
 
-	importance := 5
-	if imp, ok := args["importance"].(float64); ok && imp >= 1 && imp <= 10 {
-		importance = int(imp)
+	importance := argInt(args, "importance", 5)
+	if importance < 1 {
+		importance = 1
+	}
+	if importance > 10 {
+		importance = 10
 	}
 
-	var tags []string
-	if tagsRaw, ok := args["tags"].([]interface{}); ok {
-		for _, t := range tagsRaw {
-			if s, ok := t.(string); ok {
-				tags = append(tags, s)
-			}
-		}
-	}
-
-	pinned := false
-	if p, ok := args["pinned"].(bool); ok {
-		pinned = p
-	}
+	tags := argTags(args, "tags")
+	pinned := argBool(args, "pinned", false)
 
 	var expiresAt *time.Time
-	if hours, ok := args["expires_in_hours"].(float64); ok && hours > 0 {
+	if hours := argFloat(args, "expires_in_hours", 0); hours > 0 {
 		t := time.Now().Add(time.Duration(hours) * time.Hour)
 		expiresAt = &t
 	}
@@ -363,12 +339,9 @@ func toolRemember(args map[string]interface{}) string {
 }
 
 func toolRecall(args map[string]interface{}) string {
-	query, _ := args["query"].(string)
-	category, _ := args["category"].(string)
-	limit := 5
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
+	query := argStr(args, "query")
+	category := argStr(args, "category")
+	limit := argInt(args, "limit", 5)
 
 	if query == "" && category == "" {
 		return "Error: provide at least a query or category to search."
@@ -399,8 +372,8 @@ func toolRecall(args map[string]interface{}) string {
 }
 
 func toolForget(args map[string]interface{}) string {
-	category, _ := args["category"].(string)
-	key, _ := args["key"].(string)
+	category := argStr(args, "category")
+	key := argStr(args, "key")
 
 	if category == "" || key == "" {
 		return "Error: category and key are required."
@@ -413,11 +386,8 @@ func toolForget(args map[string]interface{}) string {
 }
 
 func toolListMemories(args map[string]interface{}) string {
-	category, _ := args["category"].(string)
-	limit := 10
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
+	category := argStr(args, "category")
+	limit := argInt(args, "limit", 10)
 
 	memories, err := database.ListMemories(category, limit)
 	if err != nil {
@@ -443,14 +413,11 @@ func toolListMemories(args map[string]interface{}) string {
 }
 
 func toolSearchReports(args map[string]interface{}) string {
-	query, _ := args["query"].(string)
-	limit := 5
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
+	query := argStr(args, "query")
+	limit := argInt(args, "limit", 5)
 
 	// Date range mode
-	if daysBack, ok := args["days_back"].(float64); ok && daysBack > 0 {
+	if daysBack := argFloat(args, "days_back", 0); daysBack > 0 {
 		to := time.Now()
 		from := to.Add(-time.Duration(daysBack) * 24 * time.Hour)
 		reports, err := database.GetReportsByDateRange(from, to, limit)
@@ -520,13 +487,10 @@ func formatReportResults(reports []models.DirectorReport, searchDesc string) str
 // ============================================================================
 
 func toolDeepSearch(args map[string]interface{}) string {
-	query, _ := args["query"].(string)
-	sourceType, _ := args["source_type"].(string)
-	timeRange, _ := args["time_range"].(string)
-	limit := 10
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
+	query := argStr(args, "query")
+	sourceType := argStr(args, "source_type")
+	timeRange := argStr(args, "time_range")
+	limit := argInt(args, "limit", 10)
 
 	if query == "" && sourceType == "" {
 		return "Error: provide at least a 'query' to search for."
@@ -553,8 +517,8 @@ func toolDeepSearch(args map[string]interface{}) string {
 }
 
 func toolTimeline(args map[string]interface{}) string {
-	period, _ := args["period"].(string)
-	detail, _ := args["detail"].(string)
+	period := argStr(args, "period")
+	detail := argStr(args, "detail")
 	if period == "" {
 		return "Error: 'period' is required. Use: last_week, last_month, last_quarter, last_year, YYYY-MM, YYYY."
 	}
@@ -608,11 +572,133 @@ func toolTimeline(args map[string]interface{}) string {
 }
 
 // ============================================================================
+// Inter-agent communication tool implementations
+// ============================================================================
+
+func getAgentBus() *agentbus.AgentBus {
+	if ar := getAutoResponder(); ar != nil {
+		return ar.GetAgentBus()
+	}
+	return nil
+}
+
+func toolAgentSend(ctx context.Context, args map[string]interface{}) string {
+	chatID := argStr(args, "chat_id")
+	message := argStr(args, "message")
+
+	if chatID == "" || message == "" {
+		return "Error: chat_id and message are required."
+	}
+
+	bus := getAgentBus()
+	if bus == nil {
+		return "Error: AgentBus not available. AutoResponder may not be initialized."
+	}
+
+	result, err := bus.QueryAgent(ctx, chatID, message)
+	if err != nil {
+		return fmt.Sprintf("Error querying agent: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Agent response for chat %s:\n\n%s", chatID, result.Response))
+	if result.Tokens != nil {
+		sb.WriteString(fmt.Sprintf("\n\n[tokens: %d in + %d out]", result.Tokens.PromptTokens, result.Tokens.CompletionTokens))
+	}
+	return sb.String()
+}
+
+func toolAgentList() string {
+	bus := getAgentBus()
+
+	var sb strings.Builder
+
+	// Active sessions from AgentBus
+	if bus != nil {
+		sessions := bus.ListSessions()
+		if len(sessions) > 0 {
+			sb.WriteString(fmt.Sprintf("Active agent sessions (%d):\n", len(sessions)))
+			for i, s := range sessions {
+				duration := time.Since(s.StartedAt).Round(time.Second)
+				sb.WriteString(fmt.Sprintf("  %d. [%s] chat=%s (running %s, msgs=%d)\n",
+					i+1, s.AgentType, s.ChatID, duration, s.MessageCount))
+			}
+		} else {
+			sb.WriteString("No active agent sessions right now.\n")
+		}
+	} else {
+		sb.WriteString("AgentBus not available.\n")
+	}
+
+	// Fallback: cached agent stats
+	if adkAR := getAutoResponder(); adkAR != nil {
+		total, chatIDs := adkAR.GetAgentCacheStats()
+		if total > 0 {
+			sb.WriteString(fmt.Sprintf("\nCached agents (%d total):\n", total))
+			for i, id := range chatIDs {
+				if i >= 10 {
+					sb.WriteString(fmt.Sprintf("  ... and %d more\n", total-10))
+					break
+				}
+				sb.WriteString(fmt.Sprintf("  - %s\n", id))
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+func toolAgentContext(ctx context.Context, args map[string]interface{}) string {
+	chatID := argStr(args, "chat_id")
+	if chatID == "" {
+		return "Error: chat_id is required."
+	}
+
+	limit := argInt(args, "limit", 20)
+
+	bus := getAgentBus()
+	if bus == nil {
+		return "Error: AgentBus not available."
+	}
+
+	agentCtx, err := bus.GetAgentContext(ctx, chatID, limit)
+	if err != nil {
+		return fmt.Sprintf("Error getting agent context: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Agent context for chat %s:\n\n", chatID))
+
+	if agentCtx.Summary != "" {
+		summary := agentCtx.Summary
+		if len(summary) > 500 {
+			summary = summary[:500] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("Summary: %s\n\n", summary))
+	}
+
+	if len(agentCtx.Messages) > 0 {
+		sb.WriteString(fmt.Sprintf("Recent messages (%d):\n", len(agentCtx.Messages)))
+		for _, m := range agentCtx.Messages {
+			content := m.Content
+			if len(content) > 200 {
+				content = content[:200] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("  [%s] %s: %s\n", m.Timestamp.Format("15:04"), m.Sender, content))
+		}
+	} else {
+		sb.WriteString("No messages found.\n")
+	}
+
+	return sb.String()
+}
+
+// ============================================================================
 // Identity tool implementations
 // ============================================================================
 
 func toolGetIdentity(args map[string]interface{}) string {
-	aspect, _ := args["aspect"].(string)
+	aspect := argStr(args, "aspect")
 
 	if aspect != "" {
 		id, err := database.GetIdentity(aspect)
@@ -645,9 +731,9 @@ func toolGetIdentity(args map[string]interface{}) string {
 }
 
 func toolUpdateIdentity(args map[string]interface{}) string {
-	aspect, _ := args["aspect"].(string)
-	content, _ := args["content"].(string)
-	reason, _ := args["reason"].(string)
+	aspect := argStr(args, "aspect")
+	content := argStr(args, "content")
+	reason := argStr(args, "reason")
 
 	if aspect == "" || content == "" || reason == "" {
 		return "Error: aspect, content, and reason are all required."
@@ -674,15 +760,12 @@ func toolIntrospect(ctx context.Context) string {
 }
 
 func toolIdentityHistory(args map[string]interface{}) string {
-	aspect, _ := args["aspect"].(string)
+	aspect := argStr(args, "aspect")
 	if aspect == "" {
 		return "Error: aspect is required."
 	}
 
-	limit := 5
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
+	limit := argInt(args, "limit", 5)
 
 	history, err := database.GetIdentityHistory(aspect, limit)
 	if err != nil {
@@ -713,8 +796,8 @@ func toolIdentityHistory(args map[string]interface{}) string {
 }
 
 func toolRollbackIdentity(args map[string]interface{}) string {
-	aspect, _ := args["aspect"].(string)
-	version, _ := args["version"].(float64)
+	aspect := argStr(args, "aspect")
+	version := argFloat(args, "version", 0)
 
 	if aspect == "" || version <= 0 {
 		return "Error: aspect and version are required."
@@ -729,4 +812,315 @@ func toolRollbackIdentity(args map[string]interface{}) string {
 
 	log.Printf("[DIRECTOR_IDENTITY] Rolled back %s to v%d", aspect, int(version))
 	return fmt.Sprintf("✓ Откат '%s' к версии %d. Создана новая версия с содержимым старой.", aspect, int(version))
+}
+
+// ============================================================================
+// Webhook tool implementations
+// ============================================================================
+
+func toolGetWebhookEvents(args map[string]interface{}) string {
+	limit := 10
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	events, err := database.GetRecentWebhookEvents(limit)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	if len(events) == 0 {
+		return "Нет webhook событий. Внешние системы ещё не отправляли триггеры."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Webhook события (последние %d):\n\n", len(events)))
+	for _, evt := range events {
+		sb.WriteString(fmt.Sprintf("• [%s] %s/%s — %s\n  Статус: %s | Приоритет: %s | Action: %s\n  Время: %s\n",
+			evt.ID.String()[:8],
+			evt.Source, evt.EventType,
+			truncateStr(evt.Message, 80),
+			evt.Status, evt.Priority, evt.Action,
+			evt.CreatedAt.Format("2006-01-02 15:04:05"),
+		))
+		if evt.Error != "" {
+			sb.WriteString(fmt.Sprintf("  Ошибка: %s\n", evt.Error))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// ============================================================================
+// Cron tool implementations
+// ============================================================================
+
+func toolCreateCronJob(args map[string]interface{}) string {
+	if CronService == nil {
+		return "Error: CronService не инициализирован"
+	}
+
+	name := argStr(args, "name")
+	if name == "" {
+		return "Error: name обязательно"
+	}
+
+	schedType := argStr(args, "schedule_type")
+	schedule := argStr(args, "schedule")
+	if schedType == "" || schedule == "" {
+		return "Error: schedule_type и schedule обязательны"
+	}
+
+	req := &models.CronJobRequest{
+		Name:         name,
+		Description:  argStr(args, "description"),
+		ScheduleType: schedType,
+		Schedule:     schedule,
+		Timezone:     argStr(args, "timezone"),
+		Action:       argStr(args, "action"),
+		ActionConfig: argStr(args, "action_config"),
+		MaxRuns:      argInt(args, "max_runs", 0),
+	}
+
+	job, err := CronService.AddJob(req, "director")
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	nextRunStr := "не определено"
+	if job.NextRunAt != nil {
+		nextRunStr = job.NextRunAt.Format("2006-01-02 15:04:05 MST")
+	}
+
+	return fmt.Sprintf("✓ Задача '%s' создана.\nТип: %s | Расписание: %s | Action: %s\nСледующий запуск: %s",
+		job.Name, job.ScheduleType, job.Schedule, job.Action, nextRunStr)
+}
+
+func toolListCronJobs() string {
+	jobs, err := database.ListCronJobs()
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	if len(jobs) == 0 {
+		return "Нет запланированных задач."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Запланированные задачи (%d):\n\n", len(jobs)))
+	for _, job := range jobs {
+		status := "✅"
+		if !job.Enabled {
+			status = "⏸️"
+		}
+
+		nextRun := "—"
+		if job.NextRunAt != nil {
+			nextRun = job.NextRunAt.Format("2006-01-02 15:04")
+		}
+		lastRun := "никогда"
+		if job.LastRunAt != nil {
+			lastRun = job.LastRunAt.Format("2006-01-02 15:04")
+		}
+
+		sb.WriteString(fmt.Sprintf("%s %s\n", status, job.Name))
+		if job.Description != "" {
+			sb.WriteString(fmt.Sprintf("  Описание: %s\n", job.Description))
+		}
+		sb.WriteString(fmt.Sprintf("  Тип: %s | Расписание: %s", job.ScheduleType, job.Schedule))
+		if job.Timezone != "" {
+			sb.WriteString(fmt.Sprintf(" (%s)", job.Timezone))
+		}
+		sb.WriteString(fmt.Sprintf("\n  Action: %s | Запусков: %d", job.Action, job.RunCount))
+		if job.MaxRuns > 0 {
+			sb.WriteString(fmt.Sprintf("/%d", job.MaxRuns))
+		}
+		sb.WriteString(fmt.Sprintf("\n  Последний: %s | Следующий: %s\n", lastRun, nextRun))
+		if job.LastError != "" {
+			sb.WriteString(fmt.Sprintf("  Ошибка: %s\n", job.LastError))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+func toolDeleteCronJob(args map[string]interface{}) string {
+	if CronService == nil {
+		return "Error: CronService не инициализирован"
+	}
+
+	name := argStr(args, "name")
+	if name == "" {
+		return "Error: name обязательно"
+	}
+
+	job, err := database.GetCronJobByName(name)
+	if err != nil || job == nil {
+		return fmt.Sprintf("Error: задача '%s' не найдена", name)
+	}
+
+	if err := CronService.RemoveJob(job.ID); err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return fmt.Sprintf("✓ Задача '%s' удалена.", name)
+}
+
+func toolToggleCronJob(args map[string]interface{}) string {
+	if CronService == nil {
+		return "Error: CronService не инициализирован"
+	}
+
+	name := argStr(args, "name")
+	if name == "" {
+		return "Error: name обязательно"
+	}
+
+	enabled, ok := args["enabled"].(bool)
+	if !ok {
+		return "Error: enabled обязательно (true/false)"
+	}
+
+	job, err := database.GetCronJobByName(name)
+	if err != nil || job == nil {
+		return fmt.Sprintf("Error: задача '%s' не найдена", name)
+	}
+
+	if err := CronService.ToggleJob(job.ID, enabled); err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	action := "включена"
+	if !enabled {
+		action = "отключена"
+	}
+	return fmt.Sprintf("✓ Задача '%s' %s.", name, action)
+}
+
+func toolRunCronJob(args map[string]interface{}) string {
+	if CronService == nil {
+		return "Error: CronService не инициализирован"
+	}
+
+	name := argStr(args, "name")
+	if name == "" {
+		return "Error: name обязательно"
+	}
+
+	job, err := database.GetCronJobByName(name)
+	if err != nil || job == nil {
+		return fmt.Sprintf("Error: задача '%s' не найдена", name)
+	}
+
+	if err := CronService.RunNow(job.ID); err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return fmt.Sprintf("✓ Задача '%s' запущена вручную. Результат будет в логах.", name)
+}
+
+// ============================================================================
+// Browser tool implementations
+// ============================================================================
+
+func toolBrowserScreenshot(ctx context.Context, args map[string]interface{}) string {
+	if BrowserService == nil {
+		return "Error: Browser service не запущен. Установите DIRECTOR_BROWSER_ENABLED=true в настройках."
+	}
+
+	targetURL := argStr(args, "url")
+	if targetURL == "" {
+		return "Error: url обязательно"
+	}
+
+	result, err := BrowserService.Screenshot(ctx, targetURL)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	// Return metadata + truncated base64 (full image would be too large for tool result)
+	imgPreview := result.ImageB64
+	if len(imgPreview) > 500 {
+		imgPreview = imgPreview[:500] + "...[truncated]"
+	}
+
+	return fmt.Sprintf("✓ Screenshot сделан\nURL: %s\nTitle: %s\nSize: %dx%d\nTimestamp: %s\nImage (base64, %d bytes): %s",
+		result.URL, result.Title, result.Width, result.Height,
+		result.Timestamp, len(result.ImageB64), imgPreview)
+}
+
+func toolBrowserGetText(ctx context.Context, args map[string]interface{}) string {
+	if BrowserService == nil {
+		return "Error: Browser service не запущен. Установите DIRECTOR_BROWSER_ENABLED=true в настройках."
+	}
+
+	targetURL := argStr(args, "url")
+	if targetURL == "" {
+		return "Error: url обязательно"
+	}
+
+	maxLen := argInt(args, "max_length", 5000)
+
+	result, err := BrowserService.GetText(ctx, targetURL, maxLen)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return fmt.Sprintf("URL: %s\nTitle: %s\n\n%s", result.URL, result.Title, result.Text)
+}
+
+func toolBrowserEvalJS(ctx context.Context, args map[string]interface{}) string {
+	if BrowserService == nil {
+		return "Error: Browser service не запущен. Установите DIRECTOR_BROWSER_ENABLED=true в настройках."
+	}
+
+	targetURL := argStr(args, "url")
+	script := argStr(args, "script")
+	if targetURL == "" || script == "" {
+		return "Error: url и script обязательны"
+	}
+
+	result, err := BrowserService.EvalJS(ctx, targetURL, script)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return fmt.Sprintf("URL: %s\nResult: %s", targetURL, result)
+}
+
+func toolGetWebhookStats() string {
+	stats, err := database.GetWebhookStats()
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("📊 Статистика webhook:\n\n")
+	sb.WriteString(fmt.Sprintf("Всего получено: %d\n", stats.TotalReceived))
+	sb.WriteString(fmt.Sprintf("Обработано: %d\n", stats.TotalProcessed))
+	sb.WriteString(fmt.Sprintf("Дубликаты: %d\n", stats.TotalDuplicate))
+	sb.WriteString(fmt.Sprintf("Ошибки: %d\n", stats.TotalFailed))
+
+	if len(stats.BySources) > 0 {
+		sb.WriteString("\nПо источникам:\n")
+		for source, count := range stats.BySources {
+			sb.WriteString(fmt.Sprintf("  %s: %d\n", source, count))
+		}
+	}
+
+	if len(stats.ByEventType) > 0 {
+		sb.WriteString("\nПо типам событий:\n")
+		for eventType, count := range stats.ByEventType {
+			sb.WriteString(fmt.Sprintf("  %s: %d\n", eventType, count))
+		}
+	}
+
+	if stats.LastEventAt != nil {
+		sb.WriteString(fmt.Sprintf("\nПоследнее событие: %s", stats.LastEventAt.Format("2006-01-02 15:04:05")))
+	}
+
+	return sb.String()
 }

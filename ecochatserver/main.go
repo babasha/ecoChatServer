@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -17,10 +18,13 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/egor/ecochatserver/adkagent"
+	"github.com/egor/ecochatserver/browser"
+	"github.com/egor/ecochatserver/cronservice"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/handlers"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/middleware"
+	"github.com/egor/ecochatserver/models"
 	"github.com/egor/ecochatserver/websocket"
 )
 
@@ -115,33 +119,77 @@ func main() {
 	// ─── Автоответчик (если используется) ───────────────────────────────────
 	handlers.InitAutoResponder()
 
-	// ─── Периодический анализ Director (каждые 6 часов) ─────────────────────
-	go func(ctx context.Context) {
-		// Первый запуск через 5 минут после старта (дать системе прогреться)
-		time.Sleep(5 * time.Minute)
+	// ─── CronService (гибкое расписание вместо фиксированного ticker) ──────
+	cronSvc := cronservice.New()
 
-		ticker := time.NewTicker(6 * time.Hour)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				adkAR, ok := handlers.AutoResponder.(*adkagent.ADKAutoResponderV2)
-				if ok && adkAR != nil {
-					log.Println("[DIRECTOR] Running scheduled analysis...")
-					analysisCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-					if err := adkAR.TriggerDirectorAnalysis(analysisCtx); err != nil {
-						log.Printf("[DIRECTOR] Scheduled analysis error: %v", err)
-					} else {
-						log.Println("[DIRECTOR] Scheduled analysis completed")
-					}
-					cancel()
-				}
-			case <-ctx.Done():
-				return
-			}
+	// Register action handlers
+	cronSvc.RegisterAction("analyze", func(actionCtx context.Context, job *models.CronJob) error {
+		adkAR, ok := handlers.AutoResponder.(*adkagent.ADKAutoResponderV2)
+		if !ok || adkAR == nil {
+			return fmt.Errorf("autoresponder not initialized")
 		}
-	}(ctx)
+		log.Printf("[CRON] Running analysis for job: %s", job.Name)
+		return adkAR.TriggerDirectorAnalysis(actionCtx)
+	})
+
+	cronSvc.RegisterAction("send_message", func(actionCtx context.Context, job *models.CronJob) error {
+		cfg, err := cronservice.ParseSendMessageConfig(job.ActionConfig)
+		if err != nil {
+			return err
+		}
+		// Save to Director memory as a reminder/note
+		database.SaveAutoMemory("fact",
+			fmt.Sprintf("cron_msg:%s:%s", job.Name, time.Now().Format("20060102-1504")),
+			cfg.Message, []string{"cron", "scheduled"}, nil)
+		log.Printf("[CRON] Message saved to memory: %s", cfg.Message[:min(len(cfg.Message), 80)])
+		return nil
+	})
+
+	// Make CronService available to handlers (for Director tools)
+	handlers.CronService = cronSvc
+
+	// Start with warmup delay
+	go func() {
+		time.Sleep(5 * time.Minute) // дать системе прогреться
+		if err := cronSvc.Start(ctx); err != nil {
+			log.Printf("[CRON] Failed to start: %v", err)
+			return
+		}
+
+		// Seed default analysis job if no jobs exist
+		jobs, _ := cronSvc.ListJobs()
+		if len(jobs) == 0 {
+			log.Println("[CRON] No jobs found, seeding default 6h analysis job")
+			cronSvc.AddJob(&models.CronJobRequest{
+				Name:         "director_analysis_6h",
+				Description:  "Периодический анализ Director каждые 6 часов",
+				ScheduleType: "every",
+				Schedule:     "6h",
+				Action:       "analyze",
+			}, "system")
+		}
+	}()
+
+	// ─── Browser service (headless Chrome for Director) ─────────────────────
+	if database.GetSettingBool("DIRECTOR_BROWSER_ENABLED", false) {
+		browserSvc := browser.New()
+
+		// Load allowlist from DB setting (comma-separated domains/patterns)
+		if allowListStr := database.GetSetting("DIRECTOR_BROWSER_ALLOWLIST", ""); allowListStr != "" {
+			patterns := strings.Split(allowListStr, ",")
+			for i := range patterns {
+				patterns[i] = strings.TrimSpace(patterns[i])
+			}
+			browserSvc.SetAllowList(patterns)
+			log.Printf("[BROWSER] Allowlist: %v", patterns)
+		}
+
+		if err := browserSvc.Start(); err != nil {
+			log.Printf("[BROWSER] Warning: failed to start: %v", err)
+		} else {
+			handlers.BrowserService = browserSvc
+		}
+	}
 
 	// ─── Инициализация буферов логов ─────────────────────────────────────────
 	handlers.InitLogBuffers()
@@ -552,6 +600,10 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.GET("/director/settings", handlers.GetDirectorSettings)
 			admin.PUT("/director/settings", handlers.UpdateDirectorSettings)
 
+			// Director webhook monitoring (admin-only)
+			admin.GET("/director/webhooks/events", handlers.DirectorWebhookEvents)
+			admin.GET("/director/webhooks/stats", handlers.DirectorWebhookStats)
+
 			// AI Chat (generalized role-based chat: Director, Responder, Translator, Global)
 			admin.POST("/ai/chat", handlers.AIChatMessage)
 			admin.GET("/ai/chat", handlers.AIChatHistory)
@@ -579,6 +631,11 @@ func setupAPIRoutes(r *gin.Engine) {
 	r.POST("/webhook/instagram", handlers.InstagramWebhook)
 	r.GET("/webhook/whatsapp", handlers.WhatsAppWebhookVerify)
 	r.POST("/webhook/whatsapp", handlers.WhatsAppWebhook)
+
+	// Director webhook — внешние системы триггерят анализ (Grafana, CRM, мониторинг)
+	// Auth: Bearer token / X-Webhook-Token / HMAC (X-Hub-Signature-256)
+	r.POST("/webhook/director", handlers.DirectorWebhookTrigger)
+	r.GET("/webhook/director/verify", handlers.DirectorWebhookVerify)
 
 	// Instagram OAuth callback (redirect URI настроен в Meta как /auth/instagram/callback)
 	// Используем Facebook Business Login flow — он поддерживает Instagram DM permissions

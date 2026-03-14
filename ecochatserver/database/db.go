@@ -531,6 +531,58 @@ func ensureDirectorTables() error {
 		PRIMARY KEY (hash, provider, model)
 	);
 	CREATE INDEX IF NOT EXISTS idx_embedding_cache_last_used ON embedding_cache (last_used);
+
+	-- Director webhook events (external trigger logging & idempotency)
+	CREATE TABLE IF NOT EXISTS director_webhook_events (
+		id               UUID PRIMARY KEY,
+		source           VARCHAR(100) NOT NULL,
+		event_type       VARCHAR(100) NOT NULL,
+		message          TEXT NOT NULL DEFAULT '',
+		metadata         JSONB DEFAULT '{}',
+		idempotency_key  VARCHAR(255) DEFAULT '',
+		action           VARCHAR(20) NOT NULL DEFAULT 'analyze',
+		priority         VARCHAR(20) NOT NULL DEFAULT 'normal',
+		status           VARCHAR(20) NOT NULL DEFAULT 'received',
+		error            TEXT DEFAULT '',
+		processed_at     TIMESTAMPTZ,
+		created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_webhook_events_idempotency ON director_webhook_events (idempotency_key) WHERE idempotency_key != '';
+	CREATE INDEX IF NOT EXISTS idx_webhook_events_created ON director_webhook_events (created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_webhook_events_source ON director_webhook_events (source, event_type);
+
+	-- Director cron jobs (flexible scheduling)
+	CREATE TABLE IF NOT EXISTS director_cron_jobs (
+		id             UUID PRIMARY KEY,
+		name           VARCHAR(200) NOT NULL UNIQUE,
+		description    TEXT DEFAULT '',
+		schedule_type  VARCHAR(10) NOT NULL,  -- 'at', 'every', 'cron'
+		schedule       VARCHAR(200) NOT NULL, -- ISO datetime / duration / cron expr
+		timezone       VARCHAR(50) DEFAULT '',
+		action         VARCHAR(50) NOT NULL DEFAULT 'analyze',
+		action_config  TEXT DEFAULT '',
+		enabled        BOOLEAN NOT NULL DEFAULT true,
+		created_by     VARCHAR(50) DEFAULT 'system',
+		last_run_at    TIMESTAMPTZ,
+		next_run_at    TIMESTAMPTZ,
+		run_count      INT NOT NULL DEFAULT 0,
+		last_error     TEXT DEFAULT '',
+		max_runs       INT NOT NULL DEFAULT 0,
+		created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON director_cron_jobs (enabled, next_run_at) WHERE enabled = true;
+
+	-- Cron run logs (execution history)
+	CREATE TABLE IF NOT EXISTS director_cron_run_log (
+		id          UUID PRIMARY KEY,
+		job_id      UUID NOT NULL REFERENCES director_cron_jobs(id) ON DELETE CASCADE,
+		status      VARCHAR(20) NOT NULL,
+		duration_ms INT DEFAULT 0,
+		error       TEXT DEFAULT '',
+		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_cron_run_log_job ON director_cron_run_log (job_id, created_at DESC);
 	`
 
 	_, err := DB.ExecContext(ctx, ddl)

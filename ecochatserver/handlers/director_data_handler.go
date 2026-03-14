@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/director"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,7 +41,7 @@ func DirectorData(c *gin.Context) {
 	toolStats, _ := database.GetToolStatsSince(since)
 
 	// Get prompt history for all agents
-	agents := []string{"zefir_support", "plant_expert", "device_specialist", "support_specialist", "orchestrator"}
+	agents := director.AgentNames
 	type promptInfo struct {
 		AgentName string `json:"agentName"`
 		Version   int    `json:"version"`

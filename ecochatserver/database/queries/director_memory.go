@@ -437,25 +437,25 @@ func RecallMemoriesHybrid(db *sql.DB, query string, queryEmbedding []float64, ca
 	}
 
 	// 2. Compute hybrid scores
-	maxFTS := 0.0
-	for _, c := range candidates {
-		if c.Rank > maxFTS {
-			maxFTS = c.Rank
-		}
-	}
-
 	for i := range candidates {
-		// Normalize FTS rank to 0-1
-		ftsNorm := 0.0
-		if maxFTS > 0 {
-			ftsNorm = candidates[i].Rank / maxFTS
-		}
+		// BM25-style FTS normalization: r/(1+r) maps ts_rank to 0..1 independently
+		// (unlike max-based normalization, this doesn't inflate scores when few results match)
+		ftsNorm := candidates[i].Rank / (1.0 + candidates[i].Rank)
 
 		// Cosine similarity between query and memory embedding
 		vecScore := cosineSim(queryEmbedding, candidates[i].Embedding)
 
 		// Hybrid: 70% vector + 30% FTS
 		candidates[i].HybridScore = 0.7*vecScore + 0.3*ftsNorm
+
+		// Temporal decay at search time: half-life 30 days, exempt pinned memories
+		// Score multiplier only — does NOT modify stored importance
+		if !candidates[i].Pinned {
+			ageDays := time.Since(candidates[i].UpdatedAt).Hours() / 24.0
+			if ageDays > 1 {
+				candidates[i].HybridScore *= math.Exp(-math.Ln2 / 30.0 * ageDays)
+			}
+		}
 
 		// Boost pinned memories
 		if candidates[i].Pinned {

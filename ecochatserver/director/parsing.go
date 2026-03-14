@@ -17,73 +17,24 @@ type ParsedDirectorResponse struct {
 func parseDirectorResponse(text string) *ParsedDirectorResponse {
 	result := &ParsedDirectorResponse{}
 
-	// Section markers in expected order
-	sections := []string{"ANALYSIS:", "CUSTOMER_COMPLAINTS:", "KEY_OBSERVATIONS:", "DIRECTIVES:", "EXPECTATIONS:"}
-
-	// Find positions of all sections
-	positions := map[string]int{}
-	for _, s := range sections {
-		positions[s] = strings.Index(text, s)
-	}
-
-	// Helper: extract text between two sections
-	extractSection := func(sectionName string) string {
-		start := positions[sectionName]
-		if start < 0 {
-			return ""
-		}
-		start += len(sectionName)
-
-		// Find the next section that comes after this one
-		end := len(text)
-		for _, other := range sections {
-			if other == sectionName {
-				continue
-			}
-			otherPos := positions[other]
-			if otherPos > positions[sectionName] && otherPos < end {
-				end = otherPos
-			}
-		}
-		return strings.TrimSpace(text[start:end])
-	}
-
-	// Helper: parse bulleted list from section text
-	parseBulletList := func(sectionText string) []string {
-		var items []string
-		for _, line := range strings.Split(sectionText, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "- ") {
-				items = append(items, strings.TrimSpace(line[2:]))
-			} else if strings.HasPrefix(line, "* ") {
-				items = append(items, strings.TrimSpace(line[2:]))
-			}
-		}
-		return items
-	}
+	p := NewSectionParser(text, []string{
+		"ANALYSIS:", "CUSTOMER_COMPLAINTS:", "KEY_OBSERVATIONS:", "DIRECTIVES:", "EXPECTATIONS:",
+	})
 
 	// 1. Analysis
-	result.Analysis = extractSection("ANALYSIS:")
+	result.Analysis = p.Get("ANALYSIS:")
 	if result.Analysis == "" {
 		result.Analysis = text // fallback: entire text
 	}
 
 	// 2. Customer complaints
-	result.CustomerComplaints = parseBulletList(extractSection("CUSTOMER_COMPLAINTS:"))
+	result.CustomerComplaints = p.GetBulletList("CUSTOMER_COMPLAINTS:")
 
 	// 3. Key observations
-	result.KeyObservations = parseBulletList(extractSection("KEY_OBSERVATIONS:"))
+	result.KeyObservations = p.GetBulletList("KEY_OBSERVATIONS:")
 
 	// 4. Directives
-	directivesText := extractSection("DIRECTIVES:")
-	for _, line := range strings.Split(directivesText, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "* ") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "- ")
-		line = strings.TrimPrefix(line, "* ")
-
+	for _, line := range ParseBulletList(p.Get("DIRECTIVES:")) {
 		dir := parseDirectiveLine(line)
 		if dir.Instruction != "" {
 			result.Directives = append(result.Directives, dir)
@@ -91,7 +42,7 @@ func parseDirectorResponse(text string) *ParsedDirectorResponse {
 	}
 
 	// 5. Expectations
-	result.Expectations = extractSection("EXPECTATIONS:")
+	result.Expectations = p.Get("EXPECTATIONS:")
 
 	return result
 }

@@ -174,7 +174,7 @@ func (po *PromptOptimizer) generateImprovedPrompt(
 				h.Metrics.EscalationRate*100, h.Metrics.EmptyResponseRate*100, h.Metrics.AvgMessagesToResolve)
 		}
 		historyCtx += fmt.Sprintf("v%d (%s, %s)%s: %s\n",
-			h.Version, h.CreatedBy, metricsStr, status, truncateStr(h.Notes, 100))
+			h.Version, h.CreatedBy, metricsStr, status, truncate(h.Notes, 100))
 	}
 
 	prompt := fmt.Sprintf(`You are optimizing a system prompt for an AI customer support agent.
@@ -255,9 +255,3 @@ func parseOptimizationResponse(text string) (string, string, error) {
 	return prompt, notes, nil
 }
 
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}

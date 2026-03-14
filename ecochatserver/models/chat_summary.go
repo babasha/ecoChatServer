@@ -15,4 +15,5 @@ type ChatSummary struct {
 	MessagesTo   time.Time `json:"messagesTo"`
 	MessageCount int       `json:"messageCount"`
 	CreatedAt    time.Time `json:"createdAt"`
+	Rank         float64   `json:"-"` // FTS rank (populated only in search results, excluded from JSON)
 }

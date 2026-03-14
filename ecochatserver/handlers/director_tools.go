@@ -417,6 +417,51 @@ var directorTools = []llm.Tool{
 			"required": []string{"name"},
 		},
 	},
+	// ── Inter-agent communication tools ─────────────────────────────────
+	{
+		Name:        "agent_send",
+		Description: "Send a question to an L1 support agent about a specific chat. The agent will analyze the chat context (messages, summary) and respond to your question. Use this to understand how the agent would handle a situation, or to get the agent's perspective on a customer issue.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"chat_id": map[string]interface{}{
+					"type":        "string",
+					"description": "UUID of the chat to query about.",
+				},
+				"message": map[string]interface{}{
+					"type":        "string",
+					"description": "Your question or instruction to the agent about this chat.",
+				},
+			},
+			"required": []string{"chat_id", "message"},
+		},
+	},
+	{
+		Name:        "agent_list",
+		Description: "List all currently active L1 agent sessions. Shows which chats are being processed right now, agent type, and session start time.",
+		Parameters: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	},
+	{
+		Name:        "agent_context",
+		Description: "Get raw chat context (recent messages, summary) without making an LLM call. Use this to review what data the agent has access to for a specific chat, or to understand the conversation history.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"chat_id": map[string]interface{}{
+					"type":        "string",
+					"description": "UUID of the chat to get context for.",
+				},
+				"limit": map[string]interface{}{
+					"type":        "number",
+					"description": "Number of recent messages to return (1-50). Default 20.",
+				},
+			},
+			"required": []string{"chat_id"},
+		},
+	},
 	// ── Identity tools ──────────────────────────────────────────────────
 	{
 		Name:        "get_identity",
@@ -501,6 +546,177 @@ var directorTools = []llm.Tool{
 			"required": []string{"aspect", "version"},
 		},
 	},
+	{
+		Name:        "get_webhook_events",
+		Description: "Get recent webhook events from external systems (Grafana, CRM, monitoring). Shows what external triggers have been received and their processing status.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"limit": map[string]interface{}{
+					"type":        "number",
+					"description": "Max events to return (default 10, max 50).",
+				},
+			},
+		},
+	},
+	{
+		Name:        "get_webhook_stats",
+		Description: "Get aggregated statistics about webhook usage: total events, sources breakdown, event types, success/failure rates.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{},
+		},
+	},
+	// Cron/scheduling tools
+	{
+		Name:        "create_cron_job",
+		Description: "Create a scheduled task. Supports 3 schedule types: 'at' (one-shot at specific time), 'every' (recurring interval like '6h', '1d'), 'cron' (cron expression like '0 9 * * 1' = every Monday at 9:00). Actions: 'analyze' (run analysis), 'send_message' (save a note/reminder).",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Unique name for the job (e.g., 'monday_metrics_review').",
+				},
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "What this job does.",
+				},
+				"schedule_type": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"at", "every", "cron"},
+					"description": "Type of schedule: 'at' for one-shot, 'every' for interval, 'cron' for expression.",
+				},
+				"schedule": map[string]interface{}{
+					"type":        "string",
+					"description": "Schedule value. For 'at': ISO datetime or relative ('in 2h'). For 'every': duration ('6h', '1d', '30m'). For 'cron': standard 5-field cron expression ('0 9 * * 1').",
+				},
+				"timezone": map[string]interface{}{
+					"type":        "string",
+					"description": "IANA timezone for cron expressions (e.g., 'Europe/Moscow'). Optional.",
+				},
+				"action": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"analyze", "send_message"},
+					"description": "What to do when job fires. Default: 'analyze'.",
+				},
+				"action_config": map[string]interface{}{
+					"type":        "string",
+					"description": "JSON config for the action. For send_message: {\"message\": \"text\"}.",
+				},
+				"max_runs": map[string]interface{}{
+					"type":        "number",
+					"description": "Max times to run (0=unlimited, 1=one-shot). Auto-set to 1 for 'at' type.",
+				},
+			},
+			"required": []string{"name", "schedule_type", "schedule"},
+		},
+	},
+	{
+		Name:        "list_cron_jobs",
+		Description: "List all scheduled cron jobs with their status, next run time, and run count.",
+		Parameters: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	},
+	{
+		Name:        "delete_cron_job",
+		Description: "Delete a scheduled cron job by name.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of the job to delete.",
+				},
+			},
+			"required": []string{"name"},
+		},
+	},
+	{
+		Name:        "toggle_cron_job",
+		Description: "Enable or disable a cron job by name.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of the job.",
+				},
+				"enabled": map[string]interface{}{
+					"type":        "boolean",
+					"description": "true to enable, false to disable.",
+				},
+			},
+			"required": []string{"name", "enabled"},
+		},
+	},
+	{
+		Name:        "run_cron_job",
+		Description: "Manually trigger a cron job to run immediately (outside its schedule).",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of the job to run.",
+				},
+			},
+			"required": []string{"name"},
+		},
+	},
+	// Browser/CDP tools
+	{
+		Name:        "browser_screenshot",
+		Description: "Navigate to a URL and take a screenshot. Returns base64-encoded PNG image. Use for checking dashboards, monitoring pages, or visual verification. SSRF-protected: only allowed external URLs.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"url": map[string]interface{}{
+					"type":        "string",
+					"description": "URL to navigate to and screenshot.",
+				},
+			},
+			"required": []string{"url"},
+		},
+	},
+	{
+		Name:        "browser_get_text",
+		Description: "Navigate to a URL and extract visible text content. Use for scraping data from web pages, reading dashboard values, or analyzing page content.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"url": map[string]interface{}{
+					"type":        "string",
+					"description": "URL to navigate to.",
+				},
+				"max_length": map[string]interface{}{
+					"type":        "number",
+					"description": "Max characters to return (default 5000).",
+				},
+			},
+			"required": []string{"url"},
+		},
+	},
+	{
+		Name:        "browser_eval_js",
+		Description: "Navigate to a URL and evaluate JavaScript. Returns the result as string. Use for extracting specific data from pages (e.g., 'document.querySelector(\".metric\").textContent').",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"url": map[string]interface{}{
+					"type":        "string",
+					"description": "URL to navigate to.",
+				},
+				"script": map[string]interface{}{
+					"type":        "string",
+					"description": "JavaScript to evaluate in the page context.",
+				},
+			},
+			"required": []string{"url", "script"},
+		},
+	},
 }
 
 // ============================================================================
@@ -564,6 +780,13 @@ func executeDirectorToolInner(ctx context.Context, call *llm.FunctionCall) strin
 		return toolDeleteSkill(call.Arguments)
 	case "test_skill":
 		return toolTestSkill(ctx, call.Arguments)
+	// Inter-agent communication
+	case "agent_send":
+		return toolAgentSend(ctx, call.Arguments)
+	case "agent_list":
+		return toolAgentList()
+	case "agent_context":
+		return toolAgentContext(ctx, call.Arguments)
 	// Identity tools
 	case "get_identity":
 		return toolGetIdentity(call.Arguments)
@@ -575,6 +798,26 @@ func executeDirectorToolInner(ctx context.Context, call *llm.FunctionCall) strin
 		return toolIdentityHistory(call.Arguments)
 	case "rollback_identity":
 		return toolRollbackIdentity(call.Arguments)
+	case "get_webhook_events":
+		return toolGetWebhookEvents(call.Arguments)
+	case "get_webhook_stats":
+		return toolGetWebhookStats()
+	case "create_cron_job":
+		return toolCreateCronJob(call.Arguments)
+	case "list_cron_jobs":
+		return toolListCronJobs()
+	case "delete_cron_job":
+		return toolDeleteCronJob(call.Arguments)
+	case "toggle_cron_job":
+		return toolToggleCronJob(call.Arguments)
+	case "run_cron_job":
+		return toolRunCronJob(call.Arguments)
+	case "browser_screenshot":
+		return toolBrowserScreenshot(ctx, call.Arguments)
+	case "browser_get_text":
+		return toolBrowserGetText(ctx, call.Arguments)
+	case "browser_eval_js":
+		return toolBrowserEvalJS(ctx, call.Arguments)
 	default:
 		// Try executing as a custom skill
 		return executeCustomSkill(ctx, call.Name, call.Arguments)

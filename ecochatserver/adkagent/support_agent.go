@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 
+	"github.com/egor/ecochatserver/agentbus"
 	"github.com/egor/ecochatserver/models"
 
 	"google.golang.org/adk/agent"
@@ -26,7 +28,9 @@ type SupportAgent struct {
 	appName        string
 	zefirUserID    string
 	currentSessionID string
-	rateLimiter    *RateLimiter
+	rateLimiter       *RateLimiter
+	agentBus          *agentbus.AgentBus
+	directorCallCount *atomic.Int32
 }
 
 // GetZefirUserID implements ZefirUserIDProvider
@@ -48,7 +52,8 @@ func (sa *SupportAgent) resetContext() {
 // NewSupportAgent creates an agent with dynamic tool routing via ToolRouter.
 // 16 tools (6 plant + 5 device + 5 support) are available, but only 5-8
 // relevant tools are sent per request based on user message content.
-func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAgent, error) {
+// If agentBus is non-nil, adds the ask_director tool for L1→Director communication.
+func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient, bus *agentbus.AgentBus) (*SupportAgent, error) {
 	// 1. Create LLM model
 	llmModel, err := NewLLMModel(ctx)
 	if err != nil {
@@ -76,6 +81,17 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 		return nil, fmt.Errorf("failed to create support tools: %w", err)
 	}
 	log.Printf("[AGENT] Created %d support tools", len(supportTools))
+
+	// Shared director call counter — used for rate limiting ask_director tool
+	directorCallCount := new(atomic.Int32)
+
+	// Add ask_director tool if agentBus is available
+	if bus != nil {
+		if askDirectorTool := createAskDirectorTool(bus, directorCallCount); askDirectorTool != nil {
+			supportTools = append(supportTools, askDirectorTool)
+			log.Printf("[AGENT] Added ask_director tool (inter-agent communication)")
+		}
+	}
 
 	totalTools := len(plantTools) + len(deviceTools) + len(supportTools)
 
@@ -133,12 +149,14 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 	}
 
 	sa := &SupportAgent{
-		agent:          adkAgent,
-		runner:         r,
-		sessionService: sessionService,
-		zefirClient:    zefirClient,
-		appName:        appName,
-		rateLimiter:    rateLimiter,
+		agent:             adkAgent,
+		runner:            r,
+		sessionService:    sessionService,
+		zefirClient:       zefirClient,
+		appName:           appName,
+		rateLimiter:       rateLimiter,
+		agentBus:          bus,
+		directorCallCount: directorCallCount,
 	}
 
 	// Fill userIDProvider — SupportAgent implements ZefirUserIDProvider
@@ -151,6 +169,11 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient) (*SupportAge
 // clientLanguage is optional (ru, en, de, es, pt, zh)
 func (sa *SupportAgent) ProcessMessage(ctx context.Context, sessionID, message string, zefirUserID string, clientLanguage ...string) (*AgentResult, error) {
 	defer sa.resetContext()
+
+	// Reset director call count for this message
+	if sa.directorCallCount != nil {
+		sa.directorCallCount.Store(0)
+	}
 
 	// Rate limit check
 	if sa.rateLimiter != nil && !sa.rateLimiter.AllowRequest() {

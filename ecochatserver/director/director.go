@@ -181,6 +181,13 @@ func (d *Director) periodicCleanup() {
 			} else if decayed > 0 || purged > 0 {
 				log.Printf("[DIRECTOR] Memory maintenance: decayed=%d, purged=%d", decayed, purged)
 			}
+			// Webhook events retention (default 30 days)
+			webhookRetention := database.GetSettingInt("DIRECTOR_WEBHOOK_RETENTION_DAYS", 30)
+			if deleted, err := database.CleanupOldWebhookEvents(webhookRetention); err != nil {
+				log.Printf("[DIRECTOR] Webhook cleanup error: %v", err)
+			} else if deleted > 0 {
+				log.Printf("[DIRECTOR] Webhook cleanup: deleted %d old events (retention=%d days)", deleted, webhookRetention)
+			}
 			// Embedding cache cleanup
 			if client := llm.GetEmbeddingClient(); client != nil && client.Cache() != nil {
 				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)

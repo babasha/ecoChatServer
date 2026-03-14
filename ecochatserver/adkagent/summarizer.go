@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	defaultSummaryThreshold  = 20 // messages before triggering summarization
-	defaultMaxContextMessages = 10 // max recent messages in context
+	defaultSummaryThreshold   = 20   // messages before triggering summarization
+	defaultMaxContextMessages = 10   // max recent messages in context
+	defaultContextTokenBudget = 3000 // max tokens for injected context (~25% of typical 12k budget)
 )
 
 // ChatSummarizer handles conversation summarization and context building
@@ -154,9 +155,67 @@ func (s *ChatSummarizer) BuildContext(ctx context.Context, chatID uuid.UUID) (st
 	return s.BuildContextWithQuery(ctx, chatID, "")
 }
 
-// BuildContextWithQuery assembles conversation context with FTS-enhanced retrieval.
-// When userMessage is non-empty, it searches for relevant past summaries matching the topic.
+// estimateTokens approximates token count for multilingual text.
+// LLM tokenizers split differently by script:
+//   - ASCII (English): ~4 chars per token
+//   - Cyrillic/Arabic/Hebrew: ~1.5 chars per token
+//   - CJK (Chinese/Japanese/Korean): ~1 char per token
+//
+// We count runes by category for an accurate cross-language estimate.
+func estimateTokens(text string) int {
+	var asciiChars, multiByteChars int
+	for _, r := range text {
+		if r < 128 {
+			asciiChars++
+		} else {
+			multiByteChars++
+		}
+	}
+	// ASCII text: ~4 chars/token; non-ASCII: ~1.5 chars/token
+	// Adding 1 to avoid zero on short strings
+	tokens := asciiChars/4 + multiByteChars*2/3
+	if tokens == 0 && len(text) > 0 {
+		tokens = 1
+	}
+	return tokens
+}
+
+// tokenBudget tracks remaining token budget during context assembly.
+type tokenBudget struct {
+	total    int
+	used     int
+}
+
+func newTokenBudget(total int) *tokenBudget {
+	return &tokenBudget{total: total}
+}
+
+// tryAdd adds text to the part list if it fits within the remaining budget.
+// Returns true if added, false if budget exhausted.
+func (tb *tokenBudget) tryAdd(parts *[]string, text string) bool {
+	cost := estimateTokens(text)
+	if tb.used+cost > tb.total {
+		return false
+	}
+	tb.used += cost
+	*parts = append(*parts, text)
+	return true
+}
+
+// remaining returns how many tokens are left.
+func (tb *tokenBudget) remaining() int {
+	r := tb.total - tb.used
+	if r < 0 {
+		return 0
+	}
+	return r
+}
+
+// BuildContextWithQuery assembles conversation context with FTS-enhanced retrieval
+// and token budgeting to prevent context overflow.
 func (s *ChatSummarizer) BuildContextWithQuery(ctx context.Context, chatID uuid.UUID, userMessage string) (string, error) {
+	budget := newTokenBudget(database.GetSettingInt("CONTEXT_TOKEN_BUDGET", defaultContextTokenBudget))
+
 	latest, err := database.GetLatestChatSummary(chatID)
 	if err != nil {
 		return "", fmt.Errorf("get latest summary: %w", err)
@@ -164,9 +223,63 @@ func (s *ChatSummarizer) BuildContextWithQuery(ctx context.Context, chatID uuid.
 
 	var parts []string
 
-	// Hybrid search: FTS + Vector (when embedding service is available)
-	if userMessage != "" && len(userMessage) > 5 {
-		// Generate query embedding (async-safe, cached)
+	// === Priority 1: Current conversation context (most important, reserve ~60% budget) ===
+	var recentParts []string
+	recentBudget := budget.total * 60 / 100
+
+	if latest != nil {
+		summaryLine := fmt.Sprintf("Current conversation summary: %s", latest.Summary)
+		recentTokens := estimateTokens(summaryLine)
+
+		messages, err := database.GetMessagesSince(chatID, latest.MessagesTo, s.maxContextMessages)
+		if err != nil {
+			return "", fmt.Errorf("get messages since summary: %w", err)
+		}
+
+		// Add summary
+		recentParts = append(recentParts, summaryLine)
+		usedRecent := recentTokens
+
+		// Add recent messages within budget
+		if len(messages) > 0 {
+			recentParts = append(recentParts, "Recent messages:")
+			usedRecent += estimateTokens("Recent messages:")
+			for _, m := range messages {
+				line := fmt.Sprintf("- %s: %s", messageRole(m), truncate(m.Content, 300))
+				cost := estimateTokens(line)
+				if usedRecent+cost > recentBudget {
+					break
+				}
+				recentParts = append(recentParts, line)
+				usedRecent += cost
+			}
+		}
+		budget.used += usedRecent
+	} else {
+		messages, err := database.GetRecentMessages(chatID, s.maxContextMessages)
+		if err != nil {
+			return "", fmt.Errorf("get recent messages: %w", err)
+		}
+
+		if len(messages) >= 2 {
+			messages = messages[:len(messages)-1] // exclude current message
+			recentParts = append(recentParts, "Recent messages:")
+			usedRecent := estimateTokens("Recent messages:")
+			for _, m := range messages {
+				line := fmt.Sprintf("- %s: %s", messageRole(m), truncate(m.Content, 300))
+				cost := estimateTokens(line)
+				if usedRecent+cost > recentBudget {
+					break
+				}
+				recentParts = append(recentParts, line)
+				usedRecent += cost
+			}
+			budget.used += usedRecent
+		}
+	}
+
+	// === Priority 2: Hybrid search results (use remaining budget) ===
+	if userMessage != "" && len(userMessage) > 5 && budget.remaining() > 100 {
 		var queryEmbedding []float64
 		embClient := llm.GetEmbeddingClient()
 		if embClient != nil {
@@ -178,9 +291,9 @@ func (s *ChatSummarizer) BuildContextWithQuery(ctx context.Context, chatID uuid.
 			}
 		}
 
-		// 1. Search relevant past summaries from THIS chat
-		relevantSummaries := s.hybridSearchSummaries(ctx, userMessage, queryEmbedding, &chatID, 3)
-		if len(relevantSummaries) > 0 {
+		// 2a. Relevant past summaries from THIS chat
+		if budget.remaining() > 100 {
+			relevantSummaries := s.hybridSearchSummaries(ctx, userMessage, queryEmbedding, &chatID, 3)
 			var filtered []models.ChatSummary
 			for _, rs := range relevantSummaries {
 				if latest == nil || rs.ID != latest.ID {
@@ -188,81 +301,57 @@ func (s *ChatSummarizer) BuildContextWithQuery(ctx context.Context, chatID uuid.
 				}
 			}
 			if len(filtered) > 0 {
-				parts = append(parts, "Relevant past context from this conversation:")
+				budget.tryAdd(&parts, "Relevant past context from this conversation:")
 				for _, rs := range filtered {
-					parts = append(parts, fmt.Sprintf("- [%s] %s", rs.CreatedAt.Format("2006-01-02"), rs.Summary))
+					line := fmt.Sprintf("- [%s] %s", rs.CreatedAt.Format("2006-01-02"), rs.Summary)
+					if !budget.tryAdd(&parts, line) {
+						break
+					}
 				}
 			}
 		}
 
-		// 2. Search across OTHER chats for similar topics
-		crossSummaries, err := database.SearchChatSummariesAcrossChats(userMessage, chatID, 2)
-		if err != nil {
-			log.Printf("[SUMMARIZER] Cross-chat FTS search failed (non-critical): %v", err)
-		} else if len(crossSummaries) > 0 {
-			parts = append(parts, "Similar topics from other conversations:")
-			for _, cs := range crossSummaries {
-				parts = append(parts, fmt.Sprintf("- %s", truncate(cs.Summary, 200)))
+		// 2b. Cross-chat similar topics
+		if budget.remaining() > 100 {
+			crossSummaries, err := database.SearchChatSummariesAcrossChats(userMessage, chatID, 2)
+			if err != nil {
+				log.Printf("[SUMMARIZER] Cross-chat FTS search failed (non-critical): %v", err)
+			} else if len(crossSummaries) > 0 {
+				budget.tryAdd(&parts, "Similar topics from other conversations:")
+				for _, cs := range crossSummaries {
+					line := fmt.Sprintf("- %s", truncate(cs.Summary, 200))
+					if !budget.tryAdd(&parts, line) {
+						break
+					}
+				}
 			}
 		}
 
-		// 3. Hybrid search director memories (uses built-in FTS + vector + MMR)
-		dirMemories := s.hybridSearchMemories(userMessage, nil, 3)
-		if len(dirMemories) > 0 {
-			parts = append(parts, "Relevant knowledge from memory:")
-			for _, mem := range dirMemories {
-				parts = append(parts, fmt.Sprintf("- [%s] %s", mem.Category, mem.Content))
-			}
-		}
-	}
-
-	// 4. Current conversation context (original logic)
-	if latest != nil {
-		parts = append(parts, fmt.Sprintf("Current conversation summary: %s", latest.Summary))
-
-		// Get messages after the summary
-		messages, err := database.GetMessagesSince(chatID, latest.MessagesTo, s.maxContextMessages)
-		if err != nil {
-			return "", fmt.Errorf("get messages since summary: %w", err)
-		}
-
-		if len(messages) > 0 {
-			parts = append(parts, "Recent messages:")
-			for _, m := range messages {
-				parts = append(parts, fmt.Sprintf("- %s: %s", messageRole(m), truncate(m.Content, 300)))
-			}
-		}
-	} else {
-		// No summary yet — include recent messages as context if chat has history
-		messages, err := database.GetRecentMessages(chatID, s.maxContextMessages)
-		if err != nil {
-			return "", fmt.Errorf("get recent messages: %w", err)
-		}
-
-		// Need at least 2 messages for context to be useful (previous exchange)
-		if len(messages) < 2 {
-			if len(parts) == 0 {
-				return "", nil
-			}
-			// We have FTS results even without conversation history
-			return "[CONVERSATION CONTEXT]\n" + strings.Join(parts, "\n") + "\n[END CONTEXT]", nil
-		}
-
-		// Exclude the last message (it's the current one being processed)
-		messages = messages[:len(messages)-1]
-		if len(messages) > 0 {
-			parts = append(parts, "Recent messages:")
-			for _, m := range messages {
-				parts = append(parts, fmt.Sprintf("- %s: %s", messageRole(m), truncate(m.Content, 300)))
+		// 2c. Director memories (pass pre-computed embedding to avoid duplicate embed call)
+		if budget.remaining() > 100 {
+			dirMemories := s.hybridSearchMemories(userMessage, queryEmbedding, 3)
+			if len(dirMemories) > 0 {
+				budget.tryAdd(&parts, "Relevant knowledge from memory:")
+				for _, mem := range dirMemories {
+					line := fmt.Sprintf("- [%s] %s", mem.Category, mem.Content)
+					if !budget.tryAdd(&parts, line) {
+						break
+					}
+				}
 			}
 		}
 	}
+
+	// === Assemble final context: search results first, then current context ===
+	parts = append(parts, recentParts...)
 
 	if len(parts) == 0 {
 		return "", nil
 	}
 
-	return "[CONVERSATION CONTEXT]\n" + strings.Join(parts, "\n") + "\n[END CONTEXT]", nil
+	result := "[CONVERSATION CONTEXT]\n" + strings.Join(parts, "\n") + "\n[END CONTEXT]"
+	log.Printf("[SUMMARIZER] Context assembled: %d tokens used / %d budget", budget.used, budget.total)
+	return result, nil
 }
 
 func messageRole(m models.Message) string {
@@ -320,12 +409,9 @@ func (s *ChatSummarizer) hybridSearchSummaries(ctx context.Context, query string
 
 	scoreMap := make(map[uuid.UUID]*scored)
 
-	// Add FTS results with normalized scores
-	for i, s := range ftsSummaries {
-		ftsScore := 1.0 - float64(i)*0.1 // position-based score
-		if ftsScore < 0.1 {
-			ftsScore = 0.1
-		}
+	// Add FTS results with BM25-normalized scores: r/(1+r) maps ts_rank to 0..1
+	for _, s := range ftsSummaries {
+		ftsScore := s.Rank / (1.0 + s.Rank)
 		scoreMap[s.ID] = &scored{summary: s, score: 0.4 * ftsScore}
 	}
 
@@ -364,8 +450,18 @@ func (s *ChatSummarizer) hybridSearchSummaries(ctx context.Context, query string
 }
 
 // hybridSearchMemories uses the director's built-in hybrid FTS + vector search with MMR.
+// Accepts pre-computed embedding to avoid duplicate embedding calls.
 func (s *ChatSummarizer) hybridSearchMemories(query string, queryEmbedding []float64, limit int) []models.DirectorMemory {
-	memories, err := database.RecallMemoriesHybrid(query, "", limit)
+	var memories []models.DirectorMemory
+	var err error
+
+	if len(queryEmbedding) > 0 {
+		// Use pre-computed embedding (avoids duplicate embed call)
+		memories, err = database.RecallMemoriesHybridWithEmbedding(query, queryEmbedding, "", limit)
+	} else {
+		// No embedding available — wrapper will try to generate one or fall back to FTS
+		memories, err = database.RecallMemoriesHybrid(query, "", limit)
+	}
 	if err != nil {
 		log.Printf("[SUMMARIZER] Hybrid memory search failed: %v", err)
 		return nil

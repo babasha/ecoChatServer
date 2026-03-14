@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egor/ecochatserver/adkagent"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/egor/ecochatserver/models"
@@ -246,11 +245,7 @@ func executePromptSkill(ctx context.Context, skill *models.DirectorSkill, args m
 		prompt = strings.ReplaceAll(prompt, placeholder, fmt.Sprintf("%v", val))
 	}
 
-	adkAR, ok := AutoResponder.(*adkagent.ADKAutoResponderV2)
-	if !ok || adkAR == nil {
-		return "", fmt.Errorf("autoresponder not available")
-	}
-	dir := adkAR.GetDirector()
+	dir := getDirectorInstance()
 	if dir == nil {
 		return "", fmt.Errorf("director not available")
 	}
@@ -519,10 +514,10 @@ func validateCompositeConfig(selfName string, code string) error {
 // ============================================================================
 
 func toolCreateSkill(args map[string]interface{}) string {
-	name, _ := args["name"].(string)
-	description, _ := args["description"].(string)
-	skillType, _ := args["skill_type"].(string)
-	code, _ := args["code"].(string)
+	name := argStr(args, "name")
+	description := argStr(args, "description")
+	skillType := argStr(args, "skill_type")
+	code := argStr(args, "code")
 
 	if name == "" || description == "" || skillType == "" || code == "" {
 		return "Error: name, description, skill_type, and code are required."
@@ -574,7 +569,7 @@ func toolCreateSkill(args map[string]interface{}) string {
 	}
 
 	params := `{"type":"object","properties":{}}`
-	if p, ok := args["parameters"].(string); ok && p != "" {
+	if p := argStr(args, "parameters"); p != "" {
 		var test map[string]interface{}
 		if err := json.Unmarshal([]byte(p), &test); err != nil {
 			return fmt.Sprintf("Error: invalid parameters JSON: %v", err)
@@ -582,14 +577,7 @@ func toolCreateSkill(args map[string]interface{}) string {
 		params = p
 	}
 
-	var tags []string
-	if tagsRaw, ok := args["tags"].([]interface{}); ok {
-		for _, t := range tagsRaw {
-			if s, ok := t.(string); ok {
-				tags = append(tags, s)
-			}
-		}
-	}
+	tags := argTags(args, "tags")
 
 	skill := &models.DirectorSkill{
 		ID:          uuid.New(),
@@ -612,7 +600,7 @@ func toolCreateSkill(args map[string]interface{}) string {
 }
 
 func toolEditSkill(args map[string]interface{}) string {
-	name, _ := args["name"].(string)
+	name := argStr(args, "name")
 	if name == "" {
 		return "Error: name is required."
 	}
@@ -620,20 +608,21 @@ func toolEditSkill(args map[string]interface{}) string {
 	var desc, params, code *string
 	var enabled *bool
 
-	if d, ok := args["description"].(string); ok {
+	if d := argStr(args, "description"); d != "" {
 		desc = &d
 	}
-	if p, ok := args["parameters"].(string); ok {
+	if p := argStr(args, "parameters"); p != "" {
 		var test map[string]interface{}
 		if err := json.Unmarshal([]byte(p), &test); err != nil {
 			return fmt.Sprintf("Error: invalid parameters JSON: %v", err)
 		}
 		params = &p
 	}
-	if c, ok := args["code"].(string); ok {
+	if c := argStr(args, "code"); c != "" {
 		code = &c
 	}
-	if e, ok := args["enabled"].(bool); ok {
+	if _, ok := args["enabled"].(bool); ok {
+		e := argBool(args, "enabled", true)
 		enabled = &e
 	}
 
@@ -721,7 +710,7 @@ func toolListSkills() string {
 }
 
 func toolDeleteSkill(args map[string]interface{}) string {
-	name, _ := args["name"].(string)
+	name := argStr(args, "name")
 	if name == "" {
 		return "Error: name is required."
 	}
@@ -735,7 +724,7 @@ func toolDeleteSkill(args map[string]interface{}) string {
 }
 
 func toolTestSkill(ctx context.Context, args map[string]interface{}) string {
-	name, _ := args["name"].(string)
+	name := argStr(args, "name")
 	if name == "" {
 		return "Error: name is required."
 	}

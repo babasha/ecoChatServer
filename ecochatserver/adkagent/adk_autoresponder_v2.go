@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/egor/ecochatserver/agentbus"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/director"
 	"github.com/egor/ecochatserver/llm"
@@ -50,6 +51,9 @@ type ADKAutoResponderV2 struct {
 
 	// Level 2: Director agent (strategic analysis + directives)
 	director *director.Director
+
+	// Inter-agent communication bus (Director ↔ L1)
+	agentBus *agentbus.AgentBus
 }
 
 // initDirector creates the Director (Level 2) agent.
@@ -70,6 +74,7 @@ func initDirector() *director.Director {
 func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
 	zefirClient := NewZefirClient()
 
+	dir := initDirector()
 	ar := &ADKAutoResponderV2{
 		zefirClient:   zefirClient,
 		config:        cfg,
@@ -79,7 +84,11 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 		useMultiAgent: false,
 		useSupervisor: false,
 		summarizer:    NewChatSummarizer(),
-		director:      initDirector(),
+		director:      dir,
+	}
+
+	if dir != nil {
+		ar.agentBus = agentbus.New(dir.Provider())
 	}
 
 	log.Printf("[ADK_V2] Initialized Zefir auto-responder (single-agent mode, TTL=%v)", agentTTL)
@@ -90,6 +99,7 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderConfig) (*ADKAutoResponderV2, error) {
 	zefirClient := NewZefirClient()
 
+	dir := initDirector()
 	ar := &ADKAutoResponderV2{
 		zefirClient:   zefirClient,
 		config:        cfg,
@@ -99,7 +109,11 @@ func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderC
 		useMultiAgent: true,
 		useSupervisor: false,
 		summarizer:    NewChatSummarizer(),
-		director:      initDirector(),
+		director:      dir,
+	}
+
+	if dir != nil {
+		ar.agentBus = agentbus.New(dir.Provider())
 	}
 
 	log.Printf("[ADK_V2] Initialized Zefir auto-responder (MULTI-AGENT mode, TTL=%v)", agentTTL)
@@ -386,6 +400,11 @@ func (ar *ADKAutoResponderV2) getMode() string {
 
 // processWithMultiAgent processes through multi-agent system
 func (ar *ADKAutoResponderV2) processWithMultiAgent(ctx context.Context, chatKey, userMessage, zefirUserID, clientLang string) (*AgentResult, error) {
+	if ar.agentBus != nil {
+		ar.agentBus.RegisterSession(chatKey, "orchestrator")
+		defer ar.agentBus.UnregisterSession(chatKey)
+	}
+
 	orchestrator, err := ar.getOrCreateOrchestrator(ctx, chatKey, zefirUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create orchestrator: %w", err)
@@ -397,6 +416,11 @@ func (ar *ADKAutoResponderV2) processWithMultiAgent(ctx context.Context, chatKey
 
 // processWithSingleAgent processes through single agent
 func (ar *ADKAutoResponderV2) processWithSingleAgent(ctx context.Context, chatKey, userMessage, zefirUserID, clientLang string) (*AgentResult, error) {
+	if ar.agentBus != nil {
+		ar.agentBus.RegisterSession(chatKey, "zefir_support")
+		defer ar.agentBus.UnregisterSession(chatKey)
+	}
+
 	agnt, err := ar.getOrCreateAgent(ctx, chatKey)
 	if err != nil {
 		return nil, err
@@ -465,7 +489,7 @@ func (ar *ADKAutoResponderV2) ClearEscalation(chatID string) {
 // getOrCreateAgent creates or returns cached agent for specific chatID
 func (ar *ADKAutoResponderV2) getOrCreateAgent(ctx context.Context, chatID string) (*SupportAgent, error) {
 	agnt, err := ar.agents.getOrCreate(chatID, func() (*SupportAgent, error) {
-		return NewSupportAgent(ctx, ar.zefirClient)
+		return NewSupportAgent(ctx, ar.zefirClient, ar.agentBus)
 	})
 	if err != nil {
 		return nil, err
@@ -506,6 +530,11 @@ func (ar *ADKAutoResponderV2) GetAgentCacheStats() (total int, chatIDs []string)
 // GetDirector returns the Director agent (Level 2) for external use (API handlers, cron)
 func (ar *ADKAutoResponderV2) GetDirector() *director.Director {
 	return ar.director
+}
+
+// GetAgentBus returns the inter-agent communication bus.
+func (ar *ADKAutoResponderV2) GetAgentBus() *agentbus.AgentBus {
+	return ar.agentBus
 }
 
 // TriggerDirectorAnalysis manually triggers a daily director analysis
