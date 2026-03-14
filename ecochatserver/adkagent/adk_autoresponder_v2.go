@@ -215,9 +215,9 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		}
 	}
 
-	// 2. Conversation context from DB (session pruning)
+	// 2. Conversation context from DB (session pruning + FTS search)
 	if ar.summarizer != nil {
-		ctxStr, ctxErr := ar.summarizer.BuildContext(ctx, chat.ID)
+		ctxStr, ctxErr := ar.summarizer.BuildContextWithQuery(ctx, chat.ID, msg.Content)
 		if ctxErr != nil {
 			log.Printf("[ADK_V2] Warning: failed to build context: %v", ctxErr)
 		} else if ctxStr != "" {

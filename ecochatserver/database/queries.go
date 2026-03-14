@@ -216,6 +216,26 @@ func GetMessagesForSummary(chatID uuid.UUID, since time.Time, limit int) ([]mode
 }
 
 // ============================================================================
+// Chat Summary FTS + Vector Search
+// ============================================================================
+
+func SearchChatSummariesByText(query string, chatID *uuid.UUID, limit int) ([]models.ChatSummary, error) {
+	return queries.SearchChatSummariesByText(DB, query, chatID, limit)
+}
+
+func SearchChatSummariesAcrossChats(query string, excludeChatID uuid.UUID, limit int) ([]models.ChatSummary, error) {
+	return queries.SearchChatSummariesAcrossChats(DB, query, excludeChatID, limit)
+}
+
+func GetChatSummariesWithEmbeddings(chatID *uuid.UUID, limit int) ([]queries.ChatSummaryWithEmbedding, error) {
+	return queries.GetChatSummariesWithEmbeddings(DB, chatID, limit)
+}
+
+func UpdateChatSummaryEmbedding(id uuid.UUID, embedding []float64) error {
+	return queries.UpdateChatSummaryEmbedding(DB, id, embedding)
+}
+
+// ============================================================================
 // Deep Search & Timeline (unified search + historical browsing)
 // ============================================================================
 

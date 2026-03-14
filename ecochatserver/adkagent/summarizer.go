@@ -29,6 +29,12 @@ func NewChatSummarizer() *ChatSummarizer {
 	threshold := database.GetSettingInt("SUMMARIZER_THRESHOLD", defaultSummaryThreshold)
 	maxCtx := database.GetSettingInt("SUMMARIZER_MAX_CONTEXT_MESSAGES", defaultMaxContextMessages)
 
+	if llm.GetEmbeddingClient() != nil {
+		log.Printf("[SUMMARIZER] Embedding client available — hybrid search enabled")
+	} else {
+		log.Printf("[SUMMARIZER] Embedding client unavailable — FTS-only mode")
+	}
+
 	log.Printf("[SUMMARIZER] Initialized: threshold=%d, maxContextMessages=%d", threshold, maxCtx)
 
 	return &ChatSummarizer{
@@ -107,7 +113,7 @@ func (s *ChatSummarizer) Summarize(ctx context.Context, chatID uuid.UUID) error 
 	messagesFrom := messages[0].Timestamp
 	messagesTo := messages[len(messages)-1].Timestamp
 
-	_, err = database.InsertChatSummary(chatID, summaryText, messagesFrom, messagesTo, len(messages))
+	summary, err := database.InsertChatSummary(chatID, summaryText, messagesFrom, messagesTo, len(messages))
 	if err != nil {
 		return fmt.Errorf("insert summary: %w", err)
 	}
@@ -118,12 +124,39 @@ func (s *ChatSummarizer) Summarize(ctx context.Context, chatID uuid.UUID) error 
 	// Extract metadata from summary and save to Director memory (async)
 	go extractAndSaveMetadata(chatID, summaryText)
 
+	// Generate embedding async (non-blocking)
+	go func() {
+		embClient := llm.GetEmbeddingClient()
+		if embClient == nil {
+			return
+		}
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		embedding, err := embClient.Embed(bgCtx, summaryText)
+		if err != nil {
+			log.Printf("[SUMMARIZER] Failed to generate embedding (non-critical): %v", err)
+			return
+		}
+		if err := database.UpdateChatSummaryEmbedding(summary.ID, embedding); err != nil {
+			log.Printf("[SUMMARIZER] Failed to save embedding (non-critical): %v", err)
+			return
+		}
+		log.Printf("[SUMMARIZER] Embedding saved for summary %s (%d dims)", summary.ID, len(embedding))
+	}()
+
 	return nil
 }
 
 // BuildContext assembles conversation context for the agent:
-// [last summary] + [recent messages after it]
+// [relevant past summaries via FTS] + [last summary] + [recent messages after it]
 func (s *ChatSummarizer) BuildContext(ctx context.Context, chatID uuid.UUID) (string, error) {
+	return s.BuildContextWithQuery(ctx, chatID, "")
+}
+
+// BuildContextWithQuery assembles conversation context with FTS-enhanced retrieval.
+// When userMessage is non-empty, it searches for relevant past summaries matching the topic.
+func (s *ChatSummarizer) BuildContextWithQuery(ctx context.Context, chatID uuid.UUID, userMessage string) (string, error) {
 	latest, err := database.GetLatestChatSummary(chatID)
 	if err != nil {
 		return "", fmt.Errorf("get latest summary: %w", err)
@@ -131,8 +164,61 @@ func (s *ChatSummarizer) BuildContext(ctx context.Context, chatID uuid.UUID) (st
 
 	var parts []string
 
+	// Hybrid search: FTS + Vector (when embedding service is available)
+	if userMessage != "" && len(userMessage) > 5 {
+		// Generate query embedding (async-safe, cached)
+		var queryEmbedding []float64
+		embClient := llm.GetEmbeddingClient()
+		if embClient != nil {
+			emb, err := embClient.Embed(ctx, userMessage)
+			if err != nil {
+				log.Printf("[SUMMARIZER] Query embedding failed (falling back to FTS-only): %v", err)
+			} else {
+				queryEmbedding = emb
+			}
+		}
+
+		// 1. Search relevant past summaries from THIS chat
+		relevantSummaries := s.hybridSearchSummaries(ctx, userMessage, queryEmbedding, &chatID, 3)
+		if len(relevantSummaries) > 0 {
+			var filtered []models.ChatSummary
+			for _, rs := range relevantSummaries {
+				if latest == nil || rs.ID != latest.ID {
+					filtered = append(filtered, rs)
+				}
+			}
+			if len(filtered) > 0 {
+				parts = append(parts, "Relevant past context from this conversation:")
+				for _, rs := range filtered {
+					parts = append(parts, fmt.Sprintf("- [%s] %s", rs.CreatedAt.Format("2006-01-02"), rs.Summary))
+				}
+			}
+		}
+
+		// 2. Search across OTHER chats for similar topics
+		crossSummaries, err := database.SearchChatSummariesAcrossChats(userMessage, chatID, 2)
+		if err != nil {
+			log.Printf("[SUMMARIZER] Cross-chat FTS search failed (non-critical): %v", err)
+		} else if len(crossSummaries) > 0 {
+			parts = append(parts, "Similar topics from other conversations:")
+			for _, cs := range crossSummaries {
+				parts = append(parts, fmt.Sprintf("- %s", truncate(cs.Summary, 200)))
+			}
+		}
+
+		// 3. Hybrid search director memories (uses built-in FTS + vector + MMR)
+		dirMemories := s.hybridSearchMemories(userMessage, nil, 3)
+		if len(dirMemories) > 0 {
+			parts = append(parts, "Relevant knowledge from memory:")
+			for _, mem := range dirMemories {
+				parts = append(parts, fmt.Sprintf("- [%s] %s", mem.Category, mem.Content))
+			}
+		}
+	}
+
+	// 4. Current conversation context (original logic)
 	if latest != nil {
-		parts = append(parts, fmt.Sprintf("Previous conversation summary: %s", latest.Summary))
+		parts = append(parts, fmt.Sprintf("Current conversation summary: %s", latest.Summary))
 
 		// Get messages after the summary
 		messages, err := database.GetMessagesSince(chatID, latest.MessagesTo, s.maxContextMessages)
@@ -143,16 +229,7 @@ func (s *ChatSummarizer) BuildContext(ctx context.Context, chatID uuid.UUID) (st
 		if len(messages) > 0 {
 			parts = append(parts, "Recent messages:")
 			for _, m := range messages {
-				role := "User"
-				if m.Sender == "admin" {
-					role = "Assistant"
-				}
-				// Truncate long messages in context
-				content := m.Content
-				if len(content) > 300 {
-					content = content[:300] + "..."
-				}
-				parts = append(parts, fmt.Sprintf("- %s: %s", role, content))
+				parts = append(parts, fmt.Sprintf("- %s: %s", messageRole(m), truncate(m.Content, 300)))
 			}
 		}
 	} else {
@@ -164,26 +241,20 @@ func (s *ChatSummarizer) BuildContext(ctx context.Context, chatID uuid.UUID) (st
 
 		// Need at least 2 messages for context to be useful (previous exchange)
 		if len(messages) < 2 {
-			return "", nil
+			if len(parts) == 0 {
+				return "", nil
+			}
+			// We have FTS results even without conversation history
+			return "[CONVERSATION CONTEXT]\n" + strings.Join(parts, "\n") + "\n[END CONTEXT]", nil
 		}
 
 		// Exclude the last message (it's the current one being processed)
 		messages = messages[:len(messages)-1]
-		if len(messages) == 0 {
-			return "", nil
-		}
-
-		parts = append(parts, "Recent messages:")
-		for _, m := range messages {
-			role := "User"
-			if m.Sender == "admin" {
-				role = "Assistant"
+		if len(messages) > 0 {
+			parts = append(parts, "Recent messages:")
+			for _, m := range messages {
+				parts = append(parts, fmt.Sprintf("- %s: %s", messageRole(m), truncate(m.Content, 300)))
 			}
-			content := m.Content
-			if len(content) > 300 {
-				content = content[:300] + "..."
-			}
-			parts = append(parts, fmt.Sprintf("- %s: %s", role, content))
 		}
 	}
 
@@ -193,6 +264,14 @@ func (s *ChatSummarizer) BuildContext(ctx context.Context, chatID uuid.UUID) (st
 
 	return "[CONVERSATION CONTEXT]\n" + strings.Join(parts, "\n") + "\n[END CONTEXT]", nil
 }
+
+func messageRole(m models.Message) string {
+	if m.Sender == "admin" {
+		return "Assistant"
+	}
+	return "User"
+}
+
 
 // formatMessagesForSummary formats messages for the summarization prompt
 func formatMessagesForSummary(messages []models.Message) string {
@@ -205,6 +284,93 @@ func formatMessagesForSummary(messages []models.Message) string {
 		sb.WriteString(fmt.Sprintf("[%s]: %s\n", role, m.Content))
 	}
 	return sb.String()
+}
+
+// hybridSearchSummaries combines FTS + vector search for chat summaries.
+// Returns best matches by combining text relevance and semantic similarity.
+func (s *ChatSummarizer) hybridSearchSummaries(ctx context.Context, query string, queryEmbedding []float64, chatID *uuid.UUID, limit int) []models.ChatSummary {
+	// FTS search
+	ftsSummaries, err := database.SearchChatSummariesByText(query, chatID, limit*2)
+	if err != nil {
+		log.Printf("[SUMMARIZER] FTS search failed: %v", err)
+	}
+
+	// If no embeddings available, return FTS results
+	if queryEmbedding == nil || len(ftsSummaries) == 0 {
+		if len(ftsSummaries) > limit {
+			return ftsSummaries[:limit]
+		}
+		return ftsSummaries
+	}
+
+	// Vector search: get summaries with embeddings and compute similarity
+	embSummaries, err := database.GetChatSummariesWithEmbeddings(chatID, 50)
+	if err != nil || len(embSummaries) == 0 {
+		if len(ftsSummaries) > limit {
+			return ftsSummaries[:limit]
+		}
+		return ftsSummaries
+	}
+
+	// Build score map: combine FTS rank + vector similarity
+	type scored struct {
+		summary models.ChatSummary
+		score   float64
+	}
+
+	scoreMap := make(map[uuid.UUID]*scored)
+
+	// Add FTS results with normalized scores
+	for i, s := range ftsSummaries {
+		ftsScore := 1.0 - float64(i)*0.1 // position-based score
+		if ftsScore < 0.1 {
+			ftsScore = 0.1
+		}
+		scoreMap[s.ID] = &scored{summary: s, score: 0.4 * ftsScore}
+	}
+
+	// Add vector similarity scores
+	for _, es := range embSummaries {
+		sim := llm.CosineSimilarity(queryEmbedding, es.Embedding)
+		if sim < 0.3 { // threshold: ignore low similarity
+			continue
+		}
+		if existing, ok := scoreMap[es.ID]; ok {
+			existing.score += 0.6 * sim // hybrid: 40% FTS + 60% vector
+		} else {
+			scoreMap[es.ID] = &scored{summary: es.ChatSummary, score: 0.6 * sim}
+		}
+	}
+
+	// Sort by combined score
+	results := make([]scored, 0, len(scoreMap))
+	for _, s := range scoreMap {
+		results = append(results, *s)
+	}
+	// Simple sort (small slice)
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].score > results[i].score {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+
+	out := make([]models.ChatSummary, 0, limit)
+	for i := 0; i < len(results) && i < limit; i++ {
+		out = append(out, results[i].summary)
+	}
+	return out
+}
+
+// hybridSearchMemories uses the director's built-in hybrid FTS + vector search with MMR.
+func (s *ChatSummarizer) hybridSearchMemories(query string, queryEmbedding []float64, limit int) []models.DirectorMemory {
+	memories, err := database.RecallMemoriesHybrid(query, "", limit)
+	if err != nil {
+		log.Printf("[SUMMARIZER] Hybrid memory search failed: %v", err)
+		return nil
+	}
+	return memories
 }
 
 // generateSummary calls the LLM to produce a conversation summary with structured metadata.
