@@ -393,6 +393,8 @@ func schemaToMap(schema *genai.Schema) map[string]interface{} {
 // ============================================================================
 
 // convertResponseToADK converts llm.Response back to ADK's model.LLMResponse.
+// If the model outputs a tool call as text (e.g. "CALL_TOOL: search_faq {...}"),
+// it's parsed back into a structured FunctionCall for the ADK runner.
 func convertResponseToADK(resp *llm.Response) *model.LLMResponse {
 	llmResp := &model.LLMResponse{
 		TurnComplete: true,
@@ -420,7 +422,7 @@ func convertResponseToADK(resp *llm.Response) *model.LLMResponse {
 	// Build content parts
 	var parts []*genai.Part
 
-	// Function call response
+	// Function call response (structured)
 	if resp.FunctionCall != nil {
 		parts = append(parts, &genai.Part{
 			FunctionCall: &genai.FunctionCall{
@@ -431,11 +433,19 @@ func convertResponseToADK(resp *llm.Response) *model.LLMResponse {
 		llmResp.FinishReason = genai.FinishReasonStop
 	}
 
-	// Text response
-	if resp.Text != "" {
-		parts = append(parts, &genai.Part{
-			Text: resp.Text,
-		})
+	// Text response — check if it's a text-encoded tool call
+	// Models output "CALL_TOOL: name {args}" when tools aren't available in ContinueWithFunctionResult
+	if resp.Text != "" && resp.FunctionCall == nil {
+		if fc := parseTextToolCall(resp.Text); fc != nil {
+			log.Printf("[PROVIDER_ADAPTER] Parsed text tool call: %s", fc.Name)
+			parts = append(parts, &genai.Part{
+				FunctionCall: fc,
+			})
+		} else {
+			parts = append(parts, &genai.Part{
+				Text: resp.Text,
+			})
+		}
 	}
 
 	if len(parts) > 0 {
@@ -446,6 +456,92 @@ func convertResponseToADK(resp *llm.Response) *model.LLMResponse {
 	}
 
 	return llmResp
+}
+
+// ============================================================================
+// Text tool call parser — fallback for models that output tool calls as text
+// ============================================================================
+
+// parseTextToolCall attempts to parse text like "CALL_TOOL: name {args}" or
+// "[tool_call: name(args)]" into a structured genai.FunctionCall.
+// Returns nil if text doesn't match any known pattern.
+func parseTextToolCall(text string) *genai.FunctionCall {
+	text = strings.TrimSpace(text)
+
+	// Pattern 1: "CALL_TOOL: tool_name {json_args}" or "CALL_TOOL: tool_name json_args"
+	if strings.HasPrefix(text, "CALL_TOOL:") {
+		rest := strings.TrimSpace(strings.TrimPrefix(text, "CALL_TOOL:"))
+		return parseToolNameAndArgs(rest)
+	}
+
+	// Pattern 2: "[tool_call: name({args})]" (our own format from history conversion)
+	if strings.HasPrefix(text, "[tool_call:") && strings.HasSuffix(text, "]") {
+		inner := text[len("[tool_call:"):]
+		inner = strings.TrimSuffix(inner, "]")
+		inner = strings.TrimSpace(inner)
+		// Find opening paren for args
+		if idx := strings.Index(inner, "("); idx > 0 {
+			name := strings.TrimSpace(inner[:idx])
+			argsStr := strings.TrimSuffix(strings.TrimSpace(inner[idx+1:]), ")")
+			return buildFunctionCall(name, argsStr)
+		}
+	}
+
+	return nil
+}
+
+// parseToolNameAndArgs splits "tool_name {json}" or "tool_name json" into name and args.
+func parseToolNameAndArgs(s string) *genai.FunctionCall {
+	// Find first space or { to split name from args
+	nameEnd := -1
+	for i, c := range s {
+		if c == ' ' || c == '{' {
+			nameEnd = i
+			break
+		}
+	}
+
+	if nameEnd <= 0 {
+		// No args, just a tool name
+		name := strings.TrimSpace(s)
+		if name != "" && isValidToolName(name) {
+			return &genai.FunctionCall{Name: name, Args: map[string]any{}}
+		}
+		return nil
+	}
+
+	name := strings.TrimSpace(s[:nameEnd])
+	if !isValidToolName(name) {
+		return nil
+	}
+
+	argsStr := strings.TrimSpace(s[nameEnd:])
+	return buildFunctionCall(name, argsStr)
+}
+
+// buildFunctionCall creates a FunctionCall from name and JSON args string.
+func buildFunctionCall(name, argsStr string) *genai.FunctionCall {
+	args := map[string]any{}
+	if argsStr != "" && argsStr != "{}" {
+		if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+			// If JSON parsing fails, try wrapping the args
+			log.Printf("[PROVIDER_ADAPTER] Failed to parse tool args JSON: %v (raw: %s)", err, argsStr)
+		}
+	}
+	return &genai.FunctionCall{Name: name, Args: args}
+}
+
+// isValidToolName checks if a string looks like a valid tool/function name.
+func isValidToolName(name string) bool {
+	if len(name) == 0 || len(name) > 64 {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // ============================================================================

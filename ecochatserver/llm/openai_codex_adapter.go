@@ -299,9 +299,12 @@ func (a *OpenAICodexAdapter) doRequest(
 		}
 	}
 
-	// System prompt -> instructions
+	// System prompt -> instructions (required by Codex API)
 	if opts != nil && opts.SystemPrompt != "" {
 		body.Instructions = opts.SystemPrompt
+	}
+	if body.Instructions == "" {
+		body.Instructions = "You are a helpful assistant."
 	}
 
 	// Temperature (не поддерживается reasoning моделями gpt-5.x, o-series, codex)
