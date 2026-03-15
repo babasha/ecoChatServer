@@ -40,6 +40,10 @@ func (pa *ProviderAdapter) Name() string {
 
 // GenerateContent implements model.LLM. It converts ADK request format to llm.Provider
 // format, calls the provider, and converts the response back.
+//
+// Handles two modes:
+// 1. Normal: user message → GenerateWithTools()
+// 2. Tool continuation: history ends with FunctionCall+FunctionResponse → ContinueWithFunctionResult()
 func (pa *ProviderAdapter) GenerateContent(
 	ctx context.Context,
 	req *model.LLMRequest,
@@ -52,13 +56,7 @@ func (pa *ProviderAdapter) GenerateContent(
 			systemPrompt = extractText(req.Config.SystemInstruction)
 		}
 
-		// 2. Convert genai.Content history → llm.Message history + extract last user message
-		history, lastUserMsg := convertContentsToMessages(req.Contents)
-
-		// 3. Convert tools
-		tools := convertToolsFromADK(req.Tools)
-
-		// 4. Build generation options
+		// 2. Build generation options
 		opts := &llm.GenerateOptions{
 			SystemPrompt: systemPrompt,
 		}
@@ -71,14 +69,30 @@ func (pa *ProviderAdapter) GenerateContent(
 			}
 		}
 
-		// 5. Call llm.Provider
+		// 3. Convert tools
+		tools := convertToolsFromADK(req.Tools)
+
+		// 4. Check if this is a tool continuation (history ends with FunctionCall → FunctionResponse)
+		funcCall, funcResult, contHistory := extractToolContinuation(req.Contents)
+
 		var resp *llm.Response
 		var err error
 
-		if len(tools) > 0 {
-			resp, err = pa.provider.GenerateWithTools(ctx, lastUserMsg, history, tools, opts)
+		if funcCall != nil && funcResult != "" {
+			// Tool continuation mode: use ContinueWithFunctionResult
+			// This properly formats the function result for APIs like Codex Responses API
+			log.Printf("[PROVIDER_ADAPTER] ContinueWithFunctionResult: tool=%s, result=%d chars",
+				funcCall.Name, len(funcResult))
+			resp, err = pa.provider.ContinueWithFunctionResult(ctx, contHistory, funcCall, funcResult, opts)
 		} else {
-			resp, err = pa.provider.GenerateResponse(ctx, lastUserMsg, history, opts)
+			// Normal mode: extract last user message and call GenerateWithTools
+			history, lastUserMsg := convertContentsToMessages(req.Contents)
+
+			if len(tools) > 0 {
+				resp, err = pa.provider.GenerateWithTools(ctx, lastUserMsg, history, tools, opts)
+			} else {
+				resp, err = pa.provider.GenerateResponse(ctx, lastUserMsg, history, opts)
+			}
 		}
 
 		if err != nil {
@@ -86,10 +100,102 @@ func (pa *ProviderAdapter) GenerateContent(
 			return
 		}
 
-		// 6. Convert llm.Response → model.LLMResponse
+		// 5. Convert llm.Response → model.LLMResponse
 		llmResp := convertResponseToADK(resp)
 		yield(llmResp, nil)
 	}
+}
+
+// ============================================================================
+// Tool continuation detection
+// ============================================================================
+
+// extractToolContinuation checks if the conversation ends with a tool call → tool result pattern.
+// If so, returns the function call, its result, and the history up to (but not including) the call.
+// This is critical for APIs like Codex Responses API that need structured function_call_output.
+func extractToolContinuation(contents []*genai.Content) (funcCall *llm.FunctionCall, funcResult string, history []llm.Message) {
+	if len(contents) < 2 {
+		return nil, "", nil
+	}
+
+	// Find the last FunctionResponse in the conversation
+	var lastFuncRespIdx int = -1
+	var lastFuncCallIdx int = -1
+	var foundFuncResp *genai.FunctionResponse
+	var foundFuncCall *genai.FunctionCall
+
+	for i := len(contents) - 1; i >= 0; i-- {
+		if contents[i] == nil {
+			continue
+		}
+		for _, part := range contents[i].Parts {
+			if part == nil {
+				continue
+			}
+			if part.FunctionResponse != nil && lastFuncRespIdx == -1 {
+				lastFuncRespIdx = i
+				foundFuncResp = part.FunctionResponse
+			}
+			if part.FunctionCall != nil && lastFuncCallIdx == -1 && lastFuncRespIdx != -1 {
+				lastFuncCallIdx = i
+				foundFuncCall = part.FunctionCall
+			}
+		}
+		if foundFuncCall != nil && foundFuncResp != nil {
+			break
+		}
+	}
+
+	// Must have both a function call and its response, and the response must be after the call
+	if foundFuncCall == nil || foundFuncResp == nil || lastFuncRespIdx <= lastFuncCallIdx {
+		return nil, "", nil
+	}
+
+	// The response must be at the very end of the conversation (last or second-to-last content)
+	if lastFuncRespIdx < len(contents)-2 {
+		return nil, "", nil
+	}
+
+	// Build the function call
+	fc := &llm.FunctionCall{
+		Name:      foundFuncCall.Name,
+		Arguments: foundFuncCall.Args,
+	}
+
+	// Build the function result as JSON string
+	resultJSON, _ := json.Marshal(foundFuncResp.Response)
+	result := string(resultJSON)
+
+	// Build history from all contents BEFORE the function call
+	// (convert to llm.Message format, excluding the trailing call+response)
+	for i := 0; i < lastFuncCallIdx; i++ {
+		if contents[i] == nil {
+			continue
+		}
+		role := mapGenaiRole(contents[i].Role)
+		for _, part := range contents[i].Parts {
+			if part == nil {
+				continue
+			}
+			if part.Text != "" {
+				history = append(history, llm.Message{Role: role, Content: part.Text})
+			}
+			// Include earlier tool calls/responses as regular messages
+			if part.FunctionCall != nil {
+				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+				history = append(history, llm.Message{
+					Role:    "assistant",
+					Content: fmt.Sprintf("[tool_call: %s(%s)]", part.FunctionCall.Name, string(argsJSON)),
+				})
+			}
+			if part.FunctionResponse != nil {
+				respJSON, _ := json.Marshal(part.FunctionResponse.Response)
+				history = append(history, llm.Message{Role: "function", Content: string(respJSON)})
+			}
+		}
+	}
+
+	return fc, result, history
 }
 
 // ============================================================================
