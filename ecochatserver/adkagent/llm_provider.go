@@ -5,7 +5,6 @@ import (
 	"iter"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"google.golang.org/adk/model"
@@ -14,16 +13,24 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/llm"
 )
 
 // LLMProviderType определяет тип LLM провайдера
 type LLMProviderType string
 
 const (
-	ProviderGemini   LLMProviderType = "gemini"
-	ProviderOpenAI   LLMProviderType = "openai"
-	ProviderLMStudio LLMProviderType = "lmstudio"
-	ProviderMock     LLMProviderType = "mock"
+	ProviderGemini      LLMProviderType = "gemini"
+	ProviderOpenAI      LLMProviderType = "openai"
+	ProviderLMStudio    LLMProviderType = "lmstudio"
+	ProviderMock        LLMProviderType = "mock"
+
+	// Providers available via ProviderAdapter (llm.Provider → ADK model.LLM)
+	ProviderClaude      LLMProviderType = "claude"
+	ProviderClaudeOAuth LLMProviderType = "claude-oauth"
+	ProviderGeminiOAuth LLMProviderType = "gemini-oauth"
+	ProviderOpenAIOAuth LLMProviderType = "openai-oauth"
+	ProviderOllamaADK   LLMProviderType = "ollama"
 )
 
 // LLMConfig содержит конфигурацию для LLM провайдера
@@ -117,18 +124,33 @@ func loadResponderConfig(providerType string) *LLMConfig {
 		config.Model = firstNonEmpty(responderModel, database.GetSetting("LMSTUDIO_MODEL", "local-model"))
 		log.Printf("[ADK_LLM] RESPONDER: LM Studio model=%s, baseURL=%s", config.Model, config.BaseURL)
 
-	case LLMProviderType("ollama"):
-		// Ollama через OpenAI-совместимый API
-		ollamaBase := firstNonEmpty(responderBaseURL, database.GetSetting("OLLAMA_BASE_URL", "http://localhost:11434"))
-		// Ollama OpenAI-compatible: нужен /v1 суффикс
-		if !strings.HasSuffix(ollamaBase, "/v1") {
-			ollamaBase = strings.TrimRight(ollamaBase, "/") + "/v1"
-		}
-		config.Provider = ProviderLMStudio // Используем LM Studio адаптер (OpenAI-совместимый)
-		config.BaseURL = ollamaBase
-		config.APIKey = "not-needed"
+	case ProviderOllamaADK:
+		// Ollama через ProviderAdapter (llm.Provider → ADK model.LLM)
+		config.Provider = ProviderOllamaADK
+		config.BaseURL = firstNonEmpty(responderBaseURL, database.GetSetting("OLLAMA_BASE_URL", "http://localhost:11434"))
 		config.Model = firstNonEmpty(responderModel, database.GetSetting("OLLAMA_MODEL", "llama3.1"))
-		log.Printf("[ADK_LLM] RESPONDER: Ollama model=%s, baseURL=%s", config.Model, config.BaseURL)
+		log.Printf("[ADK_LLM] RESPONDER: Ollama (via adapter) model=%s, baseURL=%s", config.Model, config.BaseURL)
+
+	case ProviderClaude:
+		config.Provider = ProviderClaude
+		config.APIKey = firstNonEmpty(responderAPIKey, database.GetSetting("ANTHROPIC_API_KEY", ""))
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("CLAUDE_MODEL", "claude-sonnet-4-20250514"))
+		log.Printf("[ADK_LLM] RESPONDER: Claude (via adapter) model=%s", config.Model)
+
+	case ProviderClaudeOAuth:
+		config.Provider = ProviderClaudeOAuth
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("CLAUDE_OAUTH_MODEL", "claude-sonnet-4-20250514"))
+		log.Printf("[ADK_LLM] RESPONDER: Claude OAuth (via adapter) model=%s", config.Model)
+
+	case ProviderGeminiOAuth:
+		config.Provider = ProviderGeminiOAuth
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("GEMINI_OAUTH_MODEL", "gemini-2.5-flash"))
+		log.Printf("[ADK_LLM] RESPONDER: Gemini OAuth (via adapter) model=%s", config.Model)
+
+	case ProviderOpenAIOAuth:
+		config.Provider = ProviderOpenAIOAuth
+		config.Model = firstNonEmpty(responderModel, database.GetSetting("OPENAI_OAUTH_MODEL", "gpt-5.2-codex"))
+		log.Printf("[ADK_LLM] RESPONDER: OpenAI OAuth (via adapter) model=%s", config.Model)
 
 	default:
 		log.Printf("[ADK_LLM] ⚠️ RESPONDER: Неизвестный провайдер %s, fallback на глобальный", providerType)
@@ -147,12 +169,16 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// NewLLMModel создаёт LLM модель для ADK на основе конфигурации
-// Поддерживает hot-swap через переменные окружения и БД
+// NewLLMModel создаёт LLM модель для ADK на основе конфигурации.
+// Поддерживает hot-swap через переменные окружения и БД.
+//
+// Native ADK models: Gemini, OpenAI, LM Studio (через ADK model.LLM напрямую)
+// Adapted models: Claude, Ollama, OAuth providers (через ProviderAdapter: llm.Provider → ADK model.LLM)
 func NewLLMModel(ctx context.Context) (model.LLM, error) {
 	config := LoadLLMConfig()
 
 	switch config.Provider {
+	// --- Native ADK models ---
 	case ProviderGemini:
 		return newGeminiModel(ctx, config)
 
@@ -162,6 +188,12 @@ func NewLLMModel(ctx context.Context) (model.LLM, error) {
 	case ProviderLMStudio:
 		return newLMStudioModel(ctx, config)
 
+	// --- Adapted models (via ProviderAdapter: llm.Provider → ADK model.LLM) ---
+	case ProviderClaude, ProviderClaudeOAuth,
+		ProviderGeminiOAuth, ProviderOpenAIOAuth,
+		ProviderOllamaADK:
+		return newAdaptedModel(config)
+
 	case ProviderMock:
 		log.Println("[ADK_LLM] Используем MockLLM для тестирования")
 		return &MockLLM{}, nil
@@ -169,6 +201,51 @@ func NewLLMModel(ctx context.Context) (model.LLM, error) {
 	default:
 		log.Printf("[ADK_LLM] ⚠️ Неподдерживаемый провайдер %s, fallback на Mock", config.Provider)
 		return &MockLLM{}, nil
+	}
+}
+
+// newAdaptedModel creates an ADK model.LLM by wrapping an llm.Provider via ProviderAdapter.
+// This enables the РОП to use Claude, Ollama, and OAuth-based providers.
+func newAdaptedModel(config *LLMConfig) (model.LLM, error) {
+	// Map adkagent LLMProviderType → llm.ProviderType
+	providerType := mapToLLMProviderType(config.Provider)
+
+	providerConfig := &llm.ProviderConfig{
+		Type:   providerType,
+		APIKey: config.APIKey,
+		Model:  config.Model,
+	}
+	if config.BaseURL != "" {
+		providerConfig.BaseURL = config.BaseURL
+	}
+
+	provider, err := llm.NewProvider(providerConfig)
+	if err != nil {
+		log.Printf("[ADK_LLM] ❌ Ошибка создания %s провайдера: %v, fallback на Mock", config.Provider, err)
+		return &MockLLM{}, nil
+	}
+
+	adapter := NewProviderAdapter(provider, config.Model)
+	log.Printf("[ADK_LLM] ✅ %s модель инициализирована через ProviderAdapter: %s",
+		config.Provider, config.Model)
+	return adapter, nil
+}
+
+// mapToLLMProviderType converts adkagent.LLMProviderType → llm.ProviderType.
+func mapToLLMProviderType(adkType LLMProviderType) llm.ProviderType {
+	switch adkType {
+	case ProviderClaude:
+		return llm.ProviderClaude
+	case ProviderClaudeOAuth:
+		return llm.ProviderClaudeOAuth
+	case ProviderGeminiOAuth:
+		return llm.ProviderGeminiOAuth
+	case ProviderOpenAIOAuth:
+		return llm.ProviderOpenAIOAuth
+	case ProviderOllamaADK:
+		return llm.ProviderOllama
+	default:
+		return llm.ProviderType(adkType)
 	}
 }
 
