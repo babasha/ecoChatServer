@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/egor/ecochatserver/database"
@@ -21,11 +22,23 @@ import (
 //
 // Использует chatgpt.com/backend-api/codex/responses (Responses API)
 // Аутентификация через OAuth Bearer token + chatgpt-account-id из JWT
+//
+// Supports:
+// - Structured function_call / function_call_output items (proper tool loop)
+// - Reasoning with effort + summary
+// - Text verbosity control
+// - Token refresh + retry with backoff
+// - SSE streaming
 
 // OpenAICodexAdapter реализует Provider для ChatGPT через Codex OAuth
 type OpenAICodexAdapter struct {
 	model   string
 	timeout time.Duration
+
+	// Tool state: stored between GenerateWithTools → ContinueWithFunctionResult
+	mu         sync.Mutex
+	lastTools  []Tool  // tools from last GenerateWithTools call
+	lastCallID string  // call_id from last function_call response
 }
 
 // NewOpenAICodexAdapter создаёт адаптер для ChatGPT Codex
@@ -48,18 +61,21 @@ func (a *OpenAICodexAdapter) GetName() string {
 // ============================================================================
 
 type codexRequestBody struct {
-	Model              string           `json:"model"`
-	Store              bool             `json:"store"`
-	Stream             bool             `json:"stream"`
-	Instructions       string           `json:"instructions,omitempty"`
-	Input              json.RawMessage  `json:"input"`
-	Tools              []codexTool      `json:"tools,omitempty"`
-	ToolChoice         string           `json:"tool_choice,omitempty"`
-	ParallelToolCalls  bool             `json:"parallel_tool_calls,omitempty"`
-	Temperature        *float64         `json:"temperature,omitempty"`
-	Text               *codexTextConfig `json:"text,omitempty"`
-	Include            []string         `json:"include,omitempty"`
-	Reasoning          *codexReasoning  `json:"reasoning,omitempty"`
+	Model             string           `json:"model"`
+	Store             bool             `json:"store"`
+	Stream            bool             `json:"stream"`
+	Instructions      string           `json:"instructions,omitempty"`
+	Input             json.RawMessage  `json:"input"`
+	Tools             []codexTool      `json:"tools,omitempty"`
+	ToolChoice        string           `json:"tool_choice,omitempty"`
+	ParallelToolCalls bool             `json:"parallel_tool_calls,omitempty"`
+	Temperature       *float64         `json:"temperature,omitempty"`
+	MaxOutputTokens   int              `json:"max_output_tokens,omitempty"`
+	Text              *codexTextConfig `json:"text,omitempty"`
+	Include           []string         `json:"include,omitempty"`
+	Reasoning         *codexReasoning  `json:"reasoning,omitempty"`
+	// PreviousResponseID enables multi-turn conversation continuity
+	PreviousResponseID string `json:"previous_response_id,omitempty"`
 }
 
 type codexReasoning struct {
@@ -79,11 +95,33 @@ type codexTool struct {
 	Parameters  map[string]interface{} `json:"parameters,omitempty"`
 }
 
-// Responses API input items
-type codexInputItem struct {
-	Type    string `json:"type"`
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+// codexInputItem — polymorphic Responses API input item.
+// Supports: message, function_call, function_call_output
+type codexInputItem map[string]interface{}
+
+func newMessageItem(role, content string) codexInputItem {
+	return codexInputItem{
+		"type":    "message",
+		"role":    role,
+		"content": content,
+	}
+}
+
+func newFunctionCallItem(callID, name, arguments string) codexInputItem {
+	return codexInputItem{
+		"type":      "function_call",
+		"call_id":   callID,
+		"name":      name,
+		"arguments": arguments,
+	}
+}
+
+func newFunctionCallOutputItem(callID, output string) codexInputItem {
+	return codexInputItem{
+		"type":    "function_call_output",
+		"call_id": callID,
+		"output":  output,
+	}
 }
 
 // SSE event from Codex Responses API
@@ -97,17 +135,17 @@ type codexSSEEvent struct {
 }
 
 type codexResponseObj struct {
-	ID      string               `json:"id"`
-	Status  string               `json:"status"`
-	Output  []codexOutputItem    `json:"output"`
-	Usage   *codexUsage          `json:"usage"`
-	Error   *codexError          `json:"error"`
+	ID     string            `json:"id"`
+	Status string            `json:"status"`
+	Output []codexOutputItem `json:"output"`
+	Usage  *codexUsage       `json:"usage"`
+	Error  *codexError       `json:"error"`
 }
 
 type codexOutputItem struct {
-	Type    string              `json:"type"`
-	ID      string              `json:"id"`
-	Content []codexContentPart  `json:"content,omitempty"`
+	Type    string             `json:"type"`
+	ID      string             `json:"id"`
+	Content []codexContentPart `json:"content,omitempty"`
 	// For function_call output type
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
@@ -145,23 +183,47 @@ func (a *OpenAICodexAdapter) getCredentials() (*OpenAIOAuthCredentials, error) {
 func (a *OpenAICodexAdapter) GenerateResponse(
 	ctx context.Context, userMessage string, chatHistory []Message, opts *GenerateOptions,
 ) (*Response, error) {
-	return a.doRequest(ctx, userMessage, chatHistory, nil, opts)
+	return a.doRequest(ctx, userMessage, chatHistory, nil, nil, opts)
 }
 
 func (a *OpenAICodexAdapter) GenerateWithTools(
 	ctx context.Context, userMessage string, chatHistory []Message, tools []Tool, opts *GenerateOptions,
 ) (*Response, error) {
-	return a.doRequest(ctx, userMessage, chatHistory, tools, opts)
+	// Store tools for subsequent ContinueWithFunctionResult calls
+	a.mu.Lock()
+	a.lastTools = tools
+	a.mu.Unlock()
+
+	return a.doRequest(ctx, userMessage, chatHistory, tools, nil, opts)
 }
 
+// ContinueWithFunctionResult sends the function result as a proper function_call_output
+// item (Responses API format), and re-includes tools so the model can make more calls.
 func (a *OpenAICodexAdapter) ContinueWithFunctionResult(
 	ctx context.Context, chatHistory []Message, functionCall *FunctionCall, result string, opts *GenerateOptions,
 ) (*Response, error) {
-	history := append(chatHistory, Message{
-		Role:    "function",
-		Content: fmt.Sprintf("Function %s result: %s", functionCall.Name, result),
-	})
-	return a.doRequest(ctx, "", history, nil, opts)
+	a.mu.Lock()
+	tools := a.lastTools
+	callID := a.lastCallID
+	a.mu.Unlock()
+
+	// Build function call + function_call_output input items
+	argsJSON, _ := json.Marshal(functionCall.Arguments)
+
+	// Use stored call_id, or generate a synthetic one
+	if callID == "" {
+		callID = "call_" + functionCall.Name
+	}
+
+	funcItems := []codexInputItem{
+		newFunctionCallItem(callID, functionCall.Name, string(argsJSON)),
+		newFunctionCallOutputItem(callID, result),
+	}
+
+	log.Printf("[CODEX] ContinueWithFunctionResult: tool=%s, callID=%s, result=%d chars, tools=%d",
+		functionCall.Name, callID, len(result), len(tools))
+
+	return a.doRequest(ctx, "", chatHistory, tools, funcItems, opts)
 }
 
 func (a *OpenAICodexAdapter) TranslateText(ctx context.Context, text, fromLang, toLang string) (string, error) {
@@ -229,15 +291,23 @@ Texts to translate:
 // Core Request Logic
 // ============================================================================
 
+// doRequest builds and sends a Responses API request.
+// funcItems are optional structured items (function_call + function_call_output)
+// appended after chat history for tool continuations.
 func (a *OpenAICodexAdapter) doRequest(
-	ctx context.Context, userMessage string, chatHistory []Message, tools []Tool, opts *GenerateOptions,
+	ctx context.Context,
+	userMessage string,
+	chatHistory []Message,
+	tools []Tool,
+	funcItems []codexInputItem,
+	opts *GenerateOptions,
 ) (*Response, error) {
 	creds, err := a.getCredentials()
 	if err != nil {
 		return nil, err
 	}
 
-	// Строим input (Responses API format)
+	// Build input items (Responses API format)
 	var inputItems []codexInputItem
 
 	for _, msg := range chatHistory {
@@ -246,21 +316,18 @@ func (a *OpenAICodexAdapter) doRequest(
 			continue // system -> instructions
 		}
 		if role == "function" {
-			role = "user" // function results as user messages
+			// Legacy format: convert to user message (fallback for non-tool-continuation)
+			role = "user"
 		}
-		inputItems = append(inputItems, codexInputItem{
-			Type:    "message",
-			Role:    role,
-			Content: msg.Content,
-		})
+		inputItems = append(inputItems, newMessageItem(role, msg.Content))
 	}
+
 	if userMessage != "" {
-		inputItems = append(inputItems, codexInputItem{
-			Type:    "message",
-			Role:    "user",
-			Content: userMessage,
-		})
+		inputItems = append(inputItems, newMessageItem("user", userMessage))
 	}
+
+	// Append structured function call/output items (for tool continuations)
+	inputItems = append(inputItems, funcItems...)
 
 	inputJSON, err := json.Marshal(inputItems)
 	if err != nil {
@@ -275,19 +342,24 @@ func (a *OpenAICodexAdapter) doRequest(
 		Include: []string{"reasoning.encrypted_content"},
 	}
 
-	// Text verbosity — gpt-5.2-codex поддерживает только "medium"
+	// Max output tokens
+	if opts != nil && opts.MaxTokens > 0 {
+		body.MaxOutputTokens = opts.MaxTokens
+	}
+
+	// Text verbosity
 	textVerbosity := database.GetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", "medium")
 	if !isReasoningModel(a.model) {
 		body.Text = &codexTextConfig{Verbosity: textVerbosity}
 	}
 
-	// Reasoning support — read from DB settings
+	// Reasoning support
 	reasoningEffort := database.GetSetting("OPENAI_OAUTH_REASONING_EFFORT", "")
 	reasoningSummary := database.GetSetting("OPENAI_OAUTH_REASONING_SUMMARY", "auto")
 	if reasoningEffort != "" || isReasoningModel(a.model) {
 		effort := reasoningEffort
 		if effort == "" {
-			effort = "medium" // default для reasoning models
+			effort = "medium"
 		}
 		summary := reasoningSummary
 		if summary == "" {
@@ -307,12 +379,12 @@ func (a *OpenAICodexAdapter) doRequest(
 		body.Instructions = "You are a helpful assistant."
 	}
 
-	// Temperature (не поддерживается reasoning моделями gpt-5.x, o-series, codex)
+	// Temperature (not supported by reasoning models)
 	if opts != nil && opts.Temperature > 0 && !isReasoningModel(a.model) {
 		body.Temperature = &opts.Temperature
 	}
 
-	// Tools (Responses API format: name/description/parameters at top level)
+	// Tools (Responses API format)
 	if len(tools) > 0 {
 		body.ToolChoice = "auto"
 		body.ParallelToolCalls = true
@@ -390,7 +462,6 @@ func (a *OpenAICodexAdapter) doRequest(
 		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500) && attempt < maxRetries {
 			log.Printf("[CODEX] %d error (attempt %d/%d): %s", resp.StatusCode, attempt+1, maxRetries+1, errMsg)
 
-			// Parse usage limit error for friendly message
 			if resp.StatusCode == http.StatusTooManyRequests {
 				if friendly := parseCodexUsageLimitError(respBody); friendly != "" {
 					return nil, fmt.Errorf("ChatGPT usage limit: %s", friendly)
@@ -459,6 +530,7 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 	var funcCall *FunctionCall
 	var funcCallArgs strings.Builder
 	var funcCallName string
+	var funcCallID string // call_id for function_call_output
 	var finishReason string
 	var usage *Usage
 
@@ -472,7 +544,7 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 		data := strings.TrimPrefix(line, "data:")
 		data = strings.TrimSpace(data)
 		if data == "" || data == "[DONE]" {
-			continue // Codex API may not send [DONE], just continue parsing till EOF
+			continue
 		}
 
 		var event map[string]interface{}
@@ -483,9 +555,10 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 
 		eventType, _ := event["type"].(string)
 
-		// Debug: log non-delta events to trace function calling
+		// Debug: log non-delta events
 		if eventType != "response.output_text.delta" &&
 			eventType != "response.function_call_arguments.delta" &&
+			eventType != "response.reasoning_summary_text.delta" &&
 			eventType != "" {
 			log.Printf("[CODEX_DEBUG] SSE event: %s", eventType)
 		}
@@ -499,22 +572,25 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 		case "response.function_call_arguments.delta":
 			if delta, ok := event["delta"].(string); ok {
 				funcCallArgs.WriteString(delta)
-				log.Printf("[CODEX_DEBUG] func_call args delta: %s", delta)
 			}
 
 		case "response.output_item.added":
-			// Function call started
 			if item, ok := event["item"].(map[string]interface{}); ok {
 				itemType, _ := item["type"].(string)
 				log.Printf("[CODEX_DEBUG] output_item.added: type=%s", itemType)
 				if itemType == "function_call" {
 					funcCallName, _ = item["name"].(string)
-					log.Printf("[CODEX_DEBUG] Function call started: %s", funcCallName)
+					// Capture call_id for function_call_output
+					if cid, ok := item["call_id"].(string); ok && cid != "" {
+						funcCallID = cid
+					} else if id, ok := item["id"].(string); ok && id != "" {
+						funcCallID = id
+					}
+					log.Printf("[CODEX_DEBUG] Function call started: %s (call_id=%s)", funcCallName, funcCallID)
 				}
 			}
 
 		case "response.output_item.done":
-			// Function call complete — parse accumulated args
 			if funcCallName != "" && funcCallArgs.Len() > 0 {
 				log.Printf("[CODEX_DEBUG] Function call done: %s args=%s", funcCallName, funcCallArgs.String())
 				var args map[string]interface{}
@@ -529,7 +605,6 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 			}
 
 		case "response.completed", "response.done":
-			// Final event with full response
 			if respRaw, ok := event["response"].(map[string]interface{}); ok {
 				// Extract usage
 				if usageRaw, ok := respRaw["usage"].(map[string]interface{}); ok {
@@ -557,7 +632,6 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 			}
 
 		case "error", "response.failed":
-			// Error event
 			errMsg := "unknown error"
 			if msg, ok := event["message"].(string); ok {
 				errMsg = msg
@@ -572,6 +646,13 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 		}
 	}
 
+	// Store call_id for subsequent ContinueWithFunctionResult
+	if funcCallID != "" {
+		a.mu.Lock()
+		a.lastCallID = funcCallID
+		a.mu.Unlock()
+	}
+
 	result := &Response{
 		Text:         strings.Join(textParts, ""),
 		FunctionCall: funcCall,
@@ -579,10 +660,10 @@ func (a *OpenAICodexAdapter) parseCodexSSEResponse(reader io.Reader, opts *Gener
 		Usage:        usage,
 	}
 
-	// Debug: log final parse result
+	// Debug log
 	if funcCall != nil {
-		log.Printf("[CODEX_DEBUG] Final result: text=%d chars, funcCall=%s, finish=%s",
-			len(result.Text), funcCall.Name, finishReason)
+		log.Printf("[CODEX_DEBUG] Final result: text=%d chars, funcCall=%s (callID=%s), finish=%s",
+			len(result.Text), funcCall.Name, funcCallID, finishReason)
 	} else {
 		textPreview := result.Text
 		if len(textPreview) > 200 {
