@@ -1137,6 +1137,177 @@ func toolGetWebhookStats() string {
 }
 
 // ============================================================================
+// Task management tools
+// ============================================================================
+
+func toolCreateTask(args map[string]interface{}) string {
+	title := argStr(args, "title")
+	if title == "" {
+		return "Error: title is required."
+	}
+	description := argStr(args, "description")
+	priority := argStr(args, "priority")
+	category := argStr(args, "category")
+	assignedTo := argStr(args, "assigned_to")
+	tags := argTags(args, "tags")
+
+	task, err := database.CreateTask(title, description, priority, category, "director", assignedTo, nil, tags)
+	if err != nil {
+		return fmt.Sprintf("Error creating task: %v", err)
+	}
+
+	log.Printf("[DIRECTOR_TASKS] Created: %s [%s/%s] — %s", task.ID, task.Priority, task.Category, task.Title)
+	return fmt.Sprintf("Task created: %s\nID: %s\nPriority: %s | Category: %s | Assigned: %s\nUse comment_task to add notes, update_task to change status.",
+		task.Title, task.ID, task.Priority, task.Category, task.AssignedTo)
+}
+
+func toolListTasks(args map[string]interface{}) string {
+	status := argStr(args, "status")
+	limit := argInt(args, "limit", 20)
+
+	tasks, err := database.GetTasks(status, limit)
+	if err != nil {
+		return fmt.Sprintf("Error listing tasks: %v", err)
+	}
+
+	if len(tasks) == 0 {
+		if status != "" {
+			return fmt.Sprintf("No tasks with status '%s'.", status)
+		}
+		return "No tasks found. Use create_task to add one."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Tasks (%d):\n\n", len(tasks)))
+	for i, t := range tasks {
+		statusIcon := map[string]string{"pending": "⏳", "in_progress": "🔄", "completed": "✅", "failed": "❌", "cancelled": "🚫"}
+		icon := statusIcon[t.Status]
+		if icon == "" {
+			icon = "📋"
+		}
+		sb.WriteString(fmt.Sprintf("%d. %s [%s] %s\n", i+1, icon, t.Priority, t.Title))
+		sb.WriteString(fmt.Sprintf("   ID: %s | Status: %s | By: %s | For: %s\n", t.ID, t.Status, t.CreatedBy, t.AssignedTo))
+		if t.Description != "" {
+			desc := t.Description
+			if len(desc) > 100 {
+				desc = desc[:100] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("   %s\n", desc))
+		}
+		if t.FailureReason != "" {
+			sb.WriteString(fmt.Sprintf("   Failure: %s\n", t.FailureReason))
+		}
+		sb.WriteString(fmt.Sprintf("   Created: %s\n\n", t.CreatedAt.Format("2006-01-02 15:04")))
+	}
+	return sb.String()
+}
+
+func toolUpdateTask(args map[string]interface{}) string {
+	taskIDStr := argStr(args, "task_id")
+	status := argStr(args, "status")
+	comment := argStr(args, "comment")
+	failureReason := argStr(args, "failure_reason")
+
+	if taskIDStr == "" || status == "" {
+		return "Error: task_id and status are required."
+	}
+
+	taskID, err := uuid.Parse(taskIDStr)
+	if err != nil {
+		return fmt.Sprintf("Error: invalid task_id: %v", err)
+	}
+
+	if status == "failed" && failureReason == "" {
+		return "Error: failure_reason is required when status=failed."
+	}
+
+	if err := database.UpdateTaskStatus(taskID, status, failureReason); err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	// Auto-add comment if provided
+	if comment != "" {
+		database.AddTaskComment(taskID, "director", fmt.Sprintf("[%s] %s", status, comment))
+	}
+
+	log.Printf("[DIRECTOR_TASKS] Updated %s → %s", taskIDStr[:8], status)
+	return fmt.Sprintf("Task %s updated to '%s'.%s", taskIDStr[:8], status, func() string {
+		if comment != "" {
+			return " Comment added."
+		}
+		return ""
+	}())
+}
+
+func toolCommentTask(args map[string]interface{}) string {
+	taskIDStr := argStr(args, "task_id")
+	comment := argStr(args, "comment")
+
+	if taskIDStr == "" || comment == "" {
+		return "Error: task_id and comment are required."
+	}
+
+	taskID, err := uuid.Parse(taskIDStr)
+	if err != nil {
+		return fmt.Sprintf("Error: invalid task_id: %v", err)
+	}
+
+	c, err := database.AddTaskComment(taskID, "director", comment)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return fmt.Sprintf("Comment added to task %s at %s.", taskIDStr[:8], c.CreatedAt.Format("15:04"))
+}
+
+func toolGetTask(args map[string]interface{}) string {
+	taskIDStr := argStr(args, "task_id")
+	if taskIDStr == "" {
+		return "Error: task_id is required."
+	}
+
+	taskID, err := uuid.Parse(taskIDStr)
+	if err != nil {
+		return fmt.Sprintf("Error: invalid task_id: %v", err)
+	}
+
+	task, err := database.GetTaskWithComments(taskID)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Task: %s\n", task.Title))
+	sb.WriteString(fmt.Sprintf("ID: %s\n", task.ID))
+	sb.WriteString(fmt.Sprintf("Status: %s | Priority: %s | Category: %s\n", task.Status, task.Priority, task.Category))
+	sb.WriteString(fmt.Sprintf("Created by: %s | Assigned to: %s\n", task.CreatedBy, task.AssignedTo))
+	sb.WriteString(fmt.Sprintf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04")))
+	if task.CompletedAt != nil {
+		sb.WriteString(fmt.Sprintf("Completed: %s\n", task.CompletedAt.Format("2006-01-02 15:04")))
+	}
+	if task.FailureReason != "" {
+		sb.WriteString(fmt.Sprintf("Failure reason: %s\n", task.FailureReason))
+	}
+	if task.Description != "" {
+		sb.WriteString(fmt.Sprintf("\nDescription:\n%s\n", task.Description))
+	}
+	if len(task.Tags) > 0 {
+		sb.WriteString(fmt.Sprintf("\nTags: %s\n", strings.Join(task.Tags, ", ")))
+	}
+
+	if len(task.Comments) > 0 {
+		sb.WriteString(fmt.Sprintf("\nComments (%d):\n", len(task.Comments)))
+		for _, c := range task.Comments {
+			sb.WriteString(fmt.Sprintf("  [%s] %s: %s\n", c.CreatedAt.Format("01-02 15:04"), c.Author, c.Content))
+		}
+	} else {
+		sb.WriteString("\nNo comments yet.\n")
+	}
+
+	return sb.String()
+}
+
+// ============================================================================
 // Save daily report tool
 // ============================================================================
 
@@ -1198,8 +1369,17 @@ func toolSaveDailyReport(args map[string]interface{}) string {
 		return fmt.Sprintf("Error saving report: %v", err)
 	}
 
+	// Count actual items (not byte lengths)
+	countItems := func(j []byte) int {
+		var arr []interface{}
+		if json.Unmarshal(j, &arr) == nil {
+			return len(arr)
+		}
+		return 0
+	}
+
 	log.Printf("[DIRECTOR_CHAT] Daily report saved: id=%s, type=%s, analysis=%d chars", id, reportType, len(analysis))
 	return fmt.Sprintf("Report saved successfully (id=%s, type=%s). Analysis: %d chars, complaints: %d, observations: %d, directives: %d.",
 		id.String()[:8], reportType, len(analysis),
-		len(complaintsJSON), len(observationsJSON), len(directivesJSON))
+		countItems(complaintsJSON), countItems(observationsJSON), countItems(directivesJSON))
 }

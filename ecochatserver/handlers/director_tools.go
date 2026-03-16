@@ -666,6 +666,120 @@ var directorTools = []llm.Tool{
 			"required": []string{"name"},
 		},
 	},
+	// ── Task management tools ───────────────────────────────────────────
+	{
+		Name:        "create_task",
+		Description: "Create a task for yourself or assign to someone. Use after analysis, agent review, or when you decide something needs to be done. Tasks persist across conversations and can be tracked, commented, completed or marked as failed.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"title": map[string]interface{}{
+					"type":        "string",
+					"description": "Short task title (e.g. 'Обновить промпт zefir_support', 'Создать FAQ по mesh')",
+				},
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "Detailed description: what needs to be done, why, expected outcome.",
+				},
+				"priority": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"high", "medium", "low"},
+					"description": "Task priority. Default: medium.",
+				},
+				"category": map[string]interface{}{
+					"type":        "string",
+					"description": "Category: prompt, agent, faq, process, analysis, skill, other. Default: general.",
+				},
+				"assigned_to": map[string]interface{}{
+					"type":        "string",
+					"description": "Who should do this: director (yourself), admin, agent. Default: director.",
+				},
+				"tags": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Tags for filtering (e.g. ['zefir_support', 'escalation']).",
+				},
+			},
+			"required": []string{"title"},
+		},
+	},
+	{
+		Name:        "list_tasks",
+		Description: "List your tasks. Filter by status to see pending, in_progress, completed, or failed tasks. Use to review what needs to be done or check progress.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"status": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"pending", "in_progress", "completed", "failed", "cancelled", ""},
+					"description": "Filter by status. Empty = show all.",
+				},
+				"limit": map[string]interface{}{
+					"type":        "number",
+					"description": "Max tasks to return (1-50). Default 20.",
+				},
+			},
+		},
+	},
+	{
+		Name:        "update_task",
+		Description: "Update task status: start working (in_progress), complete, mark as failed with reason, or cancel. Always add a comment explaining why.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Task UUID.",
+				},
+				"status": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"pending", "in_progress", "completed", "failed", "cancelled"},
+					"description": "New status.",
+				},
+				"comment": map[string]interface{}{
+					"type":        "string",
+					"description": "Comment explaining the status change: what was done, why it failed, next steps.",
+				},
+				"failure_reason": map[string]interface{}{
+					"type":        "string",
+					"description": "Required when status=failed. Why the task failed.",
+				},
+			},
+			"required": []string{"task_id", "status"},
+		},
+	},
+	{
+		Name:        "comment_task",
+		Description: "Add a comment/note to a task. Use for progress updates, observations, blockers, or discussion.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Task UUID.",
+				},
+				"comment": map[string]interface{}{
+					"type":        "string",
+					"description": "Your comment or progress note.",
+				},
+			},
+			"required": []string{"task_id", "comment"},
+		},
+	},
+	{
+		Name:        "get_task",
+		Description: "Get full task details with all comments and history. Use to review a specific task before updating it.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Task UUID.",
+				},
+			},
+			"required": []string{"task_id"},
+		},
+	},
 	// ── Save report tool ─────────────────────────────────────────────────
 	{
 		Name:        "save_daily_report",
@@ -859,6 +973,17 @@ func executeDirectorToolInner(ctx context.Context, call *llm.FunctionCall) strin
 		return toolToggleCronJob(call.Arguments)
 	case "run_cron_job":
 		return toolRunCronJob(call.Arguments)
+	// Task management
+	case "create_task":
+		return toolCreateTask(call.Arguments)
+	case "list_tasks":
+		return toolListTasks(call.Arguments)
+	case "update_task":
+		return toolUpdateTask(call.Arguments)
+	case "comment_task":
+		return toolCommentTask(call.Arguments)
+	case "get_task":
+		return toolGetTask(call.Arguments)
 	case "save_daily_report":
 		return toolSaveDailyReport(call.Arguments)
 	case "browser_screenshot":

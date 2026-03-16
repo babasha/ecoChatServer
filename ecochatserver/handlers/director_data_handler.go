@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/egor/ecochatserver/database"
+	"github.com/egor/ecochatserver/database/queries"
 	"github.com/egor/ecochatserver/director"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // DirectorData returns combined director data: reports, agent stats, tool stats, prompt history
@@ -205,6 +207,51 @@ func DirectorAgentConversations(c *gin.Context) {
 		"conversations": convs,
 		"total":         len(convs),
 	})
+}
+
+// DirectorTasks returns tasks for the UI.
+func DirectorTasks(c *gin.Context) {
+	status := c.Query("status")
+	limitStr := c.DefaultQuery("limit", "50")
+	limit, _ := strconv.Atoi(limitStr)
+
+	tasks, err := database.GetTasks(status, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if tasks == nil {
+		tasks = []queries.DirectorTask{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"tasks": tasks, "total": len(tasks)})
+}
+
+// DirectorTaskAddComment allows admin to comment on a task from UI.
+func DirectorTaskAddComment(c *gin.Context) {
+	var req struct {
+		TaskID  string `json:"task_id"`
+		Comment string `json:"comment"`
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if req.Comment == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "comment is required"})
+		return
+	}
+	taskID, err := uuid.Parse(req.TaskID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
+		return
+	}
+	comment, err := database.AddTaskComment(taskID, "admin", req.Comment)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"comment": comment})
 }
 
 // DirectorAgentConversationSend allows the admin to send a message to the Agent or Director

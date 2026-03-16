@@ -174,6 +174,34 @@ func GetReportsByDateRangeAndType(from, to time.Time, reportType string, limit i
 }
 
 // ============================================================================
+// Director Tasks
+// ============================================================================
+
+func CreateTask(title, description, priority, category, createdBy, assignedTo string, dueDate *time.Time, tags []string) (*queries.DirectorTask, error) {
+	return queries.CreateTask(DB, title, description, priority, category, createdBy, assignedTo, dueDate, tags)
+}
+
+func GetTasks(status string, limit int) ([]queries.DirectorTask, error) {
+	return queries.GetTasks(DB, status, limit)
+}
+
+func GetTaskWithComments(taskID uuid.UUID) (*queries.DirectorTask, error) {
+	return queries.GetTaskWithComments(DB, taskID)
+}
+
+func UpdateTaskStatus(taskID uuid.UUID, status, failureReason string) error {
+	return queries.UpdateTaskStatus(DB, taskID, status, failureReason)
+}
+
+func AddTaskComment(taskID uuid.UUID, author, content string) (*queries.TaskComment, error) {
+	return queries.AddTaskComment(DB, taskID, author, content)
+}
+
+func DeleteTask(taskID uuid.UUID) error {
+	return queries.DeleteTask(DB, taskID)
+}
+
+// ============================================================================
 // Director ↔ Agent Conversations
 // ============================================================================
 

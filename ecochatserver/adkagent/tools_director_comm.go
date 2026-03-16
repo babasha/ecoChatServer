@@ -64,9 +64,13 @@ func createAskDirectorTool(bus *agentbus.AgentBus, callCount *atomic.Int32) tool
 				tokIn = result.Tokens.PromptTokens
 				tokOut = result.Tokens.CompletionTokens
 			}
-			go database.InsertDirectorAgentConversation(
-				"", "agent_to_director", "agent", input.Question, result.Response, tokIn, tokOut,
-			)
+			go func() {
+				if err := database.InsertDirectorAgentConversation(
+					"", "agent_to_director", "agent", input.Question, result.Response, tokIn, tokOut,
+				); err != nil {
+					log.Printf("[ASK_DIRECTOR] Log error: %v", err)
+				}
+			}()
 
 			return askDirectorOutput{Result: result.Response}, nil
 		},
