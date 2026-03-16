@@ -917,8 +917,13 @@ func handleInstagramMessage(ctx context.Context, envelope instagramEnvelope) (st
 
 	log.Printf("handleInstagramMessage: сообщение сохранено (id=%s, chat=%s)", userMsg.ID, chat.ID)
 
+	// Notify admins about user message IMMEDIATELY (before autoresponder debounce)
+	notifyNewMessages(chat, userMsg, nil)
+
 	botMsg := runAutoResponder(ctx, chat, userMsg, true)
-	notifyNewMessages(chat, userMsg, botMsg)
+	if botMsg != nil {
+		notifyNewMessages(chat, nil, botMsg)
+	}
 
 	return chat.ID.String(), nil
 }

@@ -174,11 +174,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					// Увеличиваем счетчик реальных сообщений чата (включая бота)
 					WebSocketHub.IncrementChatMessage()
 
-					// Обновляем lightChat перед отправкой уведомления
-					lightChat.Messages = append(lightChat.Messages, *message)
-
-					// Уведомляем через общую функцию
-					notifyNewMessages(lightChat, message, botMsg)
+					// Notify only about bot response (user message was already notified via widget WebSocket)
+					notifyNewMessages(lightChat, nil, botMsg)
 				}
 			}
 		}()

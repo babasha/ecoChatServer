@@ -256,8 +256,13 @@ func handleWhatsAppMessage(ctx context.Context, entryID string, metadata whatsap
 
 	log.Printf("handleWhatsAppMessage: сообщение сохранено (id=%s, chat=%s, from=%s)", userMsg.ID, chat.ID, senderPhone)
 
+	// Notify admins about user message IMMEDIATELY (before autoresponder debounce)
+	notifyNewMessages(chat, userMsg, nil)
+
 	botMsg := runAutoResponder(ctx, chat, userMsg, true)
-	notifyNewMessages(chat, userMsg, botMsg)
+	if botMsg != nil {
+		notifyNewMessages(chat, nil, botMsg)
+	}
 
 	return nil
 }

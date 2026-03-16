@@ -319,19 +319,22 @@ func broadcastToAdminsPersonalized(chatID uuid.UUID, message *models.Message, ch
 	WebSocketHub.SendToAllAdmins(fallback)
 }
 
-// notifyNewMessages отправляет WebSocket уведомления о новых сообщениях (user + bot)
+// notifyNewMessages отправляет WebSocket уведомления о новых сообщениях (user + bot).
+// Either userMsg or botMsg can be nil — only non-nil messages are broadcast.
 func notifyNewMessages(chat *models.Chat, userMsg *models.Message, botMsg *models.Message) {
 	chatInfo := createChatInfo(chat)
 
-	// Виджетам — оригинал
-	widgetNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
-	WebSocketHub.SendToChat(chat.ID.String(), widgetNotification)
+	if userMsg != nil {
+		// Виджетам — оригинал
+		widgetNotification := createMessageNotification(chat.ID, userMsg, chatInfo)
+		WebSocketHub.SendToChat(chat.ID.String(), widgetNotification)
 
-	// Админам — персонализированный перевод
-	if userMsg.Sender == "user" {
-		broadcastToAdminsPersonalized(chat.ID, userMsg, chatInfo)
-	} else {
-		WebSocketHub.SendToAllAdmins(widgetNotification)
+		// Админам — персонализированный перевод
+		if userMsg.Sender == "user" {
+			broadcastToAdminsPersonalized(chat.ID, userMsg, chatInfo)
+		} else {
+			WebSocketHub.SendToAllAdmins(widgetNotification)
+		}
 	}
 
 	if botMsg != nil {
