@@ -54,6 +54,10 @@ type ADKAutoResponderV2 struct {
 
 	// Inter-agent communication bus (Director ↔ L1)
 	agentBus *agentbus.AgentBus
+
+	// Message debouncer: batches rapid user messages (e.g. "Привет" + "вопрос" + "?")
+	// into a single LLM call after a configurable delay
+	debouncer *messageDebouncer
 }
 
 // initDirector creates the Director (Level 2) agent.
@@ -75,6 +79,8 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 	zefirClient := NewZefirClient()
 
 	dir := initDirector()
+
+	debounceSeconds := database.GetSettingInt("RESPONDER_DEBOUNCE_SECONDS", 30)
 	ar := &ADKAutoResponderV2{
 		zefirClient:   zefirClient,
 		config:        cfg,
@@ -85,13 +91,14 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 		useSupervisor: false,
 		summarizer:    NewChatSummarizer(),
 		director:      dir,
+		debouncer:     newMessageDebouncer(time.Duration(debounceSeconds) * time.Second),
 	}
 
 	if dir != nil {
 		ar.agentBus = agentbus.New(dir.Provider())
 	}
 
-	log.Printf("[ADK_V2] Initialized Zefir auto-responder (single-agent mode, TTL=%v)", agentTTL)
+	log.Printf("[ADK_V2] Initialized Zefir auto-responder (single-agent mode, TTL=%v, debounce=%ds)", agentTTL, debounceSeconds)
 	return ar, nil
 }
 
@@ -100,6 +107,8 @@ func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderC
 	zefirClient := NewZefirClient()
 
 	dir := initDirector()
+
+	debounceSeconds := database.GetSettingInt("RESPONDER_DEBOUNCE_SECONDS", 30)
 	ar := &ADKAutoResponderV2{
 		zefirClient:   zefirClient,
 		config:        cfg,
@@ -110,13 +119,14 @@ func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderC
 		useSupervisor: false,
 		summarizer:    NewChatSummarizer(),
 		director:      dir,
+		debouncer:     newMessageDebouncer(time.Duration(debounceSeconds) * time.Second),
 	}
 
 	if dir != nil {
 		ar.agentBus = agentbus.New(dir.Provider())
 	}
 
-	log.Printf("[ADK_V2] Initialized Zefir auto-responder (MULTI-AGENT mode, TTL=%v)", agentTTL)
+	log.Printf("[ADK_V2] Initialized Zefir auto-responder (MULTI-AGENT mode, TTL=%v, debounce=%ds)", agentTTL, debounceSeconds)
 	log.Printf("[ADK_V2] Orchestrator -> [PlantExpert, DeviceSpecialist, SupportSpecialist]")
 	return ar, nil
 }
@@ -200,14 +210,22 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		return nil, nil
 	}
 
+	// ── Debounce: wait for more messages before responding ──
+	// If another message arrives during the wait, this call returns nil
+	// and the newer call takes over. Only the last message triggers processing.
+	if ar.debouncer != nil && ar.debouncer.timeout > 0 {
+		log.Printf("[ADK_V2] Debounce: waiting %v for chat %s", ar.debouncer.timeout, chatKey[:8])
+		if !ar.debouncer.Wait(chat.ID) {
+			log.Printf("[ADK_V2] Debounce: superseded by newer message, skipping chat %s", chatKey[:8])
+			return nil, nil
+		}
+		// Debounce complete — collect all pending user messages from DB
+		msg = ar.collectPendingMessages(chat.ID, msg)
+	}
+
 	// Get Zefir user ID from chat metadata
 	zefirUserID := ar.getZefirUserID(chat)
 	log.Printf("[ADK_V2] User context: zefirUserID=%s", zefirUserID)
-
-	// Delay (if configured)
-	if ar.config.DelaySeconds > 0 {
-		time.Sleep(time.Duration(ar.config.DelaySeconds) * time.Second)
-	}
 
 	// Get client language from message metadata
 	var clientLang string
@@ -543,4 +561,75 @@ func (ar *ADKAutoResponderV2) TriggerDirectorAnalysis(ctx context.Context) error
 		return fmt.Errorf("director not initialized")
 	}
 	return ar.director.AnalyzeDaily(ctx)
+}
+
+// collectPendingMessages reads all unresponded user messages from DB since the last
+// bot response, and combines them into a single message for LLM processing.
+// This is called after debounce completes to batch rapid-fire messages like:
+// "Привет" → "Какой у вас ассортимент?" → "?"
+func (ar *ADKAutoResponderV2) collectPendingMessages(chatID uuid.UUID, lastMsg *models.Message) *models.Message {
+	// Find the timestamp of the last bot (admin) message to know where to start collecting
+	since := time.Now().Add(-5 * time.Minute) // fallback: last 5 minutes
+
+	recentMsgs, err := database.GetMessagesSince(chatID, since, 20)
+	if err != nil {
+		log.Printf("[ADK_V2] Debounce: failed to get recent messages: %v", err)
+		return lastMsg
+	}
+
+	// Find the last bot message index, then collect all user messages after it
+	lastBotIdx := -1
+	for i, m := range recentMsgs {
+		if m.Sender == "admin" {
+			lastBotIdx = i
+		}
+	}
+
+	// Collect user messages after the last bot response
+	var userTexts []string
+	var latestLang string
+	for i, m := range recentMsgs {
+		if i <= lastBotIdx {
+			continue // skip everything before (and including) last bot message
+		}
+		if m.Sender != "user" {
+			continue
+		}
+		text := strings.TrimSpace(m.Content)
+		if text != "" {
+			userTexts = append(userTexts, text)
+		}
+		// Track detected language from metadata
+		if m.Metadata != nil {
+			if lang, ok := m.Metadata["detectedLanguage"].(string); ok && lang != "" {
+				latestLang = lang
+			}
+		}
+	}
+
+	if len(userTexts) <= 1 {
+		// Only one message (or none) — no batching needed
+		return lastMsg
+	}
+
+	// Combine all user messages into one
+	combined := strings.Join(userTexts, "\n")
+	log.Printf("[ADK_V2] Debounce: combined %d messages into one (%d chars): %s",
+		len(userTexts), len(combined), truncateLog(combined, 100))
+
+	// Create a synthetic message with combined content
+	combinedMsg := *lastMsg // copy
+	combinedMsg.Content = combined
+	if latestLang != "" && combinedMsg.Metadata != nil {
+		combinedMsg.Metadata["detectedLanguage"] = latestLang
+	}
+
+	return &combinedMsg
+}
+
+func truncateLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
