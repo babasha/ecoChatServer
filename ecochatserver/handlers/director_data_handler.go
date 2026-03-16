@@ -143,12 +143,10 @@ func DirectorData(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"reports":       reports,
-			"total":         total,
-			"agentStats":    statsResp,
-			"toolStats":     toolsResp,
-			"promptHistory": promptHistory,
-		},
+		"reports":       reports,
+		"total":         total,
+		"agentStats":    statsResp,
+		"toolStats":     toolsResp,
+		"promptHistory": promptHistory,
 	})
 }
