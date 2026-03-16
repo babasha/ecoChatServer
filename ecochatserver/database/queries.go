@@ -201,6 +201,10 @@ func DeleteTask(taskID uuid.UUID) error {
 	return queries.DeleteTask(DB, taskID)
 }
 
+func GetTasksForAgent() ([]queries.DirectorTask, error) {
+	return queries.GetTasksForAgent(DB)
+}
+
 // ============================================================================
 // Director ↔ Agent Conversations
 // ============================================================================

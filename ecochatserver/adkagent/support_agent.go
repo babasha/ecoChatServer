@@ -93,6 +93,15 @@ func NewSupportAgent(ctx context.Context, zefirClient *ZefirClient, bus *agentbu
 		}
 	}
 
+	// Add task management tools — agent can see and complete tasks from Director
+	if getTasksTool := createGetMyTasksTool(); getTasksTool != nil {
+		supportTools = append(supportTools, getTasksTool)
+	}
+	if completeTaskTool := createCompleteTaskTool(); completeTaskTool != nil {
+		supportTools = append(supportTools, completeTaskTool)
+		log.Printf("[AGENT] Added task tools (get_my_tasks, complete_task)")
+	}
+
 	totalTools := len(plantTools) + len(deviceTools) + len(supportTools)
 
 	// 4. Create ToolRouter for dynamic per-request tool selection

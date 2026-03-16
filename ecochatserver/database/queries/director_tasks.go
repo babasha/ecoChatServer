@@ -204,6 +204,26 @@ func DeleteTask(db *sql.DB, taskID uuid.UUID) error {
 	return nil
 }
 
+// GetTasksForAgent returns active tasks assigned to agent (pending + in_progress).
+func GetTasksForAgent(db *sql.DB) ([]DirectorTask, error) {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, title, description, status, priority, category, created_by, assigned_to,
+		       due_date, completed_at, failure_reason, tags, created_at, updated_at
+		FROM director_tasks
+		WHERE assigned_to = 'agent' AND status IN ('pending', 'in_progress')
+		ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, created_at ASC
+		LIMIT 10`)
+	if err != nil {
+		return nil, fmt.Errorf("get tasks for agent: %w", err)
+	}
+	defer rows.Close()
+
+	return scanTasks(rows)
+}
+
 func scanTasks(rows *sql.Rows) ([]DirectorTask, error) {
 	var tasks []DirectorTask
 	for rows.Next() {

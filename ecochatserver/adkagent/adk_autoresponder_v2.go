@@ -247,6 +247,20 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		}
 	}
 
+	// 1b. Director tasks assigned to agent
+	if agentTasks, tErr := database.GetTasksForAgent(); tErr == nil && len(agentTasks) > 0 {
+		var taskLines []string
+		for _, t := range agentTasks {
+			prefix := ""
+			if t.Priority == "high" {
+				prefix = "ВАЖНО: "
+			}
+			taskLines = append(taskLines, fmt.Sprintf("- [%s] %s%s — %s", t.Status, prefix, t.Title, t.Description))
+		}
+		contextParts = append(contextParts, "[ЗАДАЧИ ОТ ДИРЕКТОРА]\n"+strings.Join(taskLines, "\n")+"\n[КОНЕЦ ЗАДАЧ]")
+		log.Printf("[ADK_V2] Injecting %d agent tasks", len(agentTasks))
+	}
+
 	// 2. Conversation context from DB (session pruning + FTS search)
 	if ar.summarizer != nil {
 		ctxStr, ctxErr := ar.summarizer.BuildContextWithQuery(ctx, chat.ID, msg.Content)
