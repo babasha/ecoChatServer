@@ -99,6 +99,7 @@ func GetToolStatsSince(db *sql.DB, since time.Time) ([]models.ToolStats, error) 
 		FROM interaction_metrics,
 			 jsonb_array_elements(tools_called) as tool
 		WHERE created_at > $1
+		  AND jsonb_typeof(tools_called) = 'array'
 		GROUP BY tool->>'name'
 		ORDER BY total_calls DESC`, since,
 	)
@@ -136,6 +137,7 @@ func GetToolStatsByAgentSince(db *sql.DB, agentName string, since time.Time) ([]
 		FROM interaction_metrics,
 			 jsonb_array_elements(tools_called) as tool
 		WHERE created_at > $1 AND agent_name = $2
+		  AND jsonb_typeof(tools_called) = 'array'
 		GROUP BY tool->>'name'
 		ORDER BY total_calls DESC`, since, agentName,
 	)
