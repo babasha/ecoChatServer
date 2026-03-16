@@ -471,7 +471,7 @@ var directorTools = []llm.Tool{
 			"properties": map[string]interface{}{
 				"aspect": map[string]interface{}{
 					"type":        "string",
-					"enum":        []string{"soul", "identity", "goals", "style", "values", "user_profile", "self_assessment", ""},
+					"enum":        []string{"soul", "identity", "goals", "style", "values", "capabilities", "user_profile", "self_assessment", ""},
 					"description": "Specific aspect to retrieve. Empty = return all aspects.",
 				},
 			},
@@ -485,7 +485,7 @@ var directorTools = []llm.Tool{
 			"properties": map[string]interface{}{
 				"aspect": map[string]interface{}{
 					"type":        "string",
-					"enum":        []string{"soul", "identity", "goals", "style", "values", "user_profile", "self_assessment"},
+					"enum":        []string{"soul", "identity", "goals", "style", "values", "capabilities", "user_profile", "self_assessment"},
 					"description": "Which aspect to update.",
 				},
 				"content": map[string]interface{}{
@@ -516,7 +516,7 @@ var directorTools = []llm.Tool{
 			"properties": map[string]interface{}{
 				"aspect": map[string]interface{}{
 					"type":        "string",
-					"enum":        []string{"soul", "identity", "goals", "style", "values", "user_profile", "self_assessment"},
+					"enum":        []string{"soul", "identity", "goals", "style", "values", "capabilities", "user_profile", "self_assessment"},
 					"description": "Which aspect's history to view.",
 				},
 				"limit": map[string]interface{}{
@@ -535,7 +535,7 @@ var directorTools = []llm.Tool{
 			"properties": map[string]interface{}{
 				"aspect": map[string]interface{}{
 					"type":        "string",
-					"enum":        []string{"soul", "identity", "goals", "style", "values", "user_profile", "self_assessment"},
+					"enum":        []string{"soul", "identity", "goals", "style", "values", "capabilities", "user_profile", "self_assessment"},
 					"description": "Which aspect to rollback.",
 				},
 				"version": map[string]interface{}{

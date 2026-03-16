@@ -221,6 +221,7 @@ func BuildIdentitySystemPrompt() string {
 		{"goals", "ТЕКУЩИЕ ЦЕЛИ"},
 		{"style", "СТИЛЬ ОБЩЕНИЯ"},
 		{"values", "ЦЕННОСТИ И ПРАВИЛА"},
+		{"capabilities", "МОИ ВОЗМОЖНОСТИ И ИНСТРУКЦИИ"},
 		{"user_profile", "ПРОФИЛЬ АДМИНА"},
 		{"self_assessment", "САМООЦЕНКА"},
 	}
