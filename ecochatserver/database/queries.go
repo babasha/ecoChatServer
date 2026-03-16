@@ -169,6 +169,10 @@ func GetReportsByDateRange(from, to time.Time, limit int) ([]models.DirectorRepo
 	return queries.GetReportsByDateRange(DB, from, to, limit)
 }
 
+func GetReportsByDateRangeAndType(from, to time.Time, reportType string, limit int) ([]models.DirectorReport, error) {
+	return queries.GetReportsByDateRangeAndType(DB, from, to, reportType, limit)
+}
+
 // ============================================================================
 // Directive Outcomes (self-reflection feedback loop)
 // ============================================================================

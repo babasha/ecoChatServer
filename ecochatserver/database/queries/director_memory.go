@@ -695,8 +695,8 @@ func GetReportsByDateRange(db *sql.DB, from, to time.Time, limit int) ([]models.
 	ctx, cancel := WithDBContext()
 	defer cancel()
 
-	if limit <= 0 || limit > 20 {
-		limit = 10
+	if limit <= 0 || limit > 100 {
+		limit = 50
 	}
 
 	rows, err := db.QueryContext(ctx, `
@@ -712,6 +712,35 @@ func GetReportsByDateRange(db *sql.DB, from, to time.Time, limit int) ([]models.
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get reports by date range: %w", err)
+	}
+	defer rows.Close()
+
+	return scanReportRows(rows)
+}
+
+// GetReportsByDateRangeAndType returns reports within a date range filtered by report_type.
+func GetReportsByDateRangeAndType(db *sql.DB, from, to time.Time, reportType string, limit int) ([]models.DirectorReport, error) {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, report_date, report_type, trigger_event, summary_count, analysis,
+		       directives, applied, created_at,
+		       COALESCE(customer_complaints, '[]'), COALESCE(key_observations, '[]'),
+		       COALESCE(prompt_changes, '[]'), COALESCE(expectations, ''),
+		       0::float AS rank
+		FROM director_reports
+		WHERE created_at BETWEEN $1 AND $2
+		  AND report_type = $3
+		ORDER BY created_at DESC
+		LIMIT $4`, from, to, reportType, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get reports by date range and type: %w", err)
 	}
 	defer rows.Close()
 

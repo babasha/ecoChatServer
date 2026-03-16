@@ -14,25 +14,54 @@ import (
 func DirectorData(c *gin.Context) {
 	startDate := c.Query("start_date")
 	endDate := c.Query("end_date")
+	reportType := c.Query("report_type")
 	limitStr := c.DefaultQuery("limit", "50")
 	limit, _ := strconv.Atoi(limitStr)
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 
-	// Parse time range for stats
-	var since time.Time
+	// Parse time range
+	var since, until time.Time
 	if startDate != "" {
 		if t, err := time.Parse("2006-01-02", startDate); err == nil {
 			since = t
 		}
 	}
 	if since.IsZero() {
-		since = time.Now().AddDate(0, -1, 0) // default: last month
+		since = time.Now().AddDate(0, -1, 0)
 	}
 
-	// Get latest report
-	report, _ := database.GetLatestDirectorReport()
+	if endDate != "" {
+		if t, err := time.Parse("2006-01-02", endDate); err == nil {
+			// End of day
+			until = t.Add(24*time.Hour - time.Second)
+		}
+	}
+	if until.IsZero() {
+		until = time.Now()
+	}
+
+	// Get reports with optional type filter
+	var reports interface{}
+	var total int
+	if reportType != "" {
+		reps, err := database.GetReportsByDateRangeAndType(since, until, reportType, limit)
+		if err == nil {
+			reports = reps
+			total = len(reps)
+		} else {
+			reports = []interface{}{}
+		}
+	} else {
+		reps, err := database.GetReportsByDateRange(since, until, limit)
+		if err == nil {
+			reports = reps
+			total = len(reps)
+		} else {
+			reports = []interface{}{}
+		}
+	}
 
 	// Get agent stats
 	agentStats, _ := database.GetAgentStatsSince(since)
@@ -113,20 +142,13 @@ func DirectorData(c *gin.Context) {
 		})
 	}
 
-	// Build reports array (just latest for now, can expand later)
-	var reports []interface{}
-	if report != nil {
-		reports = append(reports, report)
-	}
-
-	_ = endDate // used for filtering scope info
-	_ = limit
-
 	c.JSON(http.StatusOK, gin.H{
-		"reports":       reports,
-		"total":         len(reports),
-		"agentStats":    statsResp,
-		"toolStats":     toolsResp,
-		"promptHistory": promptHistory,
+		"data": gin.H{
+			"reports":       reports,
+			"total":         total,
+			"agentStats":    statsResp,
+			"toolStats":     toolsResp,
+			"promptHistory": promptHistory,
+		},
 	})
 }

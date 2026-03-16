@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -1123,4 +1124,72 @@ func toolGetWebhookStats() string {
 	}
 
 	return sb.String()
+}
+
+// ============================================================================
+// Save daily report tool
+// ============================================================================
+
+func toolSaveDailyReport(args map[string]interface{}) string {
+	analysis := argStr(args, "analysis")
+	if analysis == "" {
+		return "Error: analysis text is required."
+	}
+
+	reportType := argStr(args, "report_type")
+	if reportType == "" {
+		reportType = "daily"
+	}
+
+	expectations := argStr(args, "expectations")
+
+	// Build directives JSON
+	directivesJSON := []byte("[]")
+	if raw, ok := args["directives"]; ok && raw != nil {
+		if b, err := json.Marshal(raw); err == nil {
+			directivesJSON = b
+		}
+	}
+
+	// Build customer_complaints JSON
+	complaintsJSON := []byte("[]")
+	if raw, ok := args["customer_complaints"]; ok && raw != nil {
+		if b, err := json.Marshal(raw); err == nil {
+			complaintsJSON = b
+		}
+	}
+
+	// Build key_observations JSON
+	observationsJSON := []byte("[]")
+	if raw, ok := args["key_observations"]; ok && raw != nil {
+		if b, err := json.Marshal(raw); err == nil {
+			observationsJSON = b
+		}
+	}
+
+	id := uuid.New()
+	now := time.Now()
+
+	err := database.InsertDirectorReport(
+		id,
+		now,
+		reportType,
+		"director_chat_daily_review",
+		0,
+		analysis,
+		directivesJSON,
+		[]byte("{}"),
+		complaintsJSON,
+		observationsJSON,
+		[]byte("[]"),
+		expectations,
+	)
+	if err != nil {
+		return fmt.Sprintf("Error saving report: %v", err)
+	}
+
+	log.Printf("[DIRECTOR_CHAT] Daily report saved: id=%s, type=%s, analysis=%d chars", id, reportType, len(analysis))
+	return fmt.Sprintf("Report saved successfully (id=%s, type=%s). Analysis: %d chars, complaints: %d, observations: %d, directives: %d.",
+		id.String()[:8], reportType, len(analysis),
+		len(complaintsJSON), len(observationsJSON), len(directivesJSON))
 }

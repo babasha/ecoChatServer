@@ -666,6 +666,53 @@ var directorTools = []llm.Tool{
 			"required": []string{"name"},
 		},
 	},
+	// ── Save report tool ─────────────────────────────────────────────────
+	{
+		Name:        "save_daily_report",
+		Description: "Save a daily report with per-chat analysis to database (director_reports). Use this after reviewing all chats for the day. Include: summary of each conversation (what the client asked, how the agent/admin responded, outcome, issues), overall conclusions, and actionable recommendations for improving prompts and agent behavior.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"analysis": map[string]interface{}{
+					"type":        "string",
+					"description": "Full daily report text. Per-chat breakdown: client question, agent/admin response, outcome (satisfied/unsatisfied/lost), issues found. Then overall summary and conclusions.",
+				},
+				"customer_complaints": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "List of customer complaints or negative experiences found in chats today.",
+				},
+				"key_observations": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Key observations: patterns, recurring issues, agent weaknesses, missed opportunities.",
+				},
+				"directives": map[string]interface{}{
+					"type": "array",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"type":        map[string]interface{}{"type": "string", "description": "Directive type: prompt_change, process, training, escalation"},
+							"priority":    map[string]interface{}{"type": "string", "description": "Priority: high, medium, low"},
+							"description": map[string]interface{}{"type": "string", "description": "What needs to change"},
+							"instruction": map[string]interface{}{"type": "string", "description": "Specific instruction or action to take"},
+						},
+					},
+					"description": "Actionable directives for improving agent behavior, prompts, or processes.",
+				},
+				"expectations": map[string]interface{}{
+					"type":        "string",
+					"description": "What you expect to see improve after applying these directives. Measurable outcomes.",
+				},
+				"report_type": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"daily", "weekly", "incident", "custom"},
+					"description": "Report type. Default: daily.",
+				},
+			},
+			"required": []string{"analysis"},
+		},
+	},
 	// Browser/CDP tools
 	{
 		Name:        "browser_screenshot",
@@ -812,6 +859,8 @@ func executeDirectorToolInner(ctx context.Context, call *llm.FunctionCall) strin
 		return toolToggleCronJob(call.Arguments)
 	case "run_cron_job":
 		return toolRunCronJob(call.Arguments)
+	case "save_daily_report":
+		return toolSaveDailyReport(call.Arguments)
 	case "browser_screenshot":
 		return toolBrowserScreenshot(ctx, call.Arguments)
 	case "browser_get_text":
