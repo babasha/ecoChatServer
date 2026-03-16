@@ -601,10 +601,20 @@ func toolAgentSend(ctx context.Context, args map[string]interface{}) string {
 		return fmt.Sprintf("Error querying agent: %v", err)
 	}
 
+	// Log the conversation
+	tokIn, tokOut := 0, 0
+	if result.Tokens != nil {
+		tokIn = result.Tokens.PromptTokens
+		tokOut = result.Tokens.CompletionTokens
+	}
+	go database.InsertDirectorAgentConversation(
+		chatID, "director_to_agent", "director", message, result.Response, tokIn, tokOut,
+	)
+
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Agent response for chat %s:\n\n%s", chatID, result.Response))
 	if result.Tokens != nil {
-		sb.WriteString(fmt.Sprintf("\n\n[tokens: %d in + %d out]", result.Tokens.PromptTokens, result.Tokens.CompletionTokens))
+		sb.WriteString(fmt.Sprintf("\n\n[tokens: %d in + %d out]", tokIn, tokOut))
 	}
 	return sb.String()
 }

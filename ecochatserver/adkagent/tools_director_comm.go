@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/egor/ecochatserver/agentbus"
+	"github.com/egor/ecochatserver/database"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -56,6 +57,17 @@ func createAskDirectorTool(bus *agentbus.AgentBus, callCount *atomic.Int32) tool
 			}
 
 			log.Printf("[ASK_DIRECTOR] Director response: %d chars", len(result.Response))
+
+			// Log the conversation
+			tokIn, tokOut := 0, 0
+			if result.Tokens != nil {
+				tokIn = result.Tokens.PromptTokens
+				tokOut = result.Tokens.CompletionTokens
+			}
+			go database.InsertDirectorAgentConversation(
+				"", "agent_to_director", "agent", input.Question, result.Response, tokIn, tokOut,
+			)
+
 			return askDirectorOutput{Result: result.Response}, nil
 		},
 	)

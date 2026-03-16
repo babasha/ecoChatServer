@@ -597,6 +597,8 @@ func setupAPIRoutes(r *gin.Engine) {
 			admin.DELETE("/director/chat/history", handlers.DirectorChatClear)
 			admin.POST("/director/analyze", handlers.DirectorAnalyze)
 			admin.GET("/director/data", handlers.DirectorData)
+			admin.GET("/director/agent-conversations", handlers.DirectorAgentConversations)
+			admin.POST("/director/agent-conversations", handlers.DirectorAgentConversationSend)
 			admin.GET("/director/settings", handlers.GetDirectorSettings)
 			admin.PUT("/director/settings", handlers.UpdateDirectorSettings)
 

@@ -174,6 +174,18 @@ func GetReportsByDateRangeAndType(from, to time.Time, reportType string, limit i
 }
 
 // ============================================================================
+// Director ↔ Agent Conversations
+// ============================================================================
+
+func InsertDirectorAgentConversation(chatID, direction, sender, message, response string, tokensIn, tokensOut int) error {
+	return queries.InsertDirectorAgentConversation(DB, chatID, direction, sender, message, response, tokensIn, tokensOut)
+}
+
+func GetDirectorAgentConversations(limit int) ([]queries.DirectorAgentMessage, error) {
+	return queries.GetDirectorAgentConversations(DB, limit)
+}
+
+// ============================================================================
 // Directive Outcomes (self-reflection feedback loop)
 // ============================================================================
 

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -182,5 +184,104 @@ func DirectorData(c *gin.Context) {
 		"toolStats":     toolsResp,
 		"promptHistory": promptHistory,
 		"toolCatalog":   toolCatalog,
+	})
+}
+
+// DirectorAgentConversations returns the Director↔Agent conversation log.
+func DirectorAgentConversations(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "50")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	convs, err := database.GetDirectorAgentConversations(limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"conversations": convs,
+		"total":         len(convs),
+	})
+}
+
+// DirectorAgentConversationSend allows the admin to send a message to the Agent or Director
+// through the same inter-agent communication channel.
+func DirectorAgentConversationSend(c *gin.Context) {
+	var req struct {
+		ChatID  string `json:"chat_id"`
+		Message string `json:"message"`
+		Target  string `json:"target"` // "agent" or "director"
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if req.Message == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+	if req.Target == "" {
+		req.Target = "agent"
+	}
+
+	bus := getAgentBus()
+	if bus == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AgentBus not available"})
+		return
+	}
+
+	var response string
+	var tokIn, tokOut int
+	var direction, sender string
+
+	if req.Target == "director" {
+		// Admin asks Director
+		result, err := bus.QueryDirector(c.Request.Context(), req.Message, "")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response = result.Response
+		if result.Tokens != nil {
+			tokIn = result.Tokens.PromptTokens
+			tokOut = result.Tokens.CompletionTokens
+		}
+		direction = "admin_to_director"
+		sender = "admin"
+	} else {
+		// Admin asks Agent about a chat
+		if req.ChatID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "chat_id is required when target=agent"})
+			return
+		}
+		result, err := bus.QueryAgent(c.Request.Context(), req.ChatID, req.Message)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response = result.Response
+		if result.Tokens != nil {
+			tokIn = result.Tokens.PromptTokens
+			tokOut = result.Tokens.CompletionTokens
+		}
+		direction = "admin_to_agent"
+		sender = "admin"
+	}
+
+	// Log to conversation history
+	if err := database.InsertDirectorAgentConversation(
+		req.ChatID, direction, sender, req.Message, response, tokIn, tokOut,
+	); err != nil {
+		log.Printf("[DIRECTOR_AGENT_CONV] Log error: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"response":  response,
+		"direction": direction,
+		"tokens_in": tokIn,
+		"tokens_out": tokOut,
 	})
 }
