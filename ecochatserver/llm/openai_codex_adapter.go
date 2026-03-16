@@ -342,10 +342,7 @@ func (a *OpenAICodexAdapter) doRequest(
 		Include: []string{"reasoning.encrypted_content"},
 	}
 
-	// Max output tokens
-	if opts != nil && opts.MaxTokens > 0 {
-		body.MaxOutputTokens = opts.MaxTokens
-	}
+	// NOTE: max_output_tokens не поддерживается Codex Responses API — не отправляем
 
 	// Text verbosity
 	textVerbosity := database.GetSetting("OPENAI_OAUTH_TEXT_VERBOSITY", "medium")
