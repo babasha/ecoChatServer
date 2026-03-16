@@ -142,11 +142,45 @@ func DirectorData(c *gin.Context) {
 		})
 	}
 
+	// Build tool catalog: director built-in tools + custom skills
+	type toolDef struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Category    string `json:"category"` // "director", "agent", "custom"
+		SkillType   string `json:"skillType,omitempty"`
+	}
+	var toolCatalog []toolDef
+
+	// Director built-in tools
+	for _, t := range directorTools {
+		toolCatalog = append(toolCatalog, toolDef{
+			Name:        t.Name,
+			Description: t.Description,
+			Category:    "director",
+		})
+	}
+
+	// Custom skills from DB
+	customSkills, _ := database.GetAllSkills()
+	for _, s := range customSkills {
+		desc := s.Description
+		if !s.Enabled {
+			desc = "[DISABLED] " + desc
+		}
+		toolCatalog = append(toolCatalog, toolDef{
+			Name:        s.Name,
+			Description: desc,
+			Category:    "custom",
+			SkillType:   s.SkillType,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"reports":       reports,
 		"total":         total,
 		"agentStats":    statsResp,
 		"toolStats":     toolsResp,
 		"promptHistory": promptHistory,
+		"toolCatalog":   toolCatalog,
 	})
 }
