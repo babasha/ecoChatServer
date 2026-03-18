@@ -76,6 +76,11 @@ func (d *Director) selfReflect(ctx context.Context) {
 			[]string{"self_reflection", "directive", effectiveness},
 			nil)
 
+		// Extract lesson from negative outcomes
+		if effectiveness == "negative" {
+			ExtractDirectiveNegative(o.DirectiveType, o.DirectiveInstruction, notes)
+		}
+
 		log.Printf("[DIRECTOR] Self-reflection: directive [%s] → %s", o.DirectiveType, effectiveness)
 	}
 

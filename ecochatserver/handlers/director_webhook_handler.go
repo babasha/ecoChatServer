@@ -285,25 +285,43 @@ func processWebhookAnalyze(evt *models.WebhookEvent) {
 
 	database.UpdateWebhookEventStatus(evt.ID, "processing", "")
 
-	// Record as event in tracker for threshold tracking
+	// Record as event in tracker for threshold tracking + Sentinel for pattern detection
 	tracker := dir.Tracker()
 	switch evt.EventType {
 	case "escalation", "escalation_alert":
 		chatID := ""
+		agentName := ""
 		if evt.Metadata != nil {
 			if cid, ok := evt.Metadata["chat_id"].(string); ok {
 				chatID = cid
+			}
+			if an, ok := evt.Metadata["agent_name"].(string); ok {
+				agentName = an
 			}
 		}
 		tracker.RecordEscalation(chatID)
+		dir.FeedSentinel(director.SentinelEvent{
+			Type:      director.EventEscalation,
+			ChatID:    chatID,
+			AgentName: agentName,
+		})
 	case "empty_response":
 		chatID := ""
+		agentName := ""
 		if evt.Metadata != nil {
 			if cid, ok := evt.Metadata["chat_id"].(string); ok {
 				chatID = cid
 			}
+			if an, ok := evt.Metadata["agent_name"].(string); ok {
+				agentName = an
+			}
 		}
 		tracker.RecordEmptyResponse(chatID)
+		dir.FeedSentinel(director.SentinelEvent{
+			Type:      director.EventEmptyResponse,
+			ChatID:    chatID,
+			AgentName: agentName,
+		})
 	case "tool_failure":
 		chatID := ""
 		toolName := "unknown"
@@ -316,6 +334,11 @@ func processWebhookAnalyze(evt *models.WebhookEvent) {
 			}
 		}
 		tracker.RecordToolFailure(chatID, toolName)
+		dir.FeedSentinel(director.SentinelEvent{
+			Type:     director.EventToolFailure,
+			ChatID:   chatID,
+			ToolName: toolName,
+		})
 	}
 
 	// Build a descriptive reason

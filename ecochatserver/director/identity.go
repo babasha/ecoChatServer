@@ -164,6 +164,7 @@ REASON: <почему>
 		SystemPrompt: "Ты проводишь саморефлексию. Будь честен и самокритичен. Анализируй факты, а не строй позитивные иллюзии.",
 	})
 	if err != nil {
+		ExtractLLMError("introspect", err, "identity self-reflection")
 		return "", fmt.Errorf("introspect LLM: %w", err)
 	}
 
@@ -478,6 +479,26 @@ func BuildCurrentStateContext() string {
 // Identity update wrapper with protection + cache invalidation + diff
 // ============================================================================
 
+// criticProvider is set during Director initialization for use in package-level functions.
+var (
+	criticProviderMu sync.RWMutex
+	criticProvider    llm.Provider
+)
+
+// SetCriticProvider stores the provider for Critic calls from package-level functions.
+func SetCriticProvider(p llm.Provider) {
+	criticProviderMu.Lock()
+	criticProvider = p
+	criticProviderMu.Unlock()
+}
+
+// getCriticProvider safely reads the critic provider.
+func getCriticProvider() llm.Provider {
+	criticProviderMu.RLock()
+	defer criticProviderMu.RUnlock()
+	return criticProvider
+}
+
 // UpdateIdentityChecked updates an identity aspect with all guards.
 // Returns: success message with diff, or error.
 func UpdateIdentityChecked(aspect, content, updatedBy, reason string) (string, error) {
@@ -489,6 +510,37 @@ func UpdateIdentityChecked(aspect, content, updatedBy, reason string) (string, e
 
 	// Get current for diff
 	current, _ := database.GetIdentity(aspect)
+
+	// Critic gate: Director's self-modifications go through review
+	cp := getCriticProvider()
+	if updatedBy == "director" && cp != nil {
+		oldContent := ""
+		if current != nil {
+			oldContent = current.Content
+		}
+		proposedChange := fmt.Sprintf("Aspect: %s\nReason: %s\n\nOld content:\n%s\n\nNew content:\n%s",
+			aspect, reason, truncate(oldContent, 300), content)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		tempDirector := &Director{provider: cp}
+		verdict, err := tempDirector.criticize(ctx, DecisionIdentity, proposedChange, reason, 1)
+		if err != nil {
+			log.Printf("[CRITIC] Identity review error for '%s', proceeding: %v", aspect, err)
+		} else if verdict.Action == CriticReject {
+			return "", fmt.Errorf("Critic отклонил изменение '%s': %s", aspect, verdict.Reasoning)
+		} else if verdict.Action == CriticRevise {
+			return "", fmt.Errorf("Critic считает что изменение '%s' требует доработки: %s", aspect, verdict.Feedback)
+		} else if verdict.RiskLevel == RiskHigh {
+			database.SaveAutoMemory("decision",
+				fmt.Sprintf("pending_identity:%s:%s", aspect, time.Now().Format("2006-01-02")),
+				fmt.Sprintf("Pending identity change for '%s': %s\nConcerns: %s",
+					aspect, reason, strings.Join(verdict.Concerns, "; ")),
+				[]string{"pending", "identity_update", aspect, "high_risk"}, nil)
+			return fmt.Sprintf("Изменение '%s' сохранено как PENDING (высокий риск). Требуется одобрение админа.", aspect), nil
+		}
+	}
 
 	// Update in DB
 	if err := database.UpsertIdentity(aspect, content, updatedBy, reason); err != nil {

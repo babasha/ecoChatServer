@@ -323,6 +323,11 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 				clientName = chat.User.Name
 			}
 			ar.director.Tracker().RecordEscalationWithContext(chatKey, clientName, agentType)
+			ar.director.FeedSentinel(director.SentinelEvent{
+				Type:      director.EventEscalation,
+				ChatID:    chatKey,
+				AgentName: agentType,
+			})
 		}
 	}
 
@@ -336,6 +341,11 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		// Track empty response event for Director (with agent context)
 		if ar.director != nil {
 			ar.director.Tracker().RecordEmptyResponseWithContext(chatKey, agentType)
+			ar.director.FeedSentinel(director.SentinelEvent{
+				Type:      director.EventEmptyResponse,
+				ChatID:    chatKey,
+				AgentName: agentType,
+			})
 		}
 	}
 

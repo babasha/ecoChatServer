@@ -2,6 +2,7 @@ package director
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -72,6 +73,13 @@ func (d *Director) analyzeToolPatterns(ctx context.Context) {
 	// Build prompt for LLM to propose a skill
 	var sb strings.Builder
 	sb.WriteString("Analyzing repeating tool usage patterns to suggest a reusable custom skill.\n\n")
+
+	// Inject lessons from past skill creation failures
+	if lessonOverlay := BuildSkillCreationLessonOverlay(); lessonOverlay != "" {
+		sb.WriteString(lessonOverlay)
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("Frequently called tools (not yet formalized as skills):\n")
 	for _, p := range newPatterns {
 		sb.WriteString(fmt.Sprintf("- %s: called %d times, sample args: %s\n",
@@ -86,6 +94,7 @@ SKILL_TYPE: sql_query|prompt_chain
 DESCRIPTION: <what the skill does, 1 sentence>
 CODE: <implementation - SQL query or prompt template>
 PARAMETERS: <JSON Schema for parameters>
+TEST_ARGS: <JSON object with sample values for testing, e.g. {"hours": 24, "name": "test"}>
 REASON: <why this skill would help>
 
 If no useful skill can be created from these patterns, respond with: NO_SKILL_NEEDED`)
@@ -96,6 +105,7 @@ If no useful skill can be created from these patterns, respond with: NO_SKILL_NE
 	})
 	if err != nil {
 		log.Printf("[DIRECTOR] Pattern→skill LLM error: %v", err)
+		ExtractLLMError("skill_pattern", err, truncate(sb.String(), 200))
 		return
 	}
 
@@ -103,26 +113,15 @@ If no useful skill can be created from these patterns, respond with: NO_SKILL_NE
 		return
 	}
 
-	skill := parseSkillProposal(resp.Text)
-	if skill == nil {
+	proposal := parseSkillProposal(resp.Text)
+	if proposal == nil {
 		log.Printf("[DIRECTOR] Could not parse skill proposal from LLM response")
+		ExtractParsingError("skill_pattern", resp.Text)
 		return
 	}
-
-	skill.CreatedBy = "auto_pattern"
-	skill.Tags = append(skill.Tags, "auto_created", "pattern_based")
-
-	if err := database.CreateSkill(skill); err != nil {
-		log.Printf("[DIRECTOR] Auto-skill creation failed: %v", err)
-		return
-	}
-
-	// Save cooldown and memory
-	database.SaveAutoMemory("decision", cooldownKey,
-		fmt.Sprintf("Auto-created skill '%s' (%s) from repeating patterns", skill.Name, skill.SkillType),
-		[]string{"auto_skill", "pattern"}, nil)
-
-	log.Printf("[DIRECTOR] Auto-created skill '%s' (type=%s) from tool patterns", skill.Name, skill.SkillType)
+	d.createAutoSkill(ctx, proposal, "auto_pattern", cooldownKey,
+		fmt.Sprintf("Source: tool pattern analysis\nPatterns: %s", sb.String()),
+		[]string{"pattern_based"})
 }
 
 // suggestSkillsFromReflection creates skills based on negative directive outcomes.
@@ -198,6 +197,7 @@ SKILL_TYPE: sql_query|prompt_chain
 DESCRIPTION: <what the skill does>
 CODE: <implementation>
 PARAMETERS: <JSON Schema>
+TEST_ARGS: <JSON object with sample values for testing, e.g. {"hours": 24}>
 REASON: <why this fills the gap>
 
 If no skill would help, respond with: NO_SKILL_NEEDED`)
@@ -208,6 +208,7 @@ If no skill would help, respond with: NO_SKILL_NEEDED`)
 	})
 	if err != nil {
 		log.Printf("[DIRECTOR] Reflection→skill LLM error: %v", err)
+		ExtractLLMError("skill_reflection", err, truncate(sb.String(), 200))
 		return
 	}
 
@@ -215,80 +216,100 @@ If no skill would help, respond with: NO_SKILL_NEEDED`)
 		return
 	}
 
-	skill := parseSkillProposal(resp.Text)
-	if skill == nil {
+	proposal := parseSkillProposal(resp.Text)
+	if proposal == nil {
 		log.Printf("[DIRECTOR] Could not parse reflection skill proposal")
+		ExtractParsingError("skill_reflection", resp.Text)
 		return
 	}
-
-	skill.CreatedBy = "auto_reflection"
-	skill.Tags = append(skill.Tags, "auto_created", "reflection_based")
-
-	if err := database.CreateSkill(skill); err != nil {
-		log.Printf("[DIRECTOR] Auto-skill from reflection failed: %v", err)
-		return
-	}
-
-	// Save cooldown and memory
-	database.SaveAutoMemory("decision", cooldownKey,
-		fmt.Sprintf("Auto-created skill '%s' (%s) from self-reflection on negative outcomes",
-			skill.Name, skill.SkillType),
-		[]string{"auto_skill", "reflection"}, nil)
-
-	log.Printf("[DIRECTOR] Auto-created skill '%s' from self-reflection", skill.Name)
+	d.createAutoSkill(ctx, proposal, "auto_reflection", cooldownKey,
+		fmt.Sprintf("Source: self-reflection on negative outcomes\n%s", sb.String()),
+		[]string{"reflection_based"})
 }
 
-// parseSkillProposal extracts a skill definition from LLM response text.
-func parseSkillProposal(text string) *models.DirectorSkill {
-	// extractSingle extracts a single-line value after "LABEL: "
-	extractSingle := func(label string) string {
-		idx := strings.Index(text, label+":")
-		if idx < 0 {
-			return ""
-		}
-		rest := text[idx+len(label)+1:]
-		endIdx := strings.Index(rest, "\n")
-		if endIdx < 0 {
-			endIdx = len(rest)
-		}
-		return strings.TrimSpace(rest[:endIdx])
+// createAutoSkill is the shared pipeline for both pattern-based and reflection-based skill creation.
+// Handles: Critic review → Pre-flight validation → DB create → cooldown memory.
+func (d *Director) createAutoSkill(ctx context.Context, proposal *SkillProposal, source, cooldownKey, criticContext string, extraTags []string) {
+	skill := proposal.Skill
+
+	// 1. Critic review
+	skillDescription := fmt.Sprintf("Name: %s\nType: %s\nDescription: %s\nCode: %s\nParameters: %s",
+		skill.Name, skill.SkillType, skill.Description, skill.Code, skill.Parameters)
+
+	verdict, err := d.criticize(ctx, DecisionSkillCreate, skillDescription, criticContext, 1)
+	if err != nil {
+		log.Printf("[CRITIC] Skill review error for '%s', skipping: %v", skill.Name, err)
+		return
+	}
+	if verdict.Action != CriticApprove {
+		log.Printf("[CRITIC] Skill '%s' %s: %s", skill.Name, verdict.Action, verdict.Reasoning)
+		return
+	}
+	if verdict.RiskLevel == RiskHigh {
+		log.Printf("[CRITIC] Skill '%s' approved with HIGH risk — saving as pending", skill.Name)
+		savePendingDecision("skill_create", skill.Name, skill.Description, verdict,
+			append([]string{"skill_create"}, extraTags...))
+		return
 	}
 
-	// extractMultiline extracts text between two labels (handles multiline values)
-	extractMultiline := func(startLabel, endLabel string) string {
-		startIdx := strings.Index(text, startLabel+":")
-		if startIdx < 0 {
-			return ""
-		}
-		content := text[startIdx+len(startLabel)+1:]
-		if endLabel != "" {
-			endIdx := strings.Index(content, endLabel+":")
-			if endIdx >= 0 {
-				content = content[:endIdx]
-			}
-		}
-		// Strip code block markers if LLM wraps in ```
-		content = strings.TrimSpace(content)
-		if strings.HasPrefix(content, "```") {
-			if idx := strings.Index(content[3:], "\n"); idx >= 0 {
-				content = content[3+idx+1:]
-			}
-			if idx := strings.LastIndex(content, "```"); idx >= 0 {
-				content = content[:idx]
-			}
-			content = strings.TrimSpace(content)
-		}
-		return content
+	// 2. Pre-flight validation
+	pfResult := d.PreflightValidate(ctx, proposal)
+	if !pfResult.Passed {
+		log.Printf("[PREFLIGHT] Skill '%s' failed: %s", skill.Name, strings.Join(pfResult.Errors, "; "))
+		SavePreflightLesson(skill.Name, skill.SkillType, pfResult)
+		return
+	}
+	skill.Code = pfResult.SkillCode
+
+	// 3. Create in DB
+	skill.CreatedBy = source
+	skill.Tags = append(skill.Tags, "auto_created", "critic_approved", "preflight_passed")
+	skill.Tags = append(skill.Tags, extraTags...)
+	if pfResult.Repaired {
+		skill.Tags = append(skill.Tags, "auto_repaired")
 	}
 
-	name := extractSingle("SKILL_NAME")
-	skillType := extractSingle("SKILL_TYPE")
-	description := extractSingle("DESCRIPTION")
-	reason := extractSingle("REASON")
+	if err := database.CreateSkill(skill); err != nil {
+		log.Printf("[DIRECTOR] Auto-skill '%s' creation failed: %v", skill.Name, err)
+		SavePartialSkill(skill)
+		ExtractSystemError("create_skill_"+source, err)
+		return
+	}
 
-	// CODE and PARAMETERS might be multiline
-	code := extractMultiline("CODE", "PARAMETERS")
-	params := extractMultiline("PARAMETERS", "REASON")
+	// 4. Save cooldown
+	database.SaveAutoMemory("decision", cooldownKey,
+		fmt.Sprintf("Auto-created skill '%s' (%s) [source: %s, risk: %s, repaired: %v]",
+			skill.Name, skill.SkillType, source, verdict.RiskLevel, pfResult.Repaired),
+		[]string{"auto_skill", source}, nil)
+
+	log.Printf("[DIRECTOR] Auto-created skill '%s' (%s) [source: %s, preflight: passed]",
+		skill.Name, skill.SkillType, source)
+}
+
+// parseSkillProposal extracts a skill definition and test args from LLM response text.
+func parseSkillProposal(text string) *SkillProposal {
+	// Use SectionParser for consistent parsing
+	sections := []string{"SKILL_NAME:", "SKILL_TYPE:", "DESCRIPTION:", "CODE:", "PARAMETERS:"}
+	hasTestArgs := strings.Contains(text, "TEST_ARGS:")
+	if hasTestArgs {
+		sections = append(sections, "TEST_ARGS:")
+	}
+	sections = append(sections, "REASON:")
+
+	p := NewSectionParser(text, sections)
+
+	name := strings.TrimSpace(strings.Split(p.Get("SKILL_NAME:"), "\n")[0])
+	skillType := strings.TrimSpace(strings.Split(p.Get("SKILL_TYPE:"), "\n")[0])
+	description := strings.TrimSpace(strings.Split(p.Get("DESCRIPTION:"), "\n")[0])
+	reason := strings.TrimSpace(strings.Split(p.Get("REASON:"), "\n")[0])
+
+	// CODE and PARAMETERS are multiline — strip code block markers
+	code := stripCodeBlock(p.Get("CODE:"))
+	params := stripCodeBlock(p.Get("PARAMETERS:"))
+	var testArgsRaw string
+	if hasTestArgs {
+		testArgsRaw = stripCodeBlock(p.Get("TEST_ARGS:"))
+	}
 
 	if name == "" || skillType == "" || code == "" {
 		return nil
@@ -311,19 +332,34 @@ func parseSkillProposal(text string) *models.DirectorSkill {
 		params = `{"type":"object","properties":{}}`
 	}
 
+	// Parse test args
+	var testArgs map[string]interface{}
+	if testArgsRaw != "" {
+		if err := json.Unmarshal([]byte(testArgsRaw), &testArgs); err != nil {
+			log.Printf("[PREFLIGHT] Could not parse TEST_ARGS: %v", err)
+			testArgs = map[string]interface{}{}
+		}
+	}
+	if testArgs == nil {
+		testArgs = map[string]interface{}{}
+	}
+
 	// Add reason to description
 	if reason != "" && len(description) < 200 {
 		description = description + " (auto: " + reason + ")"
 	}
 
-	return &models.DirectorSkill{
-		ID:          uuid.New(),
-		Name:        name,
-		Description: description,
-		Parameters:  params,
-		SkillType:   skillType,
-		Code:        code,
-		Enabled:     true,
-		Tags:        []string{},
+	return &SkillProposal{
+		Skill: &models.DirectorSkill{
+			ID:          uuid.New(),
+			Name:        name,
+			Description: description,
+			Parameters:  params,
+			SkillType:   skillType,
+			Code:        code,
+			Enabled:     true,
+			Tags:        []string{},
+		},
+		TestArgs: testArgs,
 	}
 }

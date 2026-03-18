@@ -261,7 +261,6 @@ func executePromptSkill(ctx context.Context, skill *models.DirectorSkill, args m
 	return resp.Text, nil
 }
 
-// validateHTTPURL checks that the URL is safe (no SSRF to internal services).
 func validateHTTPURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {

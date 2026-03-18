@@ -15,6 +15,7 @@ import (
 // Uses a powerful cloud model (Claude/GPT-4) for strategic analysis
 type Director struct {
 	tracker   *EventTracker
+	sentinel  *Sentinel         // pattern-based anomaly detection
 	provider  llm.Provider      // separate provider — can be Claude while РОП uses Qwen
 	optimizer *PromptOptimizer  // prompt versioning and optimization
 }
@@ -55,9 +56,13 @@ func New(cfg Config) (*Director, error) {
 
 	d := &Director{
 		tracker:   tracker,
+		sentinel:  NewSentinel(),
 		provider:  provider,
 		optimizer: NewPromptOptimizer(provider),
 	}
+
+	// Make the provider available for Critic in package-level functions (identity.go)
+	SetCriticProvider(provider)
 
 	// Bootstrap identity (seed defaults if first run)
 	d.BootstrapIdentity()
@@ -79,6 +84,11 @@ func (d *Director) Provider() llm.Provider {
 	return d.provider
 }
 
+// Sentinel returns the pattern detector for external event recording.
+func (d *Director) Sentinel() *Sentinel {
+	return d.sentinel
+}
+
 // Optimizer returns the prompt optimizer for external use (API handlers).
 func (d *Director) Optimizer() *PromptOptimizer {
 	return d.optimizer
@@ -98,6 +108,12 @@ func (d *Director) CheckAndAnalyze(ctx context.Context) {
 	if err := d.AnalyzeEvent(ctx, reason); err != nil {
 		log.Printf("[DIRECTOR] Event analysis failed: %v", err)
 	}
+}
+
+// FeedSentinel sends a rich event to the Sentinel for pattern detection.
+// If a pattern is detected, returns the alert (caller can trigger targeted analysis).
+func (d *Director) FeedSentinel(event SentinelEvent) *SentinelAlert {
+	return d.sentinel.RecordEvent(event)
 }
 
 // AnalyzeEvent runs analysis triggered by a specific event.
@@ -174,6 +190,8 @@ func (d *Director) periodicCleanup() {
 		select {
 		case <-trackerTicker.C:
 			d.tracker.Cleanup()
+			d.sentinel.Cleanup()
+			d.sentinel.UpdateBaseline()
 		case <-decayTicker.C:
 			decayed, purged, err := database.DecayMemories()
 			if err != nil {
