@@ -245,8 +245,13 @@ func loadDirectorProviderFromDB() llm.Provider {
 		return nil
 	}
 
+	// OAuth providers don't use a static API key — skip the key check for them
+	oauthProvider := providerType == string(llm.ProviderOpenAIOAuth) ||
+		providerType == string(llm.ProviderGeminiOAuth) ||
+		providerType == string(llm.ProviderClaudeOAuth)
+
 	apiKey := database.GetSetting("DIRECTOR_API_KEY", "")
-	if apiKey == "" {
+	if apiKey == "" && !oauthProvider {
 		log.Printf("[DIRECTOR] DIRECTOR_PROVIDER=%s but no DIRECTOR_API_KEY set", providerType)
 		return nil
 	}
