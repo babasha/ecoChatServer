@@ -135,17 +135,18 @@ func DirectorChatMessage(c *gin.Context) {
 	histTokens := estimateHistoryTokens(loopHistory)
 	msgTokens := estimateTokens(request.Message)
 
-	// Load all tools: built-in + custom skills from DB
-	allTools := getDirectorToolsWithSkills()
+	// Load core tools + custom skills (lazy-loading mode)
+	activeTools := getCoreToolsWithSkills()
+	loadedCategories := map[string]bool{}
 
 	// Estimate tool definitions overhead (~300 tokens per tool on average)
-	toolsTokens := len(allTools) * 300
+	toolsTokens := len(activeTools) * 300
 	totalEstimate := promptTokens + histTokens + msgTokens + toolsTokens
-	log.Printf("[DIRECTOR_CHAT] Full context estimate: system~%d + history~%d + msg~%d + tools~%d(%d defs) = ~%d tokens",
-		promptTokens, histTokens, msgTokens, toolsTokens, len(allTools), totalEstimate)
+	log.Printf("[DIRECTOR_CHAT] Full context estimate: system~%d + history~%d + msg~%d + tools~%d(%d core defs) = ~%d tokens",
+		promptTokens, histTokens, msgTokens, toolsTokens, len(activeTools), totalEstimate)
 
 	// First call with tools
-	resp, err := provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, allTools, opts)
+	resp, err := provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, activeTools, opts)
 	if err != nil {
 		log.Printf("[DIRECTOR_CHAT] LLM error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error: " + err.Error()})
@@ -165,9 +166,38 @@ func DirectorChatMessage(c *gin.Context) {
 	loopHistory = append(loopHistory, llm.Message{Role: "user", Content: request.Message})
 
 	for resp.FunctionCall != nil && toolCallCount < maxToolCalls {
-		toolCallCount++
 		fc := resp.FunctionCall
 
+		// Handle load_tools meta-tool (doesn't count against tool call limit)
+		if fc.Name == "load_tools" {
+			log.Printf("[DIRECTOR_CHAT] load_tools called: %v", fc.Arguments)
+			result, newTools := handleLoadTools(fc.Arguments, loadedCategories)
+			if len(newTools) > 0 {
+				activeTools = append(activeTools, newTools...)
+				log.Printf("[DIRECTOR_CHAT] Tools expanded: now %d tools", len(activeTools))
+			}
+
+			fcArgsJSON, _ := json.Marshal(fc.Arguments)
+			loopHistory = append(loopHistory,
+				llm.Message{Role: "assistant", Content: fmt.Sprintf("[tool_call: %s(%s)]", fc.Name, string(fcArgsJSON))},
+				llm.Message{Role: "function", Content: result},
+			)
+
+			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, activeTools, opts)
+			if err != nil {
+				log.Printf("[DIRECTOR_CHAT] LLM error after load_tools: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after load_tools"})
+				return
+			}
+			if resp.FunctionCall == nil && resp.Text != "" {
+				if fc := parseTextToolCall(resp.Text); fc != nil {
+					resp.FunctionCall = fc
+				}
+			}
+			continue
+		}
+
+		toolCallCount++
 		log.Printf("[DIRECTOR_CHAT] Tool call #%d: %s", toolCallCount, fc.Name)
 
 		// Execute the tool
@@ -208,7 +238,7 @@ func DirectorChatMessage(c *gin.Context) {
 		}
 
 		// Call again WITH tools so Director can make more tool calls if needed
-		resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, allTools, opts)
+		resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, activeTools, opts)
 		if err != nil {
 			log.Printf("[DIRECTOR_CHAT] LLM error after tool call: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after tool execution"})
@@ -480,24 +510,31 @@ IMPORTANT:
 - Данные и метрики — ВСЕГДА сначала через инструменты. Не выдумывай числа.
 - Общайся на языке админа.
 
+[ИНСТРУМЕНТЫ]
+У тебя есть базовые инструменты (чаты, память, поиск, схема БД) + мета-инструмент load_tools.
+Для специализированных задач сначала вызови load_tools с нужными категориями:
+- analytics — метрики агентов, статистика, анализ
+- reports — поиск по отчётам, таймлайн
+- identity — управление личностью
+- skills — создание/редактирование кастомных инструментов
+- memory_extra — удаление, список воспоминаний
+- prompts — промпты агентов, история версий
+- cron — планировщик задач
+- agents — общение с L1 агентами
+- tasks — управление задачами
+- webhooks — события вебхуков
+- browser — скриншоты, извлечение данных с веб-страниц
+Не вызывай load_tools если базовых инструментов достаточно.
+[КОНЕЦ ИНСТРУМЕНТЫ]
+
 [НАХОДЧИВОСТЬ И САМОСТОЯТЕЛЬНОСТЬ]
-Ты ОБЯЗАН решать задачи самостоятельно, используя все доступные инструменты. НИКОГДА не проси у админа данные, которые можешь найти сам.
+Ты ОБЯЗАН решать задачи самостоятельно. НИКОГДА не проси у админа данные, которые можешь найти сам.
+Если инструмент не дал нужных данных — попробуй альтернативы:
+1. get_recent_chats с search — поиск по имени
+2. deep_search — полнотекстовый поиск
+3. load_tools + create_skill — создай sql_query скилл (используй describe_schema для схемы БД)
 
-Если инструмент не вернул нужные данные — НЕ СДАВАЙСЯ. Попробуй альтернативы:
-1. get_recent_chats — поддерживает поиск по имени (параметр search)
-2. deep_search — полнотекстовый поиск по чатам, памяти, отчётам
-3. describe_schema — посмотри структуру БД
-4. create_skill — создай sql_query скилл для нестандартных запросов (используй describe_schema чтобы узнать таблицы и колонки)
-
-Пример: если админ спрашивает "покажи чат с kaccife_sushi":
-- Вызови get_recent_chats с search="kaccife_sushi" → получишь chat_id
-- Вызови agent_context с полученным chat_id → покажешь историю чата
-- Если стандартные тулы не хватает — создай скилл через create_skill
-
-ЗАПРЕЩЕНО:
-- Просить у админа chat_id, если можешь найти его сам через поиск
-- Говорить "я не могу" без попытки использовать альтернативные инструменты
-- Сдаваться после первой неудачи — всегда пробуй другой подход
+ЗАПРЕЩЕНО просить у админа chat_id, говорить "я не могу" без попыток, сдаваться после первой неудачи.
 [КОНЕЦ НАХОДЧИВОСТЬ]
 `)
 

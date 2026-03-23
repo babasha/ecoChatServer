@@ -38,6 +38,34 @@ func InvalidateSkillsCache() {
 	skillsCacheMu.Unlock()
 }
 
+// getCoreToolsWithSkills returns core tools + custom skills (for lazy-loading mode).
+func getCoreToolsWithSkills() []llm.Tool {
+	skills, err := database.GetEnabledSkills()
+	if err != nil || len(skills) == 0 {
+		return coreDirectorTools
+	}
+
+	result := make([]llm.Tool, len(coreDirectorTools), len(coreDirectorTools)+len(skills))
+	copy(result, coreDirectorTools)
+
+	for _, s := range skills {
+		var params map[string]interface{}
+		if s.Parameters != "" && s.Parameters != "{}" {
+			if err := json.Unmarshal([]byte(s.Parameters), &params); err != nil {
+				params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+			}
+		} else {
+			params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+		}
+		result = append(result, llm.Tool{
+			Name:        s.Name,
+			Description: fmt.Sprintf("[CUSTOM] %s", s.Description),
+			Parameters:  params,
+		})
+	}
+	return result
+}
+
 // getDirectorToolsWithSkills returns all available tools: built-in + custom skills.
 func getDirectorToolsWithSkills() []llm.Tool {
 	skillsCacheMu.RLock()
