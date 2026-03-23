@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/llm"
 	"github.com/gin-gonic/gin"
 )
@@ -52,7 +51,6 @@ const maxAIChatHistory = 30 // keep last 30 messages per admin per role
 
 // validChatRoles defines allowed chat roles
 var validChatRoles = map[string]bool{
-	"DIRECTOR":   true,
 	"RESPONDER":  true,
 	"TRANSLATOR": true,
 	"GLOBAL":     true,
@@ -106,16 +104,6 @@ func AIChatMessage(c *gin.Context) {
 	historyKey := fmt.Sprintf("%s:%s", adminID, request.Role)
 
 	aiChatHistoryMu.Lock()
-	if len(aiChatHistory[historyKey]) == 0 && request.Role == "DIRECTOR" {
-		// Restore DIRECTOR history from DB on first access
-		if dbMsgs, err := database.LoadDirectorChatHistory(adminID, 50); err == nil && len(dbMsgs) > 0 {
-			restored := make([]llm.Message, 0, len(dbMsgs))
-			for _, m := range dbMsgs {
-				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
-			}
-			aiChatHistory[historyKey] = restored
-		}
-	}
 	history := make([]llm.Message, len(aiChatHistory[historyKey]))
 	copy(history, aiChatHistory[historyKey])
 	aiChatHistoryMu.Unlock()
@@ -128,74 +116,11 @@ func AIChatMessage(c *gin.Context) {
 		SystemPrompt: systemPrompt,
 	}
 
-	var resp *llm.Response
-	toolCallCount := 0
-
-	// DIRECTOR role uses tools; other roles use simple generation
-	if request.Role == "DIRECTOR" {
-		loopHistory := make([]llm.Message, len(history))
-		copy(loopHistory, history)
-
-		// Use dynamic tools: built-in + custom skills from DB
-		allTools := getDirectorToolsWithSkills()
-
-		resp, err = provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, allTools, opts)
-		if err != nil {
-			log.Printf("[AI_CHAT] DIRECTOR LLM error: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
-			return
-		}
-
-		// Fallback: if model outputs tool call as text instead of using function calling API,
-		// parse it from the text and execute it
-		if resp.FunctionCall == nil && resp.Text != "" {
-			if fc := parseTextToolCall(resp.Text); fc != nil {
-				log.Printf("[AI_CHAT] DIRECTOR text-fallback tool detected: %s", fc.Name)
-				resp.FunctionCall = fc
-			}
-		}
-
-		loopHistory = append(loopHistory, llm.Message{Role: "user", Content: request.Message})
-
-		for resp.FunctionCall != nil && toolCallCount < maxToolCalls {
-			toolCallCount++
-			fc := resp.FunctionCall
-			log.Printf("[AI_CHAT] DIRECTOR tool #%d: %s", toolCallCount, fc.Name)
-
-			result := executeDirectorTool(c.Request.Context(), fc)
-
-			fcArgsJSON, _ := json.Marshal(fc.Arguments)
-			loopHistory = append(loopHistory,
-				llm.Message{Role: "assistant", Content: fmt.Sprintf("[tool_call: %s(%s)]", fc.Name, string(fcArgsJSON))},
-				llm.Message{Role: "function", Content: result},
-			)
-
-			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, allTools, opts)
-			if err != nil {
-				log.Printf("[AI_CHAT] DIRECTOR LLM error after tool: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error after tool execution"})
-				return
-			}
-
-			// Fallback for subsequent calls too
-			if resp.FunctionCall == nil && resp.Text != "" {
-				if fc := parseTextToolCall(resp.Text); fc != nil {
-					log.Printf("[AI_CHAT] DIRECTOR text-fallback tool detected: %s", fc.Name)
-					resp.FunctionCall = fc
-				}
-			}
-		}
-
-		if resp.Text == "" && resp.FunctionCall != nil {
-			resp.Text = "Reached tool call limit. Please try a more specific question."
-		}
-	} else {
-		resp, err = provider.GenerateResponse(c.Request.Context(), request.Message, history, opts)
-		if err != nil {
-			log.Printf("[AI_CHAT] %s LLM error: %v", request.Role, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
-			return
-		}
+	resp, err := provider.GenerateResponse(c.Request.Context(), request.Message, history, opts)
+	if err != nil {
+		log.Printf("[AI_CHAT] %s LLM error: %v", request.Role, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "LLM error: " + err.Error()})
+		return
 	}
 
 	// Save both messages to history (in-memory)
@@ -206,58 +131,20 @@ func AIChatMessage(c *gin.Context) {
 	if len(h) > maxAIChatHistory {
 		h = h[len(h)-maxAIChatHistory:]
 	}
-
-	// Extract recent user messages for auto-memory (DIRECTOR only)
-	var recentUserMsgs []string
-	if request.Role == "DIRECTOR" {
-		topicCount := 0
-		for i := len(h) - 1; i >= 0 && topicCount < 5; i-- {
-			if h[i].Role == "user" {
-				msg := h[i].Content
-				if len(msg) > 150 {
-					msg = msg[:150]
-				}
-				recentUserMsgs = append([]string{msg}, recentUserMsgs...)
-				topicCount++
-			}
-		}
-	}
-
 	aiChatHistory[historyKey] = h
 	aiChatHistoryMu.Unlock()
-
-	// Persist DIRECTOR messages to DB synchronously
-	if request.Role == "DIRECTOR" {
-		if err := database.SaveDirectorChatMessage(adminID, "user", request.Message); err != nil {
-			log.Printf("[AI_CHAT] DB save user msg error (admin=%s): %v", adminID, err)
-		}
-		if err := database.SaveDirectorChatMessage(adminID, "assistant", resp.Text); err != nil {
-			log.Printf("[AI_CHAT] DB save assistant msg error (admin=%s): %v", adminID, err)
-		}
-
-		// Auto-save recent chat context to director_memories for recall
-		if len(recentUserMsgs) > 0 {
-			go func(topics []string) {
-				content := "Недавние темы чата с админом:\n" + strings.Join(topics, "\n")
-				if err := database.SaveAutoMemory("fact", "recent_chat_context", content, []string{"chat", "context"}, nil); err != nil {
-					log.Printf("[AI_CHAT] Auto-save chat topics error: %v", err)
-				}
-			}(recentUserMsgs)
-		}
-	}
 
 	idPreview := adminID
 	if len(idPreview) > 8 {
 		idPreview = idPreview[:8]
 	}
-	log.Printf("[AI_CHAT] %s admin=%s: %d chars -> %d chars (provider=%s, tools=%d)",
-		request.Role, idPreview, len(request.Message), len(resp.Text), provider.GetName(), toolCallCount)
+	log.Printf("[AI_CHAT] %s admin=%s: %d chars -> %d chars (provider=%s)",
+		request.Role, idPreview, len(request.Message), len(resp.Text), provider.GetName())
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":    resp.Text,
-		"usage":      resp.Usage,
-		"provider":   provider.GetName(),
-		"tools_used": toolCallCount,
+		"message":  resp.Text,
+		"usage":    resp.Usage,
+		"provider": provider.GetName(),
 	})
 }
 
@@ -277,18 +164,6 @@ func AIChatHistory(c *gin.Context) {
 
 	aiChatHistoryMu.Lock()
 	history := aiChatHistory[historyKey]
-
-	// Restore DIRECTOR history from DB if in-memory is empty
-	if len(history) == 0 && role == "DIRECTOR" {
-		if dbMsgs, err := database.LoadDirectorChatHistory(adminID, 50); err == nil && len(dbMsgs) > 0 {
-			restored := make([]llm.Message, 0, len(dbMsgs))
-			for _, m := range dbMsgs {
-				restored = append(restored, llm.Message{Role: m.Role, Content: m.Content})
-			}
-			aiChatHistory[historyKey] = restored
-			history = restored
-		}
-	}
 	aiChatHistoryMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -316,23 +191,11 @@ func AIChatClear(c *gin.Context) {
 			}
 		}
 		aiChatHistoryMu.Unlock()
-
-		// Also clear DIRECTOR messages from DB
-		if err := database.ClearDirectorChatHistory(adminID); err != nil {
-			log.Printf("[AI_CHAT] DB clear director history error (admin=%s): %v", adminID, err)
-		}
 	} else {
 		historyKey := fmt.Sprintf("%s:%s", adminID, role)
 		aiChatHistoryMu.Lock()
 		delete(aiChatHistory, historyKey)
 		aiChatHistoryMu.Unlock()
-
-		// Clear DIRECTOR messages from DB when clearing DIRECTOR role
-		if role == "DIRECTOR" {
-			if err := database.ClearDirectorChatHistory(adminID); err != nil {
-				log.Printf("[AI_CHAT] DB clear director history error (admin=%s): %v", adminID, err)
-			}
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
@@ -371,9 +234,6 @@ func AIChatRoles(c *gin.Context) {
 
 func buildAIChatSystemPrompt(role string) string {
 	switch role {
-	case "DIRECTOR":
-		return buildDirectorChatSystemPrompt()
-
 	case "RESPONDER":
 		return `You are the Auto-Responder (РОП/Level 1) AI agent for Zefir IoT customer support.
 You are having a conversation with a human admin who manages the support system.

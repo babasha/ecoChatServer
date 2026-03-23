@@ -95,7 +95,7 @@ func NewADKAutoResponderV2(ctx context.Context, cfg llm.AutoResponderConfig) (*A
 	}
 
 	if dir != nil {
-		ar.agentBus = agentbus.New(dir.Provider())
+		ar.agentBus = agentbus.New(dir.Provider)
 	}
 
 	log.Printf("[ADK_V2] Initialized Zefir auto-responder (single-agent mode, TTL=%v, debounce=%ds)", agentTTL, debounceSeconds)
@@ -123,7 +123,7 @@ func NewADKAutoResponderV2MultiAgent(ctx context.Context, cfg llm.AutoResponderC
 	}
 
 	if dir != nil {
-		ar.agentBus = agentbus.New(dir.Provider())
+		ar.agentBus = agentbus.New(dir.Provider)
 	}
 
 	log.Printf("[ADK_V2] Initialized Zefir auto-responder (MULTI-AGENT mode, TTL=%v, debounce=%ds)", agentTTL, debounceSeconds)

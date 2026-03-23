@@ -52,6 +52,10 @@ func New(cfg Config) (*Director, error) {
 		}
 	}
 
+	if provider == nil {
+		return nil, fmt.Errorf("no LLM provider available for Director (global provider not initialized yet)")
+	}
+
 	tracker := NewEventTracker(DefaultTrackerConfig())
 
 	d := &Director{

@@ -17,9 +17,9 @@ import (
 // Director can query L1 agents, L1 agents can ask Director for guidance.
 // All calls use GenerateResponse (no tools) to prevent recursion.
 type AgentBus struct {
-	directorProvider llm.Provider
-	mu               sync.RWMutex
-	sessions         map[string]*AgentSession
+	getProvider func() llm.Provider // called each time — always returns current provider
+	mu          sync.RWMutex
+	sessions    map[string]*AgentSession
 }
 
 // AgentSession tracks an active L1 agent processing a chat.
@@ -56,11 +56,12 @@ const (
 	queryDirectorMaxTok = 500
 )
 
-// New creates an AgentBus with the given director LLM provider.
-func New(directorProvider llm.Provider) *AgentBus {
+// New creates an AgentBus with a provider getter.
+// Pass director.Provider (bound method) so the bus always uses the current provider.
+func New(getProvider func() llm.Provider) *AgentBus {
 	return &AgentBus{
-		directorProvider: directorProvider,
-		sessions:         make(map[string]*AgentSession),
+		getProvider: getProvider,
+		sessions:    make(map[string]*AgentSession),
 	}
 }
 
@@ -99,6 +100,11 @@ func (b *AgentBus) ListSessions() []AgentSession {
 // Loads the agent's prompt, recent messages, and summary from the DB,
 // then makes an LLM call via GenerateResponse (no tools — prevents recursion).
 func (b *AgentBus) QueryAgent(ctx context.Context, chatID, question string) (*QueryResult, error) {
+	provider := b.getProvider()
+	if provider == nil {
+		return nil, fmt.Errorf("director LLM provider not available")
+	}
+
 	queryCtx, cancel := context.WithTimeout(ctx, interAgentTimeout)
 	defer cancel()
 
@@ -148,7 +154,7 @@ func (b *AgentBus) QueryAgent(ctx context.Context, chatID, question string) (*Qu
 		SystemPrompt: systemPrompt,
 	}
 
-	resp, err := b.directorProvider.GenerateResponse(queryCtx, userMessage, nil, opts)
+	resp, err := provider.GenerateResponse(queryCtx, userMessage, nil, opts)
 	if err != nil {
 		return nil, fmt.Errorf("QueryAgent LLM call failed: %w", err)
 	}
@@ -165,6 +171,11 @@ func (b *AgentBus) QueryAgent(ctx context.Context, chatID, question string) (*Qu
 // QueryDirector sends a question from an L1 agent to the Director for guidance.
 // Uses a lightweight system prompt. No tools — prevents recursion.
 func (b *AgentBus) QueryDirector(ctx context.Context, question, chatContext string) (*QueryResult, error) {
+	provider := b.getProvider()
+	if provider == nil {
+		return nil, fmt.Errorf("director LLM provider not available")
+	}
+
 	queryCtx, cancel := context.WithTimeout(ctx, interAgentTimeout)
 	defer cancel()
 
@@ -184,7 +195,7 @@ Focus on: what to say, what tool to use, or whether to escalate.`
 		SystemPrompt: systemPrompt,
 	}
 
-	resp, err := b.directorProvider.GenerateResponse(queryCtx, userMessage, nil, opts)
+	resp, err := provider.GenerateResponse(queryCtx, userMessage, nil, opts)
 	if err != nil {
 		return nil, fmt.Errorf("QueryDirector LLM call failed: %w", err)
 	}
