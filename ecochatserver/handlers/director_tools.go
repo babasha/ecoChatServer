@@ -428,6 +428,19 @@ var memoryExtraTools = []llm.Tool{
 var promptTools = []llm.Tool{
 	{Name: "get_active_prompts", Description: "Get currently active prompt versions for all agents.", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}},
 	{Name: "get_prompt_history", Description: "Get prompt version history for a specific agent.", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"agent_name": map[string]interface{}{"type": "string", "description": "Agent name."}, "limit": map[string]interface{}{"type": "number", "description": "Max versions. Default 5."}}, "required": []string{"agent_name"}}},
+	{
+		Name:        "update_agent_prompt",
+		Description: "Update the system prompt for an L1 agent (e.g. zefir_support). Creates a new version and activates it immediately. Previous version is preserved in history for rollback.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"agent_name": map[string]interface{}{"type": "string", "description": "Agent name, e.g. 'zefir_support'."},
+				"prompt":     map[string]interface{}{"type": "string", "description": "Full new system prompt text."},
+				"notes":      map[string]interface{}{"type": "string", "description": "Reason for the change (saved to history)."},
+			},
+			"required": []string{"agent_name", "prompt"},
+		},
+	},
 }
 
 var identityTools = []llm.Tool{
@@ -500,6 +513,8 @@ func executeDirectorToolInner(ctx context.Context, call *llm.FunctionCall) strin
 		return toolGetActivePrompts()
 	case "get_prompt_history":
 		return toolGetPromptHistory(call.Arguments)
+	case "update_agent_prompt":
+		return toolUpdateAgentPrompt(call.Arguments)
 	case "get_tool_stats":
 		return toolGetToolStats(call.Arguments)
 	case "run_analysis":

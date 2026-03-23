@@ -160,6 +160,45 @@ func toolGetPromptHistory(args map[string]interface{}) string {
 	return sb.String()
 }
 
+func toolUpdateAgentPrompt(args map[string]interface{}) string {
+	agentName := argStr(args, "agent_name")
+	prompt := argStr(args, "prompt")
+	notes := argStr(args, "notes")
+
+	if agentName == "" || prompt == "" {
+		return "Error: agent_name and prompt are required."
+	}
+
+	// Get next version number
+	version, err := database.GetNextPromptVersion(agentName)
+	if err != nil {
+		return fmt.Sprintf("Error getting next version: %v", err)
+	}
+
+	// Get current active version as parent
+	var parentVersion *int
+	current, err := database.GetActivePrompt(agentName)
+	if err == nil && current != nil {
+		parentVersion = &current.Version
+	}
+
+	// Insert new version
+	if _, err := database.InsertPrompt(agentName, version, prompt, "director", parentVersion, notes); err != nil {
+		return fmt.Sprintf("Error inserting prompt: %v", err)
+	}
+
+	// Activate it
+	if err := database.ActivatePrompt(agentName, version); err != nil {
+		return fmt.Sprintf("Error activating prompt v%d: %v", version, err)
+	}
+
+	prev := ""
+	if parentVersion != nil {
+		prev = fmt.Sprintf(" (replaces v%d, use rollback_agent_prompt to revert)", *parentVersion)
+	}
+	return fmt.Sprintf("Agent '%s' prompt updated to v%d%s. Takes effect on next agent session.", agentName, version, prev)
+}
+
 func toolGetToolStats(args map[string]interface{}) string {
 	hours := argFloat(args, "hours", 24)
 
