@@ -204,6 +204,12 @@ func DirectorChatMessage(c *gin.Context) {
 		result := executeDirectorTool(c.Request.Context(), fc)
 		log.Printf("[DIRECTOR_CHAT] Tool result: %d chars", len(result))
 
+		// If a skill was created/edited/deleted — reload tools so it's available immediately
+		if (fc.Name == "create_skill" || fc.Name == "edit_skill" || fc.Name == "delete_skill") && !strings.HasPrefix(result, "Error") {
+			activeTools = getCoreToolsWithSkills()
+			log.Printf("[DIRECTOR_CHAT] Tools reloaded after %s: now %d tools", fc.Name, len(activeTools))
+		}
+
 		// Add tool call and result to loop history (soft-trim large results)
 		fcArgsJSON, _ := json.Marshal(fc.Arguments)
 		trimmedResult := softTrimToolResult(result)
