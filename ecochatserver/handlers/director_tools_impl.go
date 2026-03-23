@@ -243,23 +243,32 @@ func toolGetRecentChats(args map[string]interface{}) string {
 	if limit > 50 {
 		limit = 50
 	}
+	search := argStr(args, "search")
 
-	chats, total, err := database.GetRecentChatsForDirector(limit)
+	chats, total, err := database.GetRecentChatsForDirector(limit, search)
 	if err != nil {
 		return fmt.Sprintf("Error querying chats: %v", err)
 	}
 	if len(chats) == 0 {
+		if search != "" {
+			return fmt.Sprintf("No chats found matching '%s'.", search)
+		}
 		return "No active chats found."
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Recent chats (%d shown, %d total active):\n\n", len(chats), total))
+	if search != "" {
+		sb.WriteString(fmt.Sprintf("Chats matching '%s' (%d shown, %d total matches):\n\n", search, len(chats), total))
+	} else {
+		sb.WriteString(fmt.Sprintf("Recent chats (%d shown, %d total active):\n\n", len(chats), total))
+	}
 
 	for i, ch := range chats {
 		sb.WriteString(fmt.Sprintf("%d. [%s] %s", i+1, ch.Source, ch.User.Name))
 		if ch.User.Email != "" {
 			sb.WriteString(fmt.Sprintf(" (%s)", ch.User.Email))
 		}
+		sb.WriteString(fmt.Sprintf("\n   chat_id: %s", ch.ID))
 		sb.WriteString(fmt.Sprintf("\n   Status: %s | Unread: %d | Updated: %s\n",
 			ch.Status, ch.UnreadCount, ch.UpdatedAt.Format("2006-01-02 15:04")))
 		if ch.LastMessage != nil {
@@ -271,6 +280,175 @@ func toolGetRecentChats(args map[string]interface{}) string {
 		}
 		sb.WriteString("\n")
 	}
+	return sb.String()
+}
+
+// ============================================================================
+// Database schema tool
+// ============================================================================
+
+func toolDescribeSchema(args map[string]interface{}) string {
+	table := argStr(args, "table")
+
+	schemas := map[string]string{
+		"chats": `TABLE chats:
+  id                    UUID PRIMARY KEY
+  user_id               UUID → users(id)
+  created_at            TIMESTAMPTZ
+  updated_at            TIMESTAMPTZ
+  status                TEXT          -- "active", "closed", "pending"
+  source                TEXT          -- "telegram", "whatsapp", "instagram", "widget"
+  bot_id                TEXT          -- ID бота, через который пришло сообщение
+  client_id             UUID          -- ID клиента-владельца бота
+  widget_business_id    TEXT          -- ID бизнеса/виджета (nullable)
+  assigned_to           UUID          -- ID сотрудника (nullable)
+  auto_responder_enabled BOOLEAN
+  resolved_at           TIMESTAMPTZ   -- время решения (nullable)
+  auto_archive_at       TIMESTAMPTZ   -- время автоархивации (nullable)
+  is_archived           BOOLEAN
+  archive_timer_paused  BOOLEAN
+  metadata              JSONB
+
+RELATIONS: chats.user_id → users.id, messages.chat_id → chats.id
+INDEXES: updated_at DESC (основной порядок)`,
+
+		"users": `TABLE users:
+  id          UUID PRIMARY KEY
+  name        TEXT NOT NULL        -- имя пользователя (Instagram username, Telegram name, etc.)
+  email       TEXT
+  avatar      TEXT                 -- URL аватара (nullable)
+  profile_url TEXT                 -- ссылка на профиль (nullable)
+  source      TEXT                 -- "telegram", "whatsapp", "instagram", "widget"
+  source_id   TEXT                 -- ID пользователя в платформе-источнике
+  created_at  TIMESTAMPTZ
+  updated_at  TIMESTAMPTZ
+
+UNIQUE INDEX: (source, source_id)
+NOTES: name содержит имя из мессенджера (Instagram username, Telegram display name)`,
+
+		"messages": `TABLE messages:
+  id          UUID PRIMARY KEY
+  chat_id     UUID → chats(id)
+  content     TEXT          -- текст сообщения
+  sender      TEXT          -- "user" или "admin"
+  sender_id   UUID          -- ID отправителя (nullable)
+  timestamp   TIMESTAMPTZ   -- время отправки
+  read        BOOLEAN       -- прочитано ли
+  read_at     TIMESTAMPTZ   -- время прочтения (nullable)
+  type        TEXT          -- "text", "image", "file", etc.
+  metadata    JSONB         -- доп. данные (nullable)
+
+INDEXES: chat_id, timestamp DESC`,
+
+		"chat_summaries": `TABLE chat_summaries:
+  id           UUID PRIMARY KEY
+  chat_id      UUID → chats(id)
+  summary      TEXT          -- сводка разговора (генерируется LLM)
+  search_vector TSVECTOR     -- полнотекстовый поиск (русский)
+  created_at   TIMESTAMPTZ
+
+INDEXES: chat_id, FTS GIN index`,
+
+		"interaction_metrics": `TABLE interaction_metrics:
+  id                UUID PRIMARY KEY
+  chat_id           UUID
+  message_id        UUID
+  agent_mode        VARCHAR(50)   -- режим агента
+  agent_name        VARCHAR(100)  -- имя агента
+  prompt_version    INT
+  tools_called      JSONB         -- список вызванных инструментов
+  tool_count        INT
+  was_escalated     BOOLEAN       -- была ли эскалация
+  was_empty         BOOLEAN       -- был ли пустой ответ
+  response_length   INT
+  response_time_ms  INT
+  created_at        TIMESTAMPTZ
+
+INDEXES: agent_name, created_at DESC`,
+
+		"director_reports": `TABLE director_reports:
+  id                UUID PRIMARY KEY
+  report_date       TIMESTAMPTZ
+  report_type       VARCHAR(50)   -- "periodic", "daily_review", etc.
+  trigger_event     TEXT
+  summary_count     INT
+  analysis          TEXT
+  directives        JSONB
+  stats             JSONB
+  customer_complaints JSONB
+  key_observations  JSONB
+  prompt_changes    JSONB
+  expectations      TEXT
+  applied           BOOLEAN
+  search_vector     TSVECTOR
+  created_at        TIMESTAMPTZ`,
+
+		"director_memories": `TABLE director_memories:
+  id          UUID PRIMARY KEY
+  category    VARCHAR(50)   -- "fact", "decision", "pattern", "insight", "preference"
+  key         VARCHAR(200)  -- уникальный ключ в рамках категории
+  content     TEXT          -- содержимое памяти
+  importance  INT           -- важность (1-10)
+  access_count INT          -- кол-во обращений
+  last_accessed TIMESTAMPTZ
+  created_at  TIMESTAMPTZ
+  updated_at  TIMESTAMPTZ
+
+UNIQUE: (category, key)`,
+
+		"director_skills": `TABLE director_skills:
+  id           UUID PRIMARY KEY
+  name         VARCHAR(100) UNIQUE  -- имя скилла (lowercase, underscores)
+  description  TEXT
+  parameters   JSONB                -- JSON Schema параметров
+  skill_type   VARCHAR(20)          -- "sql_query", "prompt_chain", "http_api", "composite"
+  code         TEXT                 -- реализация (SQL / prompt / JSON config)
+  version      INT
+  enabled      BOOLEAN
+  created_by   VARCHAR(50)
+  usage_count  INT
+  last_used_at TIMESTAMPTZ
+  last_error   TEXT
+  tags         TEXT[]
+  created_at   TIMESTAMPTZ
+  updated_at   TIMESTAMPTZ`,
+	}
+
+	if table != "" {
+		if desc, ok := schemas[table]; ok {
+			return desc
+		}
+		// Попробуем найти похожее
+		var available []string
+		for k := range schemas {
+			available = append(available, k)
+		}
+		return fmt.Sprintf("Table '%s' not found. Available tables: %s", table, strings.Join(available, ", "))
+	}
+
+	// Обзор всех таблиц
+	var sb strings.Builder
+	sb.WriteString("DATABASE SCHEMA OVERVIEW\n")
+	sb.WriteString("========================\n\n")
+	sb.WriteString("Core tables:\n")
+	sb.WriteString("  chats              — чаты с клиентами (id, user_id, status, source, ...)\n")
+	sb.WriteString("  users              — пользователи/клиенты (id, name, email, source, source_id)\n")
+	sb.WriteString("  messages           — сообщения в чатах (id, chat_id, content, sender, timestamp)\n")
+	sb.WriteString("  chat_summaries     — LLM-сводки чатов (chat_id, summary, FTS)\n\n")
+	sb.WriteString("Analytics:\n")
+	sb.WriteString("  interaction_metrics — метрики взаимодействий агентов\n")
+	sb.WriteString("  director_reports    — отчёты директора\n")
+	sb.WriteString("  directive_outcomes  — результативность директив\n\n")
+	sb.WriteString("Director:\n")
+	sb.WriteString("  director_memories   — долговременная память\n")
+	sb.WriteString("  director_skills     — кастомные скиллы/инструменты\n")
+	sb.WriteString("  director_digests    — консолидированные сводки за период\n\n")
+	sb.WriteString("Key relationships:\n")
+	sb.WriteString("  chats.user_id → users.id\n")
+	sb.WriteString("  messages.chat_id → chats.id\n")
+	sb.WriteString("  chat_summaries.chat_id → chats.id\n\n")
+	sb.WriteString("Use describe_schema with table='<name>' for column details.\n")
+	sb.WriteString("Use this info to create sql_query skills with create_skill.\n")
 	return sb.String()
 }
 

@@ -131,13 +131,17 @@ var directorTools = []llm.Tool{
 	},
 	{
 		Name:        "get_recent_chats",
-		Description: "Get recent customer support chats with user info, last message, source, and status. Use when asked about recent client messages, conversations, who wrote last, or chat activity.",
+		Description: "Get recent customer support chats with user info, chat_id, last message, source, and status. Use when asked about recent client messages, conversations, who wrote last, or chat activity. Supports search by user name.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"limit": map[string]interface{}{
 					"type":        "number",
 					"description": "Number of recent chats to return (1-50). Default 10.",
+				},
+				"search": map[string]interface{}{
+					"type":        "string",
+					"description": "Search by user name (case-insensitive). E.g. 'kaccife_sushi', 'Иван'. Returns only chats matching the name.",
 				},
 			},
 		},
@@ -415,6 +419,20 @@ var directorTools = []llm.Tool{
 				},
 			},
 			"required": []string{"name"},
+		},
+	},
+	// ── Database schema tool ────────────────────────────────────────────
+	{
+		Name:        "describe_schema",
+		Description: "Get the database schema description — tables, columns, types, and relationships. Use this when you need to understand the DB structure to create sql_query skills or write custom queries. Shows all main tables: chats, users, messages, chat_summaries, interaction_metrics, etc.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"table": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional: specific table name to describe (e.g. 'chats', 'users', 'messages'). If omitted, returns overview of all tables.",
+				},
+			},
 		},
 	},
 	// ── Inter-agent communication tools ─────────────────────────────────
@@ -925,6 +943,9 @@ func executeDirectorToolInner(ctx context.Context, call *llm.FunctionCall) strin
 		return toolListMemories(call.Arguments)
 	case "search_reports":
 		return toolSearchReports(call.Arguments)
+	// Database schema
+	case "describe_schema":
+		return toolDescribeSchema(call.Arguments)
 	// Advanced search & timeline
 	case "deep_search":
 		return toolDeepSearch(call.Arguments)

@@ -152,7 +152,8 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 
 // GetRecentChatsForDirector returns recent chats (including archived) without cache.
 // Used by Director AI tool to see all recent conversations.
-func GetRecentChatsForDirector(db *sql.DB, limit int) ([]models.ChatResponse, int, error) {
+// If search is non-empty, filters chats by user name (case-insensitive LIKE).
+func GetRecentChatsForDirector(db *sql.DB, limit int, search string) ([]models.ChatResponse, int, error) {
 	if limit < 1 || limit > 50 {
 		limit = 10
 	}
@@ -160,13 +161,21 @@ func GetRecentChatsForDirector(db *sql.DB, limit int) ([]models.ChatResponse, in
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
 
-	// Count total chats (all, including archived)
+	// Count total chats (with optional filter)
 	var total int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chats`).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("error counting chats: %w", err)
+	if search != "" {
+		if err := db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM chats c JOIN users u ON c.user_id=u.id WHERE u.name ILIKE '%' || $1 || '%'`,
+			search).Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("error counting chats: %w", err)
+		}
+	} else {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chats`).Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("error counting chats: %w", err)
+		}
 	}
 
-	q := `
+	baseQ := `
       SELECT
         c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,
         u.id,u.name,u.email,u.avatar,u.profile_url,
@@ -181,13 +190,21 @@ func GetRecentChatsForDirector(db *sql.DB, limit int) ([]models.ChatResponse, in
          WHERE chat_id=c.id
          ORDER BY timestamp DESC
          LIMIT 1
-      ) l ON TRUE
-      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,u.profile_url,l.id,l.content,l.sender,l.timestamp
-      ORDER BY c.updated_at DESC
-      LIMIT $1
-    `
+      ) l ON TRUE`
 
-	rows, err := db.QueryContext(ctx, q, limit)
+	groupAndOrder := `
+      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,u.profile_url,l.id,l.content,l.sender,l.timestamp
+      ORDER BY c.updated_at DESC`
+
+	var rows *sql.Rows
+	var err error
+	if search != "" {
+		q := baseQ + ` WHERE u.name ILIKE '%' || $1 || '%'` + groupAndOrder + ` LIMIT $2`
+		rows, err = db.QueryContext(ctx, q, search, limit)
+	} else {
+		q := baseQ + groupAndOrder + ` LIMIT $1`
+		rows, err = db.QueryContext(ctx, q, limit)
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("error querying chats for director: %w", err)
 	}
