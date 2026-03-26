@@ -15,8 +15,8 @@ import (
 
 // textToolCallRe matches "[tool_call: name({...})]" patterns
 // that models sometimes output as text instead of using the function calling API.
-// Uses \{.*?\} (non-greedy) to capture the JSON args between { and }.
-var textToolCallRe = regexp.MustCompile(`\[tool_call:\s*(\w+)\((\{.*?\})\)\]`)
+// Uses (?s) flag so . matches newlines (model sometimes formats JSON with line breaks).
+var textToolCallRe = regexp.MustCompile(`(?s)\[tool_call:\s*(\w+)\((\{.*?\})\)\]`)
 
 // parseTextToolCall attempts to extract a function call from plain text output.
 // Returns nil if no tool call pattern is found.

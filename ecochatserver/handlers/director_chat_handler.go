@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/director"
@@ -145,31 +147,67 @@ func DirectorChatMessage(c *gin.Context) {
 	log.Printf("[DIRECTOR_CHAT] Full context estimate: system~%d + history~%d + msg~%d + tools~%d(%d core defs) = ~%d tokens",
 		promptTokens, histTokens, msgTokens, toolsTokens, len(activeTools), totalEstimate)
 
-	// First call with tools
-	resp, err := provider.GenerateWithTools(c.Request.Context(), request.Message, loopHistory, activeTools, opts)
+	// Pre-routing: for clear data-fetching queries, execute tools BEFORE calling LLM.
+	// This makes small models (4B) reliable: they don't need to decide to call tools —
+	// real data is already injected, model only needs to synthesize the answer.
+	firstMsg := request.Message
+	preRouted := false
+	if preData := tryPreRoute(c.Request.Context(), request.Message); preData != "" {
+		firstMsg = request.Message + "\n\n" + preData
+		preRouted = true
+		log.Printf("[DIRECTOR_CHAT] Pre-routed: injected %d chars of real data", len(preData))
+	}
+
+	// First call with tools. Tools remain active even when pre-routed — smart models can
+	// chain additional tools or refine; small models benefit from pre-injected real data.
+	resp, err := provider.GenerateWithTools(c.Request.Context(), firstMsg, loopHistory, activeTools, opts)
 	if err != nil {
 		log.Printf("[DIRECTOR_CHAT] LLM error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error: " + err.Error()})
 		return
 	}
 
-	// Fallback: if model outputs tool call as text instead of using function calling API
-	if resp.FunctionCall == nil && resp.Text != "" {
-		if fc := parseTextToolCall(resp.Text); fc != nil {
-			log.Printf("[DIRECTOR_CHAT] Text-fallback tool detected: %s (model didn't use function calling API)", fc.Name)
-			resp.FunctionCall = fc
+	// isTextFallback tracks whether the current tool call came from parsing model text
+	// rather than from the native function-calling API.
+	// When true, we strip [tool_call: ...] syntax from the assistant history message so the
+	// model won't see its own tool-call text on the next turn and repeat the call.
+	isTextFallback := false
+	tryTextFallback := func(r *llm.Response) {
+		if r.FunctionCall == nil && r.Text != "" {
+			if fc := parseTextToolCall(r.Text); fc != nil {
+				log.Printf("[DIRECTOR_CHAT] Text-fallback tool detected: %s (model didn't use function calling API)", fc.Name)
+				r.FunctionCall = fc
+				isTextFallback = true
+			}
 		}
+	}
+	// Skip text-fallback detection when pre-routed: data already injected, avoid re-triggering tool loop.
+	if !preRouted {
+		tryTextFallback(resp)
 	}
 
 	// Tool-calling loop: execute tools and continue until we get a text response
 	toolCallCount := 0
-	loopHistory = append(loopHistory, llm.Message{Role: "user", Content: request.Message})
+	loadToolsCount := 0 // separate counter for load_tools (meta-tool, doesn't count against main limit)
+	loopHistory = append(loopHistory, llm.Message{Role: "user", Content: firstMsg})
 
 	for resp.FunctionCall != nil && toolCallCount < maxToolCalls {
 		fc := resp.FunctionCall
 
 		// Handle load_tools meta-tool (doesn't count against tool call limit)
 		if fc.Name == "load_tools" {
+			loadToolsCount++
+			if loadToolsCount > 3 {
+				log.Printf("[DIRECTOR_CHAT] load_tools loop detected (%d calls) — forcing synthesis", loadToolsCount)
+				resp.FunctionCall = nil
+				// Strip any [tool_call: ...] syntax so it doesn't appear in the final response
+				resp.Text = strings.TrimSpace(textToolCallRe.ReplaceAllString(resp.Text, ""))
+				if resp.Text == "" {
+					resp.Text = "I've loaded the requested tools. Let me proceed with the task."
+				}
+				break
+			}
+
 			log.Printf("[DIRECTOR_CHAT] load_tools called: %v", fc.Arguments)
 			result, newTools := handleLoadTools(fc.Arguments, loadedCategories)
 			if len(newTools) > 0 {
@@ -178,22 +216,47 @@ func DirectorChatMessage(c *gin.Context) {
 			}
 
 			fcArgsJSON, _ := json.Marshal(fc.Arguments)
-			loopHistory = append(loopHistory,
-				llm.Message{Role: "assistant", Content: fmt.Sprintf("[tool_call: %s(%s)]", fc.Name, string(fcArgsJSON))},
-				llm.Message{Role: "function", Content: result},
-			)
+			if isTextFallback {
+				// Strip [tool_call: ...] from history and inject as user message so the model
+				// doesn't see its own tool-call syntax and repeat load_tools on the next turn.
+				cleanMsg := strings.TrimSpace(textToolCallRe.ReplaceAllString(resp.Text, ""))
+				if cleanMsg == "" {
+					cleanMsg = "(loading tools)"
+				}
+				// Build explicit list of loaded tool names so the model knows what to call next
+				toolNames := make([]string, 0, len(newTools))
+				for _, t := range newTools {
+					toolNames = append(toolNames, t.Name)
+				}
+				toolNamesHint := ""
+				if len(toolNames) > 0 {
+					toolNamesHint = " Newly available tools: " + strings.Join(toolNames, ", ") + "."
+				}
+				loopHistory = append(loopHistory,
+					llm.Message{Role: "assistant", Content: cleanMsg},
+					llm.Message{Role: "user", Content: fmt.Sprintf("Tools loaded.%s %s\nNow call the appropriate tool directly. Do NOT call load_tools again.", toolNamesHint, result)},
+				)
+			} else {
+				loopHistory = append(loopHistory,
+					llm.Message{Role: "assistant", Content: fmt.Sprintf("[tool_call: %s(%s)]", fc.Name, string(fcArgsJSON))},
+					llm.Message{Role: "function", Content: result},
+				)
+			}
 
+			isTextFallback = false // reset before next synthesis call
 			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, activeTools, opts)
 			if err != nil {
-				log.Printf("[DIRECTOR_CHAT] LLM error after load_tools: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after load_tools"})
-				return
-			}
-			if resp.FunctionCall == nil && resp.Text != "" {
-				if fc := parseTextToolCall(resp.Text); fc != nil {
-					resp.FunctionCall = fc
+				if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "timeout") {
+					log.Printf("[DIRECTOR_CHAT] LLM error after load_tools (context overflow?): %v — retrying without tools", err)
+					resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, nil, opts)
+				}
+				if err != nil {
+					log.Printf("[DIRECTOR_CHAT] LLM error after load_tools: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after load_tools"})
+					return
 				}
 			}
+			tryTextFallback(resp)
 			continue
 		}
 
@@ -210,16 +273,19 @@ func DirectorChatMessage(c *gin.Context) {
 			log.Printf("[DIRECTOR_CHAT] Tools reloaded after %s: now %d tools", fc.Name, len(activeTools))
 		}
 
-		// Add tool call and result to loop history (soft-trim large results)
-		fcArgsJSON, _ := json.Marshal(fc.Arguments)
+		// Trim large tool results to keep context manageable
 		trimmedResult := softTrimToolResult(result)
 		if len(trimmedResult) != len(result) {
 			log.Printf("[DIRECTOR_CHAT] Tool result trimmed: %d → %d chars", len(result), len(trimmedResult))
 		}
-		loopHistory = append(loopHistory,
-			llm.Message{Role: "assistant", Content: fmt.Sprintf("[tool_call: %s(%s)]", fc.Name, string(fcArgsJSON))},
-			llm.Message{Role: "function", Content: trimmedResult},
-		)
+
+		// Build clean assistant message — strip any [tool_call: ...] syntax so the model
+		// never sees its own call pattern in history and doesn't repeat the call.
+		// This applies to both text-fallback and API-based tool calls.
+		cleanAssistantMsg := strings.TrimSpace(textToolCallRe.ReplaceAllString(resp.Text, ""))
+		if cleanAssistantMsg == "" {
+			cleanAssistantMsg = fmt.Sprintf("(used %s)", fc.Name)
+		}
 
 		// Stage 2: hard-clear older tool results if context is getting too large
 		if toolCallCount >= 3 {
@@ -228,9 +294,8 @@ func DirectorChatMessage(c *gin.Context) {
 			if loopTokens > budgetWithHeadroom {
 				cleared := 0
 				for i := range loopHistory {
-					if loopHistory[i].Role == "function" && i < len(loopHistory)-2 {
-						oldLen := len(loopHistory[i].Content)
-						if oldLen > 200 {
+					if loopHistory[i].Role == "user" && strings.HasPrefix(loopHistory[i].Content, "[Tool result") && i < len(loopHistory)-2 {
+						if len(loopHistory[i].Content) > 200 {
 							loopHistory[i].Content = "[compacted: tool output removed to free context]"
 							cleared++
 						}
@@ -243,21 +308,48 @@ func DirectorChatMessage(c *gin.Context) {
 			}
 		}
 
-		// Call again WITH tools so Director can make more tool calls if needed
-		resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, activeTools, opts)
-		if err != nil {
-			log.Printf("[DIRECTOR_CHAT] LLM error after tool call: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after tool execution"})
-			return
+		if isTextFallback {
+			// Text-fallback: inject result as user message, call WITHOUT tools, break.
+			// The model can't chain more tools — synthesis is the final step.
+			loopHistory = append(loopHistory,
+				llm.Message{Role: "assistant", Content: cleanAssistantMsg},
+				llm.Message{Role: "user", Content: fmt.Sprintf("Tool result for %s:\n%s\n\nPlease answer based on this result.", fc.Name, trimmedResult)},
+			)
+			log.Printf("[DIRECTOR_CHAT] Text-fallback: injecting result as user message for synthesis")
+			resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, nil, opts)
+			if err != nil {
+				log.Printf("[DIRECTOR_CHAT] LLM synthesis error: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM synthesis error"})
+				return
+			}
+			resp.FunctionCall = nil // exit loop — synthesis is final
+			break
 		}
 
-		// Fallback for subsequent calls too
-		if resp.FunctionCall == nil && resp.Text != "" {
-			if fc := parseTextToolCall(resp.Text); fc != nil {
-				log.Printf("[DIRECTOR_CHAT] Text-fallback tool detected: %s", fc.Name)
-				resp.FunctionCall = fc
+		// API function call: inject result as user message with clean prefix (no [tool_call: ...] in history).
+		// Call WITH tools so Director can chain additional tool calls if needed.
+		loopHistory = append(loopHistory,
+			llm.Message{Role: "assistant", Content: cleanAssistantMsg},
+			llm.Message{Role: "user", Content: fmt.Sprintf("[Tool result for %s]\n%s", fc.Name, trimmedResult)},
+		)
+
+		isTextFallback = false
+		resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, activeTools, opts)
+		if err != nil {
+			// B2: on EOF/timeout (context overflow), retry with NO tools for synthesis only
+			if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "timeout") {
+				log.Printf("[DIRECTOR_CHAT] LLM error after tool call (context overflow?): %v — retrying synthesis without tools", err)
+				resp, err = provider.GenerateWithTools(c.Request.Context(), "", loopHistory, nil, opts)
+			}
+			if err != nil {
+				log.Printf("[DIRECTOR_CHAT] LLM error after tool call: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "director LLM error after tool execution"})
+				return
 			}
 		}
+
+		isTextFallback = false
+		tryTextFallback(resp)
 	}
 
 	if resp.Text == "" && resp.FunctionCall != nil {
@@ -277,7 +369,15 @@ func DirectorChatMessage(c *gin.Context) {
 		if h[i].Role == "user" {
 			msg := h[i].Content
 			if len(msg) > 150 {
-				msg = msg[:150]
+				// Truncate at rune boundary to avoid broken UTF-8 sequences
+				runes := []rune(msg)
+				if len(runes) > 150 {
+					msg = string(runes[:150])
+				}
+				// Validate and strip any remaining invalid bytes
+				if !utf8.ValidString(msg) {
+					msg = strings.ToValidUTF8(msg, "")
+				}
 			}
 			recentUserMsgs = append([]string{msg}, recentUserMsgs...)
 			topicCount++
@@ -478,6 +578,58 @@ func DirectorAnalyze(c *gin.Context) {
 }
 
 // ============================================================================
+// Pre-routing — execute data tools before LLM call for small-model reliability
+// ============================================================================
+
+// tryPreRoute detects data-fetching intent in the user message and pre-executes
+// the relevant tool, returning the result as enriched context to inject.
+// When data is pre-injected, the LLM only needs to synthesize — it never has to
+// decide whether to call a tool. This makes 4B models work reliably for data queries.
+// Returns "" when no pre-routing is applicable.
+func tryPreRoute(ctx context.Context, msg string) string {
+	lower := strings.ToLower(msg)
+
+	hasAny := func(keywords ...string) bool {
+		for _, kw := range keywords {
+			if strings.Contains(lower, kw) {
+				return true
+			}
+		}
+		return false
+	}
+
+	runTool := func(name string, args map[string]interface{}) string {
+		result := executeDirectorTool(ctx, &llm.FunctionCall{Name: name, Arguments: args})
+		if result == "" || strings.HasPrefix(result, "Error") {
+			return ""
+		}
+		return fmt.Sprintf("[Данные из инструмента %s — используй для ответа]\n%s\n[Конец данных]", name, result)
+	}
+
+	// Recall / memory queries
+	if hasAny("вспомни", "помнишь", "что я говорил", "о чём мы говорили",
+		"была ли", "был ли", "сохранил ли", "в памяти", "что ты знаешь о",
+		"есть ли в памяти") || strings.Contains(lower, "recall") {
+		return runTool("recall", map[string]interface{}{"query": msg, "limit": 5})
+	}
+
+	// Recent chats / requests
+	if hasAny("последние чаты", "свежие чаты", "покажи чаты", "какие чаты",
+		"обращения сегодня", "обращения за", "недавние обращения", "сколько чатов",
+		"последние обращения", "список чатов") {
+		return runTool("get_recent_chats", map[string]interface{}{"limit": 10})
+	}
+
+	// Full-text search across chats (compound phrases only — "найди" alone is too broad)
+	if hasAny("найди чаты", "найди обращения", "найди все", "поищи в чатах",
+		"поиск по чатам", "ищи где", "найди где упоминается") {
+		return runTool("deep_search", map[string]interface{}{"query": msg, "limit": 5})
+	}
+
+	return ""
+}
+
+// ============================================================================
 // System prompt — DYNAMIC, built from identity + tools + memory
 // ============================================================================
 
@@ -515,6 +667,9 @@ func buildDirectorChatSystemPrompt() string {
 IMPORTANT:
 - Данные и метрики — ВСЕГДА сначала через инструменты. Не выдумывай числа.
 - Общайся на языке админа.
+- Если нативный function calling недоступен — используй текстовый формат:
+  [tool_call: tool_name({"param": "value"})]
+  Примеры: [tool_call: get_recent_chats({"limit":10})]  [tool_call: recall({"query":"тема","limit":5})]
 
 [ИНСТРУМЕНТЫ]
 У тебя есть базовые инструменты (чаты, память, поиск, схема БД) + мета-инструмент load_tools.

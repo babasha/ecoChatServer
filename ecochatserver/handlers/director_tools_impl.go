@@ -545,6 +545,11 @@ func toolRemember(args map[string]interface{}) string {
 		return fmt.Sprintf("Error saving memory: %v", err)
 	}
 
+	// Reinforce Hebbian associations between co-occurring tags
+	if len(tags) > 1 && database.HebbianReinforcFunc != nil {
+		go database.HebbianReinforcFunc(tags)
+	}
+
 	expiresStr := "permanent"
 	if expiresAt != nil {
 		expiresStr = fmt.Sprintf("expires %s", expiresAt.Format("2006-01-02 15:04"))

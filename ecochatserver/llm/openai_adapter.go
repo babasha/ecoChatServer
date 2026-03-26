@@ -507,9 +507,18 @@ func (a *OpenAIAdapter) buildMessages(userMessage string, chatHistory []Message,
 
 	// История чата
 	for _, msg := range chatHistory {
+		role := msg.Role
+		content := msg.Content
+		// "function" role is not universally supported by local LLM servers (MLX, Ollama).
+		// Convert to "user" with a clear prefix so the model always sees tool results.
+		// Cloud providers (Claude, GPT-4) never store function results this way in our flow.
+		if role == "function" {
+			role = "user"
+			content = "[Tool result]\n" + content
+		}
 		messages = append(messages, openAIMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+			Role:    role,
+			Content: content,
 		})
 	}
 
