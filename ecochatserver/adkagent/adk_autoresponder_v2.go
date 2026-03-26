@@ -272,6 +272,15 @@ func (ar *ADKAutoResponderV2) ProcessMessage(ctx context.Context, chat *models.C
 		}
 	}
 
+	// 3. Client profile — accumulated knowledge from past conversations
+	if profile, pErr := database.GetClientProfile(chat.User.ID); pErr == nil && profile != nil {
+		if profileCtx := buildClientProfileContext(profile); profileCtx != "" {
+			contextParts = append(contextParts, profileCtx)
+			log.Printf("[ADK_V2] Injecting client profile (interactions=%d, device=%s)",
+				profile.InteractionCount, profile.DeviceModel)
+		}
+	}
+
 	// Prepend context to message
 	messageWithCtx := msg.Content
 	if len(contextParts) > 0 {
@@ -656,4 +665,43 @@ func truncateLog(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// buildClientProfileContext formats a client profile into a compact context block
+// for injection into the L1 agent prompt.
+func buildClientProfileContext(p *database.ClientProfile) string {
+	var parts []string
+
+	if p.DeviceModel != "" {
+		parts = append(parts, "Device: "+p.DeviceModel)
+	}
+	if p.Language != "" {
+		parts = append(parts, "Language: "+p.Language)
+	}
+	if len(p.CommonIssues) > 0 {
+		// Deduplicate while preserving recency order
+		seen := make(map[string]struct{})
+		var unique []string
+		for _, issue := range p.CommonIssues {
+			if _, ok := seen[issue]; !ok {
+				seen[issue] = struct{}{}
+				unique = append(unique, issue)
+				if len(unique) == 3 {
+					break
+				}
+			}
+		}
+		parts = append(parts, "Common issues: "+strings.Join(unique, ", "))
+	}
+	if p.LastSentiment != "" && p.LastSentiment != "neutral" {
+		parts = append(parts, "Previous mood: "+p.LastSentiment)
+	}
+	if p.InteractionCount > 1 {
+		parts = append(parts, fmt.Sprintf("Interactions: %d", p.InteractionCount))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[CLIENT PROFILE]\n" + strings.Join(parts, "\n") + "\n[END PROFILE]"
 }

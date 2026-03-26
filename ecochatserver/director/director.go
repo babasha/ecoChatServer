@@ -18,6 +18,7 @@ type Director struct {
 	sentinel  *Sentinel         // pattern-based anomaly detection
 	provider  llm.Provider      // separate provider — can be Claude while РОП uses Qwen
 	optimizer *PromptOptimizer  // prompt versioning and optimization
+	hebbian   *HebbianGraph     // associative concept graph
 }
 
 // Config for Director initialization
@@ -57,12 +58,14 @@ func New(cfg Config) (*Director, error) {
 	}
 
 	tracker := NewEventTracker(DefaultTrackerConfig())
+	hebbian := NewHebbianGraph()
 
 	d := &Director{
 		tracker:   tracker,
 		sentinel:  NewSentinel(),
 		provider:  provider,
 		optimizer: NewPromptOptimizer(provider),
+		hebbian:   hebbian,
 	}
 
 	// Make the provider available for Critic in package-level functions (identity.go)
@@ -70,6 +73,15 @@ func New(cfg Config) (*Director, error) {
 
 	// Bootstrap identity (seed defaults if first run)
 	d.BootstrapIdentity()
+
+	// Register Hebbian callbacks into the database layer (avoids circular import)
+	if hebbian.enabled {
+		database.HebbianReinforcFunc = func(tags []string) { hebbian.ReinforceConcepts(tags) }
+		database.HebbianBoostFunc = func(tags []string) map[string]float64 {
+			return hebbian.BoostRecallQuery(tags, 10)
+		}
+		log.Printf("[HEBBIAN] Associative graph enabled")
+	}
 
 	// Start background cleanup goroutine
 	go d.periodicCleanup()
@@ -96,6 +108,11 @@ func (d *Director) Sentinel() *Sentinel {
 // Optimizer returns the prompt optimizer for external use (API handlers).
 func (d *Director) Optimizer() *PromptOptimizer {
 	return d.optimizer
+}
+
+// Hebbian returns the associative concept graph (nil if disabled).
+func (d *Director) Hebbian() *HebbianGraph {
+	return d.hebbian
 }
 
 // CheckAndAnalyze checks if analysis should be triggered, runs it if needed.
@@ -223,6 +240,21 @@ func (d *Director) periodicCleanup() {
 					log.Printf("[DIRECTOR] Compaction cleanup error: %v", err)
 				} else if deleted > 0 {
 					log.Printf("[DIRECTOR] Compaction cleanup: deleted %d old compactions (retention=%d days)", deleted, retentionDays)
+				}
+			}
+			// Hebbian graph decay
+			if d.hebbian != nil && d.hebbian.enabled {
+				edgeD, edgeP, err := d.hebbian.DecayEdges()
+				if err != nil {
+					log.Printf("[HEBBIAN] Edge decay error: %v", err)
+				}
+				nodeD, nodeP, err := d.hebbian.DecayNodes()
+				if err != nil {
+					log.Printf("[HEBBIAN] Node decay error: %v", err)
+				}
+				if edgeD+edgeP+nodeD+nodeP > 0 {
+					log.Printf("[HEBBIAN] Decay: edges(%d decayed, %d pruned), nodes(%d decayed, %d pruned)",
+						edgeD, edgeP, nodeD, nodeP)
 				}
 			}
 		case <-digestTicker.C:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/egor/ecochatserver/database/queries"
@@ -14,6 +15,14 @@ import (
 // EmbedFunc is a callback for generating embeddings, set externally to avoid import cycle.
 // Signature: func(ctx context.Context, text string) ([]float64, error)
 var EmbedFunc func(ctx context.Context, text string) ([]float64, error)
+
+// HebbianReinforcFunc is called on every SaveAutoMemory to reinforce concept associations.
+// Set by Director on startup when DIRECTOR_HEBBIAN_ENABLED=true.
+var HebbianReinforcFunc func(tags []string)
+
+// HebbianBoostFunc expands a recall query with associated concepts for re-ranking.
+// Returns map[conceptLabel]associationScore.
+var HebbianBoostFunc func(queryTags []string) map[string]float64
 
 // ============================================================================
 // Director Reports (Level 2 agent)
@@ -114,6 +123,7 @@ func RecallMemories(query string, category string, limit int) ([]models.Director
 
 // RecallMemoriesHybrid performs hybrid FTS + vector search with MMR diversity.
 // Automatically generates query embedding if embedding client is available.
+// If Hebbian graph is enabled, re-ranks results using associative concept boosts.
 func RecallMemoriesHybrid(query string, category string, limit int) ([]models.DirectorMemory, error) {
 	var queryEmbedding []float64
 
@@ -128,7 +138,20 @@ func RecallMemoriesHybrid(query string, category string, limit int) ([]models.Di
 		}
 	}
 
-	return queries.RecallMemoriesHybrid(DB, query, queryEmbedding, category, limit)
+	memories, err := queries.RecallMemoriesHybrid(DB, query, queryEmbedding, category, limit)
+	if err != nil || len(memories) == 0 {
+		return memories, err
+	}
+
+	// Hebbian graph boost: re-rank memories by associative co-occurrence
+	if HebbianBoostFunc != nil {
+		boosts := HebbianBoostFunc(extractConceptsFromQuery(query))
+		if len(boosts) > 0 {
+			applyHebbianBoosts(memories, boosts)
+		}
+	}
+
+	return memories, nil
 }
 
 // RecallMemoriesHybridWithEmbedding performs hybrid search using a pre-computed embedding.
@@ -158,7 +181,11 @@ func DecayMemories() (int64, int64, error) {
 }
 
 func SaveAutoMemory(category, key, content string, tags []string, expiresAt *time.Time) error {
-	return queries.SaveAutoMemory(DB, category, key, content, tags, expiresAt)
+	err := queries.SaveAutoMemory(DB, category, key, content, tags, expiresAt)
+	if err == nil && HebbianReinforcFunc != nil && len(tags) > 1 {
+		go HebbianReinforcFunc(tags)
+	}
+	return err
 }
 
 func SearchReports(query string, limit int) ([]models.DirectorReport, error) {
@@ -746,4 +773,97 @@ func GetCronRunLogs(jobID uuid.UUID, limit int) ([]models.CronRunLog, error) {
 
 func CleanupOldCronRunLogs(retentionDays int) (int64, error) {
 	return queries.CleanupOldCronRunLogs(DB, retentionDays)
+}
+
+// ============================================================================
+// Client Profiles — accumulated per-user knowledge
+// ============================================================================
+
+// ClientProfileUpdate re-exports the type for external packages.
+type ClientProfileUpdate = queries.ClientProfileUpdate
+
+// ClientProfile re-exports the type for external packages.
+type ClientProfile = queries.ClientProfile
+
+func UpsertClientProfile(u queries.ClientProfileUpdate) error {
+	return queries.UpsertClientProfile(DB, u)
+}
+
+func GetClientProfile(userID uuid.UUID) (*queries.ClientProfile, error) {
+	return queries.GetClientProfile(DB, userID)
+}
+
+// ============================================================================
+// Hebbian Associative Graph — wrappers
+// ============================================================================
+
+func HebbianUpsertConceptNode(label, category string) (uuid.UUID, error) {
+	return queries.UpsertConceptNode(DB, label, category)
+}
+
+func HebbianGetConceptNodesByLabels(labels []string) ([]queries.ConceptNode, error) {
+	return queries.GetConceptNodesByLabels(DB, labels)
+}
+
+func HebbianUpsertConceptEdge(idA, idB uuid.UUID, learningRate float64) error {
+	return queries.UpsertConceptEdge(DB, idA, idB, learningRate)
+}
+
+func HebbianGetNeighbors(nodeIDs, excludeIDs []uuid.UUID, limit int) ([]queries.NeighborResult, error) {
+	return queries.GetNeighbors(DB, nodeIDs, excludeIDs, limit)
+}
+
+func HebbianDecayEdges(halfLifeDays, pruneThreshold float64) (int64, int64, error) {
+	return queries.DecayConceptEdges(DB, halfLifeDays, pruneThreshold)
+}
+
+func HebbianDecayNodes(halfLifeDays, pruneThreshold float64) (int64, int64, error) {
+	return queries.DecayConceptNodes(DB, halfLifeDays, pruneThreshold)
+}
+
+func HebbianGetGraphStats() (int, int, float64, error) {
+	return queries.GetConceptGraphStats(DB)
+}
+
+func HebbianReinforceConcepts(concepts []queries.ConceptNodeInput) error {
+	return queries.ReinforceConcepts(DB, concepts)
+}
+
+func HebbianGetTopConcepts(limit int) ([]queries.ConceptNode, error) {
+	return queries.GetTopConceptsByHitCount(DB, limit)
+}
+
+func HebbianGetStrongestEdges(limit int) ([]queries.ConceptEdge, error) {
+	return queries.GetStrongestEdges(DB, limit)
+}
+
+// extractConceptsFromQuery tokenizes a query string into candidate concept labels.
+// These are passed to HebbianBoostFunc to find associated concepts in the graph.
+func extractConceptsFromQuery(query string) []string {
+	tokens := strings.Fields(query)
+	seen := make(map[string]struct{}, len(tokens))
+	result := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		t = strings.ToLower(strings.Trim(t, ".,!?;:\"'()[]"))
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; !ok {
+			seen[t] = struct{}{}
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// applyHebbianBoosts adds associative score boosts to memories whose tags overlap
+// with the Hebbian-expanded concept set. Boost factor per matching tag: 0.15.
+func applyHebbianBoosts(memories []models.DirectorMemory, boosts map[string]float64) {
+	for i := range memories {
+		for _, tag := range memories[i].Tags {
+			if boost, ok := boosts[tag]; ok {
+				memories[i].HybridScore += boost * 0.15
+			}
+		}
+	}
 }

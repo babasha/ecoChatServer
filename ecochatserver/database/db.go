@@ -198,6 +198,13 @@ func ensureDirectorTables() error {
 	defer cancel()
 
 	ddl := `
+	-- Application settings (key-value store, overrides ENV variables)
+	CREATE TABLE IF NOT EXISTS app_settings (
+		key        TEXT PRIMARY KEY,
+		value      JSONB NOT NULL DEFAULT '""',
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
 	CREATE TABLE IF NOT EXISTS director_reports (
 		id UUID PRIMARY KEY,
 		report_date TIMESTAMPTZ NOT NULL,
@@ -583,6 +590,47 @@ func ensureDirectorTables() error {
 		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	);
 	CREATE INDEX IF NOT EXISTS idx_cron_run_log_job ON director_cron_run_log (job_id, created_at DESC);
+
+	-- Per-client accumulated knowledge profile
+	CREATE TABLE IF NOT EXISTS client_profiles (
+		user_id           UUID PRIMARY KEY,
+		device_model      VARCHAR(100) NOT NULL DEFAULT '',
+		language          VARCHAR(10) NOT NULL DEFAULT '',
+		common_issues     TEXT[] NOT NULL DEFAULT '{}',
+		last_sentiment    VARCHAR(20) NOT NULL DEFAULT '',
+		interaction_count INT NOT NULL DEFAULT 0,
+		last_seen_at      TIMESTAMPTZ,
+		updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_client_profiles_updated ON client_profiles (updated_at DESC);
+
+	-- Hebbian associative graph
+	CREATE TABLE IF NOT EXISTS concept_nodes (
+		id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		label       VARCHAR(200) NOT NULL UNIQUE,
+		category    VARCHAR(30) NOT NULL DEFAULT '',
+		activation  FLOAT NOT NULL DEFAULT 1.0,
+		hit_count   INT NOT NULL DEFAULT 1,
+		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_concept_nodes_label    ON concept_nodes (label);
+	CREATE INDEX IF NOT EXISTS idx_concept_nodes_category ON concept_nodes (category);
+
+	CREATE TABLE IF NOT EXISTS concept_edges (
+		id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		source_id   UUID NOT NULL REFERENCES concept_nodes(id) ON DELETE CASCADE,
+		target_id   UUID NOT NULL REFERENCES concept_nodes(id) ON DELETE CASCADE,
+		weight      FLOAT NOT NULL DEFAULT 1.0,
+		co_occur    INT NOT NULL DEFAULT 1,
+		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		UNIQUE(source_id, target_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_concept_edges_source ON concept_edges (source_id);
+	CREATE INDEX IF NOT EXISTS idx_concept_edges_target ON concept_edges (target_id);
+	CREATE INDEX IF NOT EXISTS idx_concept_edges_weight ON concept_edges (weight DESC);
 	`
 
 	_, err := DB.ExecContext(ctx, ddl)

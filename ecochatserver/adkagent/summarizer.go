@@ -552,4 +552,46 @@ func extractAndSaveMetadata(chatID uuid.UUID, summaryText string) {
 			fmt.Sprintf("negative_sentiment:%s:%s", dateKey, chatShort),
 			content, []string{"sentiment", "negative"}, &expires)
 	}
+
+	// Cross-metadata Hebbian reinforcement: directly reinforce associations between
+	// all metadata fields (device model ↔ issue type ↔ resolution ↔ sentiment).
+	if database.HebbianReinforcFunc != nil {
+		var allConcepts []string
+		if model, ok := tags["DEVICE_MODEL"]; ok {
+			allConcepts = append(allConcepts, "model:"+strings.ToLower(model))
+		}
+		if issueType, ok := tags["ISSUE_TYPE"]; ok {
+			allConcepts = append(allConcepts, "issue:"+strings.ToLower(issueType))
+		}
+		if res, ok := tags["RESOLUTION"]; ok {
+			allConcepts = append(allConcepts, "resolution:"+strings.ToLower(res))
+		}
+		if sentiment, ok := tags["CLIENT_SENTIMENT"]; ok {
+			allConcepts = append(allConcepts, "sentiment:"+strings.ToLower(sentiment))
+		}
+		if len(allConcepts) > 1 {
+			go database.HebbianReinforcFunc(allConcepts)
+		}
+	}
+
+	// Update per-client profile so the L1 agent knows context on next visit.
+	if chat, err := database.GetChatLightweight(chatID); err == nil && chat != nil {
+		lang, _ := database.GetClientLanguageFromChat(chatID)
+		update := database.ClientProfileUpdate{
+			UserID:   chat.User.ID,
+			Language: lang,
+		}
+		if model, ok := tags["DEVICE_MODEL"]; ok {
+			update.DeviceModel = model
+		}
+		if issue, ok := tags["ISSUE_TYPE"]; ok {
+			update.NewIssue = issue
+		}
+		if sentiment, ok := tags["CLIENT_SENTIMENT"]; ok {
+			update.LastSentiment = sentiment
+		}
+		if err := database.UpsertClientProfile(update); err != nil {
+			log.Printf("[PROFILE] Failed to update client profile for user %s: %v", chat.User.ID, err)
+		}
+	}
 }
