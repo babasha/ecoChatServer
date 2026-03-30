@@ -277,23 +277,28 @@ func loadDirectorProviderFromDB() llm.Provider {
 		return nil
 	}
 
-	// OAuth providers don't use a static API key — skip the key check for them
-	oauthProvider := providerType == string(llm.ProviderOpenAIOAuth) ||
+	// Providers that don't need a static API key
+	noKeyRequired := providerType == string(llm.ProviderOpenAIOAuth) ||
 		providerType == string(llm.ProviderGeminiOAuth) ||
-		providerType == string(llm.ProviderClaudeOAuth)
+		providerType == string(llm.ProviderClaudeOAuth) ||
+		providerType == string(llm.ProviderLMStudio) ||
+		providerType == string(llm.ProviderOllama)
 
 	apiKey := database.GetSetting("DIRECTOR_API_KEY", "")
-	if apiKey == "" && !oauthProvider {
+	if apiKey == "" && !noKeyRequired {
 		log.Printf("[DIRECTOR] DIRECTOR_PROVIDER=%s but no DIRECTOR_API_KEY set", providerType)
 		return nil
 	}
 
 	model := database.GetSetting("DIRECTOR_MODEL", "")
+	baseURL := database.GetSetting("DIRECTOR_BASE_URL", "")
 
 	provider, err := llm.NewProvider(&llm.ProviderConfig{
-		Type:   llm.ProviderType(providerType),
-		APIKey: apiKey,
-		Model:  model,
+		Type:    llm.ProviderType(providerType),
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: baseURL,
+		Timeout: database.GetSettingInt("LLM_API_TIMEOUT", 30),
 	})
 	if err != nil {
 		log.Printf("[DIRECTOR] Failed to create DB-configured provider: %v", err)

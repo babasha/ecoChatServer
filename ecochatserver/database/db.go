@@ -38,12 +38,10 @@ func Init() error {
 	DB.SetMaxIdleConns(5)
 	DB.SetConnMaxLifetime(5 * time.Minute)
 
-	// Проверяем подключение (тайм-аут 3 с)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err = DB.PingContext(ctx); err != nil {
+	// Проверяем подключение с retry (Railway может стартовать БД позже приложения)
+	if err = pingWithRetry(DB, "main", 10, 3*time.Second); err != nil {
 		_ = DB.Close()
-		return fmt.Errorf("db.Ping (main): %w", err)
+		return err
 	}
 
 	log.Println("[database] PostgreSQL (chats) connected ✓")
@@ -60,11 +58,9 @@ func Init() error {
 		UsersDB.SetMaxIdleConns(2)
 		UsersDB.SetConnMaxLifetime(5 * time.Minute)
 
-		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel2()
-		if err = UsersDB.PingContext(ctx2); err != nil {
+		if err = pingWithRetry(UsersDB, "users", 10, 3*time.Second); err != nil {
 			_ = UsersDB.Close()
-			return fmt.Errorf("db.Ping (users): %w", err)
+			return err
 		}
 
 		log.Println("[database] PostgreSQL (users) connected ✓")
@@ -140,6 +136,25 @@ func Close() {
 }
 
 // ─────────────────────────────── helpers
+
+// pingWithRetry пытается пингануть БД attempts раз с интервалом interval.
+// Нужно для Railway, где БД может стартовать позже приложения.
+func pingWithRetry(db *sql.DB, name string, attempts int, interval time.Duration) error {
+	var err error
+	for i := 1; i <= attempts; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), interval)
+		err = db.PingContext(ctx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		log.Printf("[database] Ping (%s) attempt %d/%d failed: %v", name, i, attempts, err)
+		if i < attempts {
+			time.Sleep(interval)
+		}
+	}
+	return fmt.Errorf("db.Ping (%s): %w", name, err)
+}
 
 // buildPostgresDSN формирует DSN для PostgreSQL с логированием.
 func buildPostgresDSN(prefix, logName string, defaults map[string]string) string {
