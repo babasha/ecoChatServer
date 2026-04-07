@@ -223,15 +223,18 @@ func parseCriticResponse(text string, dt DecisionType, attempt int) *CriticVerdi
 		verdict.Action = CriticApprove
 	}
 
-	// Parse RISK_LEVEL
+	// Parse RISK_LEVEL — only override default (RiskHigh) if section was found.
+	// Keeps fail-closed behavior: missing/malformed input stays RiskHigh.
 	riskStr := strings.TrimSpace(strings.ToLower(p.Get("RISK_LEVEL:")))
-	switch {
-	case strings.HasPrefix(riskStr, "low"):
-		verdict.RiskLevel = RiskLow
-	case strings.HasPrefix(riskStr, "high"):
-		verdict.RiskLevel = RiskHigh
-	default:
-		verdict.RiskLevel = RiskMedium
+	if riskStr != "" {
+		switch {
+		case strings.HasPrefix(riskStr, "low"):
+			verdict.RiskLevel = RiskLow
+		case strings.HasPrefix(riskStr, "high"):
+			verdict.RiskLevel = RiskHigh
+		default:
+			verdict.RiskLevel = RiskMedium
+		}
 	}
 
 	// Parse CONCERNS
