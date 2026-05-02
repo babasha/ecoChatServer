@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	ClientTypeAdmin  = "admin"
-	ClientTypeWidget = "widget"
+	ClientTypeAdmin    = "admin"
+	ClientTypeWidget   = "widget"
+	ClientTypeDriver   = "driver"   // moooving: водитель
+	ClientTypeMoClient = "mo_client" // moooving: авторизованный клиент
 )
 
 // Hub отвечает за регистрацию  клиентов и  вещание сообщений.
@@ -21,6 +23,10 @@ type Hub struct {
 	chatClients          map[string]map[*Client]bool
 	widgetsByUserID      map[string]*Client // Виджеты по userID для обновления chat_id
 	pendingWidgetChatIDs map[string]pendingWidgetChat
+
+	// moooving: индексация по chatID, по одному клиенту на (chat, role)
+	driversByChatID   map[string]*Client
+	moClientsByChatID map[string]*Client
 
 	Broadcast  chan []byte
 	Register   chan *Client
@@ -66,6 +72,8 @@ func NewHub() *Hub {
 		chatClients:          make(map[string]map[*Client]bool),
 		widgetsByUserID:      make(map[string]*Client),
 		pendingWidgetChatIDs: make(map[string]pendingWidgetChat),
+		driversByChatID:      make(map[string]*Client),
+		moClientsByChatID:    make(map[string]*Client),
 		Broadcast:            make(chan []byte),
 		Register:             make(chan *Client),
 		Unregister:           make(chan *Client),
@@ -161,6 +169,16 @@ func (h *Hub) registerClient(c *Client) {
 				delete(h.pendingWidgetChatIDs, c.UserIDString)
 			}
 		}
+	} else if c.ClientType == ClientTypeDriver {
+		// moooving driver: один driver на чат
+		if c.ChatID != uuid.Nil {
+			h.driversByChatID[c.ChatID.String()] = c
+		}
+	} else if c.ClientType == ClientTypeMoClient {
+		// moooving client: один client на чат
+		if c.ChatID != uuid.Nil {
+			h.moClientsByChatID[c.ChatID.String()] = c
+		}
 	}
 
 	// Добавляем в карту клиентов чата
@@ -224,6 +242,20 @@ func (h *Hub) unregisterClient(c *Client) {
 			delete(h.widgetsByUserID, c.UserIDString)
 		}
 		delete(h.widgetsByUserID, c.ID)
+	} else if c.ClientType == ClientTypeDriver {
+		if c.ChatID != uuid.Nil {
+			chatStr := c.ChatID.String()
+			if existing, ok := h.driversByChatID[chatStr]; ok && existing == c {
+				delete(h.driversByChatID, chatStr)
+			}
+		}
+	} else if c.ClientType == ClientTypeMoClient {
+		if c.ChatID != uuid.Nil {
+			chatStr := c.ChatID.String()
+			if existing, ok := h.moClientsByChatID[chatStr]; ok && existing == c {
+				delete(h.moClientsByChatID, chatStr)
+			}
+		}
 	}
 
 	// Удаляем из карты клиентов чата
@@ -636,9 +668,11 @@ func (h *Hub) GetActiveClients() map[string]int {
 	defer h.mu.RUnlock()
 
 	return map[string]int{
-		"total":  len(h.clients),
-		"admin":  len(h.adminsByID),
-		"widget": len(h.widgetsByID),
+		"total":     len(h.clients),
+		"admin":     len(h.adminsByID),
+		"widget":    len(h.widgetsByID),
+		"driver":    len(h.driversByChatID),
+		"mo_client": len(h.moClientsByChatID),
 	}
 }
 
@@ -672,4 +706,67 @@ func (h *Hub) IncrementChatMessage() {
 	h.stats.mu.Lock()
 	h.stats.TotalMessages++
 	h.stats.mu.Unlock()
+}
+
+// SendToDriverInChat отправляет сообщение водителю, подключенному к указанному чату.
+// Возвращает true, если сообщение поставлено в канал.
+func (h *Hub) SendToDriverInChat(chatID string, message []byte) bool {
+	h.mu.RLock()
+	c, ok := h.driversByChatID[chatID]
+	h.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	select {
+	case c.Send <- message:
+		return true
+	default:
+		go h.cleanupClient(c)
+		return false
+	}
+}
+
+// SendToMoClientInChat отправляет сообщение moooving-клиенту, подключенному к чату.
+func (h *Hub) SendToMoClientInChat(chatID string, message []byte) bool {
+	h.mu.RLock()
+	c, ok := h.moClientsByChatID[chatID]
+	h.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	select {
+	case c.Send <- message:
+		return true
+	default:
+		go h.cleanupClient(c)
+		return false
+	}
+}
+
+// CloseMooovingChat отключает WS-клиентов moooving (driver, mo_client),
+// привязанных к этому чату, после рассылки финального сообщения.
+// Используется когда заказ выполнен и чат архивирован.
+func (h *Hub) CloseMooovingChat(chatID string, finalMessage []byte) {
+	h.mu.Lock()
+	var toDisconnect []*Client
+	if c, ok := h.driversByChatID[chatID]; ok {
+		toDisconnect = append(toDisconnect, c)
+	}
+	if c, ok := h.moClientsByChatID[chatID]; ok {
+		toDisconnect = append(toDisconnect, c)
+	}
+	h.mu.Unlock()
+
+	for _, c := range toDisconnect {
+		if finalMessage != nil {
+			select {
+			case c.Send <- finalMessage:
+			default:
+			}
+		}
+		go func(client *Client) {
+			time.Sleep(200 * time.Millisecond) // дать клиенту получить финальное сообщение
+			client.Disconnect()
+		}(c)
+	}
 }

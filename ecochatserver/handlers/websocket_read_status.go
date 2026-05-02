@@ -34,6 +34,10 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 		return
 	}
 
+	if !enforceMooovingChatScope(client, chatID) {
+		return
+	}
+
 	if len(p.MessageIDs) == 0 {
 		client.SendError("invalid_payload", "Массив messageIds не может быть пустым")
 		return
@@ -103,6 +107,10 @@ func processMarkReadFromWidget(client *websocketpkg.Client, payload json.RawMess
 	chatID, err := uuid.Parse(p.ChatID)
 	if err != nil {
 		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return
+	}
+
+	if !enforceMooovingChatScope(client, chatID) {
 		return
 	}
 

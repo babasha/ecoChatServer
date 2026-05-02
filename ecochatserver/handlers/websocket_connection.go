@@ -5,12 +5,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
+	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/middleware"
 	websocketpkg "github.com/egor/ecochatserver/websocket"
 )
@@ -144,6 +146,94 @@ func ServeWs(c *gin.Context) {
 		// DEBUG: раскомментируйте для отладки
 		// log.Printf("ServeWs: аутентифицирован admin %s (client: %s)", adminID, clientID)
 		_ = clientID // используется в DEBUG логах
+	} else if clientType == websocketpkg.ClientTypeDriver || clientType == websocketpkg.ClientTypeMoClient {
+		// moooving: водитель или авторизованный клиент.
+		// Аутентификация — через JWT с Issuer=moooving-chat, выпускаемый
+		// REST endpoint POST /api/moooving/chat/token (см. moooving_handler.go).
+		if token == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Отсутствует токен авторизации"})
+			return
+		}
+		claims, err := middleware.ValidateToken(token)
+		if err != nil {
+			log.Printf("ServeWs[moooving]: ошибка валидации токена: %v", err)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
+			return
+		}
+		if claims.Issuer != middleware.MooovingTokenIssuer {
+			log.Printf("ServeWs[moooving]: неверный Issuer=%q (ожидается %q)", claims.Issuer, middleware.MooovingTokenIssuer)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Токен не предназначен для чата moooving"})
+			return
+		}
+
+		expectedUserType := "client"
+		if clientType == websocketpkg.ClientTypeDriver {
+			expectedUserType = "driver"
+		}
+		if claims.UserType != expectedUserType {
+			log.Printf("ServeWs[moooving]: token UserType=%q, требуется %q", claims.UserType, expectedUserType)
+			c.JSON(http.StatusForbidden, gin.H{"error": "Токен не соответствует типу клиента"})
+			return
+		}
+		if claims.OrderID <= 0 || claims.ExtUserID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "В токене отсутствует order_id/ext_user_id"})
+			return
+		}
+
+		// Если в URL передан order_id — он должен совпадать с токеном
+		if qOrder := c.Query("order_id"); qOrder != "" {
+			if v, perr := strconv.ParseInt(qOrder, 10, 64); perr == nil && v != claims.OrderID {
+				log.Printf("ServeWs[moooving]: order_id в URL=%d не совпадает с токеном=%d", v, claims.OrderID)
+				c.JSON(http.StatusForbidden, gin.H{"error": "order_id mismatch"})
+				return
+			}
+		}
+
+		// Находим существующий чат заказа. Чат создаётся через REST до подключения,
+		// но если фронт пришёл первым — допускаем подключение, chat_id придёт позже.
+		moChat, err := database.GetMooovingChatByOrderID(claims.OrderID)
+		if err != nil {
+			log.Printf("ServeWs[moooving]: ошибка поиска чата order_id=%d: %v", claims.OrderID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска чата"})
+			return
+		}
+		if moChat == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Чат для этого заказа не открыт"})
+			return
+		}
+
+		// Проверка принадлежности: ext_user_id должен совпадать со стороной чата
+		if expectedUserType == "driver" {
+			if moChat.DriverIDExt == nil || *moChat.DriverIDExt != claims.ExtUserID {
+				log.Printf("ServeWs[moooving]: driver_id_ext=%v чата не совпадает с токеном %d",
+					moChat.DriverIDExt, claims.ExtUserID)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Водитель не назначен на этот заказ"})
+				return
+			}
+		} else {
+			if moChat.ClientIDExt == nil || *moChat.ClientIDExt != claims.ExtUserID {
+				log.Printf("ServeWs[moooving]: client_id_ext=%v чата не совпадает с токеном %d",
+					moChat.ClientIDExt, claims.ExtUserID)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Клиент не привязан к этому заказу"})
+				return
+			}
+		}
+
+		chatID = moChat.ID
+
+		// userID для sender_id в messages — детерминированный UUID
+		var userSource string
+		if expectedUserType == "driver" {
+			userSource = database.MooovingDriverSource
+		} else {
+			userSource = database.MooovingClientSource
+		}
+		adminID = database.MooovingUserUUID(userSource, claims.ExtUserID)
+
+		// Сохраняем claims в контекст для использования в processSendMessage
+		c.Set("moooving_user_type", expectedUserType)
+		c.Set("moooving_ext_user_id", claims.ExtUserID)
+		c.Set("moooving_order_id", claims.OrderID)
 	} else if clientType == "widget" {
 		// Для виджета парсим chatID только если он передан
 		if chatIDStr != "" {

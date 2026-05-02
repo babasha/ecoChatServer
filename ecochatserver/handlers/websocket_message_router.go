@@ -6,12 +6,40 @@ import (
 	websocketpkg "github.com/egor/ecochatserver/websocket"
 )
 
+// allowedMessagesForClientType определяет, какие message types разрешены
+// для каждого ClientType. nil = все разрешены (back-compat для admin/widget).
+var allowedMessagesForClientType = map[string]map[string]bool{
+	websocketpkg.ClientTypeDriver: {
+		"sendMessage": true,
+		"getChatByID": true,
+		"markAsRead":  true,
+		"mark_read":   true,
+		"typing":      true,
+	},
+	websocketpkg.ClientTypeMoClient: {
+		"sendMessage": true,
+		"getChatByID": true,
+		"markAsRead":  true,
+		"mark_read":   true,
+		"typing":      true,
+	},
+}
+
 // processWebSocketMessage обрабатывает входящие WebSocket сообщения
 func processWebSocketMessage(client *websocketpkg.Client, raw []byte) {
 	var msg websocketpkg.WebSocketMessage
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		client.SendError("invalid_json", "Некорректный формат JSON")
 		return
+	}
+
+	// Whitelist для moooving driver/mo_client — закрываем доступ к командам,
+	// которые требуют admin-контекста (могут привести к panic) или утечке данных.
+	if allowed, ok := allowedMessagesForClientType[client.ClientType]; ok {
+		if !allowed[msg.Type] {
+			client.SendError("forbidden", "Тип сообщения недоступен для этого клиента: "+msg.Type)
+			return
+		}
 	}
 
 	// Получаем данные из контекста Gin

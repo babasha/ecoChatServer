@@ -114,12 +114,46 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// JWTClaims определяет структуру данных токена
+// JWTClaims определяет структуру данных токена.
+// Для админских токенов используются AdminID/ClientID/Role.
+// Для moooving-токенов (Issuer="moooving") используются UserType+ExtUserID+OrderID.
 type JWTClaims struct {
 	AdminID  string `json:"adminId"`
 	ClientID string `json:"clientId"`
 	Role     string `json:"role"`
+
+	// moooving chat integration (Issuer="moooving")
+	UserType  string `json:"userType,omitempty"`  // "driver" | "client"
+	ExtUserID int64  `json:"extUserId,omitempty"` // moooving user.id (int)
+	OrderID   int64  `json:"orderId,omitempty"`   // moooving order.id (int)
+
 	jwt.RegisteredClaims
+}
+
+// MooovingTokenIssuer — Issuer для JWT токенов чата, выдаваемых moooving-юзерам
+const MooovingTokenIssuer = "moooving-chat"
+
+// GenerateMooovingChatToken выпускает короткоживущий JWT для подключения
+// клиента или водителя moooving к WebSocket-чату конкретного заказа.
+// userType: "driver" или "client". extUserID — int-ID из moooving. orderID — заказ.
+func GenerateMooovingChatToken(userType string, extUserID, orderID int64, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		ttl = 1 * time.Hour
+	}
+
+	claims := &JWTClaims{
+		UserType:  userType,
+		ExtUserID: extUserID,
+		OrderID:   orderID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    MooovingTokenIssuer,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtKey)
 }
 
 // GenerateToken генерирует JWT токен

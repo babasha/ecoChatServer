@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -41,9 +42,12 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 
 	// Проверяем размер сообщения в зависимости от типа клиента
 	var maxLength int
-	if client.ClientType == "admin" {
+	switch client.ClientType {
+	case "admin":
 		maxLength = 2000 // Админ может писать более развернуто
-	} else {
+	case websocketpkg.ClientTypeDriver, websocketpkg.ClientTypeMoClient:
+		maxLength = 1500
+	default:
 		maxLength = 1000 // Клиент (виджет) ограничен меньшим лимитом
 	}
 
@@ -64,11 +68,28 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		return
 	}
 
+	// SECURITY: для авторизованных подключений к конкретному чату (driver, mo_client)
+	// chatID из payload должен совпадать с chatID, к которому привязано WS-соединение.
+	// Иначе одно подключение могло бы писать в любой чат.
+	if (client.ClientType == websocketpkg.ClientTypeDriver ||
+		client.ClientType == websocketpkg.ClientTypeMoClient) &&
+		client.ChatID != uuid.Nil && client.ChatID != chatID {
+		log.Printf("processSendMessage[security]: %s попытался писать в чат %s (его чат: %s)",
+			client.ClientType, chatID, client.ChatID)
+		client.SendError("forbidden", "Это не ваш чат")
+		return
+	}
+
 	// Определяем отправителя в зависимости от типа клиента
 	var senderID uuid.UUID
 	var sender string
 
-	if client.ClientType == "admin" {
+	// moooving-чаты не используют translator/autoresponder/external dispatch
+	isMoooving := client.ClientType == websocketpkg.ClientTypeDriver ||
+		client.ClientType == websocketpkg.ClientTypeMoClient
+
+	switch client.ClientType {
+	case "admin":
 		// Для админа берем ID из контекста аутентификации
 		adminIDStr, exists := ginCtx.Get("adminID")
 		if !exists {
@@ -83,8 +104,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		senderID = adminID
 		sender = "admin"
 
-		// Переводим сообщение админа на язык клиента
-		if Translator != nil {
+		// Переводим сообщение админа на язык клиента (не для moooving — там фикс. язык)
+		if Translator != nil && !isMooovingChat(chatID) {
 			log.Printf("processSendMessage: попытка перевода сообщения админа")
 			result, err := Translator.TranslateAdminMessage(ginCtx.Request.Context(), p.Content, chatID, adminID)
 			if err != nil {
@@ -101,10 +122,35 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 					result.DetectedLanguage)
 			}
 		}
-	} else {
-		// Для виджета используем ID пользователя (UserID, а не ID сессии)
+	case websocketpkg.ClientTypeDriver:
+		// moooving: водитель пишет клиенту по заказу
+		senderID = client.UserID
+		sender = "driver"
+	case websocketpkg.ClientTypeMoClient:
+		// moooving: авторизованный клиент пишет водителю по заказу
 		senderID = client.UserID
 		sender = "user"
+	default:
+		// Виджет (анонимный клиент) — старый flow
+		senderID = client.UserID
+		sender = "user"
+	}
+
+	// Перевод для moooving (двусторонний): driver↔client. detectedLanguage отправителя
+	// сохраняется всегда; translations[receiverLang] заполняется когда язык получателя
+	// уже известен из его прошлых сообщений.
+	if isMoooving && Translator != nil {
+		result, terr := Translator.TranslateMooovingMessage(ginCtx.Request.Context(), p.Content, chatID, sender)
+		if terr != nil {
+			log.Printf("processSendMessage[moooving]: ошибка перевода: %v", terr)
+		} else if result != nil && len(result.Metadata) > 0 {
+			if p.Metadata == nil {
+				p.Metadata = make(map[string]interface{})
+			}
+			for k, v := range result.Metadata {
+				p.Metadata[k] = v
+			}
+		}
 	}
 
 	// Добавляем сообщение в базу с auto-generated UUID (оригинал в content, перевод в metadata)
@@ -128,19 +174,20 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	// Увеличиваем счетчик реальных сообщений чата
 	WebSocketHub.IncrementChatMessage()
 
-	// Отправляем сообщение во внешние каналы (например, Instagram) для админов
-	if sender == "admin" {
+	// Отправляем сообщение во внешние каналы (например, Instagram) для админов.
+	// Для moooving-чатов внешних каналов нет.
+	if sender == "admin" && !isMoooving {
 		go dispatchExternalMessage(chatID, message)
 	}
 
 	// Если это сообщение от админа, очищаем состояние эскалации
-	if sender == "admin" && AutoResponder != nil {
+	if sender == "admin" && AutoResponder != nil && !isMoooving {
 		AutoResponder.ClearEscalation(chatID.String())
 		log.Printf("processSendMessage: очищена эскалация для чата %s (ответ админа)", chatID)
 	}
 
-	// ОБРАБОТКА АВТООТВЕТЧИКА
-	if sender == "user" && AutoResponder != nil {
+	// ОБРАБОТКА АВТООТВЕТЧИКА (только для виджет-чатов, не для moooving)
+	if sender == "user" && AutoResponder != nil && !isMoooving {
 		go func() {
 			// Асинхронная обработка автоответчика
 			lightChat, err := queries.GetChatLightweight(database.DB, chatID)
@@ -179,8 +226,109 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 				}
 			}
 		}()
+	} else if isMoooving {
+		// moooving: персонализированная маршрутизация driver ↔ mo_client.
+		// Каждой стороне отдаём перевод на её язык (если язык известен), иначе оригинал.
+		lightChat, err := queries.GetChatLightweight(database.DB, chatID)
+		if err != nil {
+			log.Printf("processSendMessage[moooving]: ошибка загрузки чата: %v", err)
+			lightChat = &models.Chat{ID: chatID, Messages: []models.Message{*message}}
+		} else {
+			lightChat.Messages = append(lightChat.Messages, *message)
+		}
+		chatInfo := createChatInfo(lightChat)
+
+		// Получатель противоположной стороны.
+		// Если получатель НЕ подключён по WS — кидаем web push (если у него есть подписка).
+		var recipientLang string
+		var pushTargetSource string
+		var pushTargetExtID *int64
+		var deliveredViaWS bool
+		switch sender {
+		case "driver":
+			recipientLang, _ = database.GetClientLanguageFromChat(chatID)
+			recipientLang = strings.TrimSpace(recipientLang)
+			recipientMessage := message
+			if recipientLang != "" {
+				recipientMessage = applyTranslationForWidget(message, chatID, recipientLang)
+			}
+			notif := createMessageNotification(chatID, recipientMessage, chatInfo)
+			deliveredViaWS = WebSocketHub.SendToMoClientInChat(chatID.String(), notif)
+			pushTargetSource = database.MooovingClientSource
+			pushTargetExtID = lightChat.ClientIDExt
+		case "user":
+			recipientLang, _ = database.GetDetectedLanguageBySender(chatID, "driver")
+			recipientLang = strings.TrimSpace(recipientLang)
+			recipientMessage := message
+			if recipientLang != "" {
+				recipientMessage = applyTranslationForWidget(message, chatID, recipientLang)
+			}
+			notif := createMessageNotification(chatID, recipientMessage, chatInfo)
+			deliveredViaWS = WebSocketHub.SendToDriverInChat(chatID.String(), notif)
+			pushTargetSource = database.MooovingDriverSource
+			pushTargetExtID = lightChat.DriverIDExt
+		default:
+			// admin пишет в moooving чат как наблюдатель — отправим обоим оригинал
+			notif := createMessageNotification(chatID, message, chatInfo)
+			WebSocketHub.SendToDriverInChat(chatID.String(), notif)
+			WebSocketHub.SendToMoClientInChat(chatID.String(), notif)
+		}
+
+		if !deliveredViaWS && pushTargetSource != "" && pushTargetExtID != nil {
+			// Получатель оффлайн — кидаем push в фоне.
+			extID := *pushTargetExtID
+			source := pushTargetSource
+
+			// Title/Body учитывают перевод: получатель видит на своём языке.
+			// Если перевода нет (язык неизвестен) — оригинал.
+			var pushBody string
+			if recipientLang != "" {
+				if translated, ok := getTranslation(message.Metadata, recipientLang); ok {
+					pushBody = translated
+				}
+			}
+			if pushBody == "" {
+				pushBody = message.Content
+			}
+			// Ограничиваем длину — push-сервисы (FCM/Mozilla) ограничивают payload ~4KB
+			if len(pushBody) > 200 {
+				pushBody = pushBody[:200] + "…"
+			}
+
+			titleKey := "Mensagem do motorista"
+			if source == database.MooovingDriverSource {
+				titleKey = "Mensagem do cliente"
+			}
+
+			data := map[string]interface{}{
+				"chatId": chatID.String(),
+			}
+			if lightChat.OrderID != nil {
+				data["orderId"] = *lightChat.OrderID
+				data["url"] = "/?orderId=" + fmt.Sprint(*lightChat.OrderID)
+			}
+
+			payload := &PushPayload{
+				Title: titleKey,
+				Body:  pushBody,
+				Tag:   "moooving-chat-" + chatID.String(),
+				Data:  data,
+			}
+
+			go func() {
+				subs, err := database.ListMooovingPushSubscriptions(source, extID)
+				if err != nil || len(subs) == 0 {
+					return
+				}
+				SendMooovingPushToSubscriptions(subs, payload)
+			}()
+		}
+
+		// Админы видят оригинал
+		adminNotification := createMessageNotification(chatID, message, chatInfo)
+		WebSocketHub.SendToAllAdmins(adminNotification)
 	} else {
-		// Для админских сообщений нужно отправить перевод виджету
+		// Для админских сообщений нужно отправить перевод виджету (не для moooving)
 		widgetMessage := message
 		if sender == "admin" {
 			clientLang, _ := database.GetClientLanguageFromChat(chatID)
@@ -203,11 +351,11 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 
 		chatInfo := createChatInfo(lightChat)
 
-		// Виджетам — с переводом для виджета (для admin-сообщений на язык клиента)
+		// Все участники чата (виджет) — через SendToChat
 		widgetNotification := createMessageNotification(chatID, widgetMessage, chatInfo)
 		WebSocketHub.SendToChat(chatID.String(), widgetNotification)
 
-		// Админам — персонализированный перевод для user-сообщений, оригинал для admin
+		// Админам — персонализированный перевод для user-сообщений, оригинал иначе.
 		if sender == "user" {
 			broadcastToAdminsPersonalized(chatID, message, chatInfo)
 		} else {
@@ -334,6 +482,10 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 		return
 	}
 
+	if !enforceMooovingChatScope(client, chatID) {
+		return
+	}
+
 	// Получаем чат и его сообщения
 	log.Printf("processGetChatByID: запрос чата ID=%s, limit=%d, before=%s",
 		chatID, p.Limit, p.Before)
@@ -359,6 +511,24 @@ func processGetChatByID(client *websocketpkg.Client, payload json.RawMessage, gi
 						log.Printf("processGetChatByID: ошибка перевода сообщений: %v", err)
 					}
 				}
+			}
+		}
+	}
+
+	// Перевод истории для moooving driver / mo_client
+	if Translator != nil {
+		var viewerLang string
+		switch client.ClientType {
+		case websocketpkg.ClientTypeDriver:
+			viewerLang, _ = database.GetDetectedLanguageBySender(chatID, "driver")
+		case websocketpkg.ClientTypeMoClient:
+			viewerLang, _ = database.GetClientLanguageFromChat(chatID)
+		}
+		viewerLang = strings.TrimSpace(viewerLang)
+		if viewerLang != "" {
+			log.Printf("processGetChatByID[moooving]: перевод истории на %s для %s", viewerLang, client.ClientType)
+			if err := Translator.TranslateMessagesForWidget(ginCtx.Request.Context(), chat.Messages, viewerLang); err != nil {
+				log.Printf("processGetChatByID[moooving]: ошибка перевода истории: %v", err)
 			}
 		}
 	}
@@ -406,10 +576,17 @@ func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, g
 		return
 	}
 
+	if !enforceMooovingChatScope(client, chatID) {
+		return
+	}
+
 	// Определяем тип отправителя
 	sender := "admin"
-	if client.ClientType == "widget" {
+	switch client.ClientType {
+	case "widget", websocketpkg.ClientTypeMoClient:
 		sender = "user"
+	case websocketpkg.ClientTypeDriver:
+		sender = "driver"
 	}
 
 	// Создаем и отправляем сообщение о наборе текста

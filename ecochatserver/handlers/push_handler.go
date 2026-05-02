@@ -1,24 +1,17 @@
 package handlers
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"math/big"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/models"
 	"github.com/gin-gonic/gin"
@@ -45,10 +38,21 @@ type pushSendRequest struct {
 	Data    map[string]interface{} `json:"data"`
 }
 
+// vapidConfig содержит параметры VAPID для библиотеки webpush-go.
+// privateKey/publicKey хранятся в base64url-формате (как и принимает webpush-go).
 type vapidConfig struct {
-	privateKey *ecdsa.PrivateKey
+	privateKey string
 	publicKey  string
 	subject    string
+}
+
+// PushPayload — структура которая шифруется и шлётся в push event.
+// SW в `public/sw.js` (moooving) и в админке распарсит её через event.data.json().
+type PushPayload struct {
+	Title string                 `json:"title"`
+	Body  string                 `json:"body,omitempty"`
+	Tag   string                 `json:"tag,omitempty"`
+	Data  map[string]interface{} `json:"data,omitempty"`
 }
 
 var (
@@ -153,9 +157,15 @@ func PushSendHandler(c *gin.Context) {
 
 	log.Printf("PushSendHandler: отправка push для admin=%s, title=%s, подписок=%d", adminID, req.Title, len(subs))
 
+	payload := MarshalPushPayload(&PushPayload{
+		Title: req.Title,
+		Body:  req.Message,
+		Data:  req.Data,
+	})
+
 	sent := 0
 	for _, sub := range subs {
-		status, sendErr := sendWebPushNotification(cfg, &sub)
+		status, sendErr := sendWebPushNotification(cfg, &sub, payload)
 		if sendErr != nil {
 			log.Printf("PushSendHandler: ошибка отправки на %s: %v", sub.Endpoint, sendErr)
 			continue
@@ -203,38 +213,11 @@ func getVAPIDConfig() (*vapidConfig, error) {
 			return
 		}
 
-		privBytes, err := decodeBase64URL(privRaw)
-		if err != nil {
-			vapidErr = fmt.Errorf("не удалось декодировать VAPID_PRIVATE_KEY: %w", err)
-			return
-		}
-		if len(privBytes) != 32 {
-			vapidErr = fmt.Errorf("ожидался приватный ключ длиной 32 байта, получили %d", len(privBytes))
-			return
-		}
-
-		priv := new(ecdsa.PrivateKey)
-		priv.PublicKey.Curve = elliptic.P256()
-		priv.D = new(big.Int).SetBytes(privBytes)
-		priv.PublicKey.X, priv.PublicKey.Y = priv.PublicKey.Curve.ScalarBaseMult(privBytes)
-
-		pubBytes, err := decodeBase64URL(pubRaw)
-		if err != nil {
-			vapidErr = fmt.Errorf("не удалось декодировать VAPID_PUBLIC_KEY: %w", err)
-			return
-		}
-		if len(pubBytes) != 65 {
-			vapidErr = fmt.Errorf("ожидался публичный ключ длиной 65 байт, получили %d", len(pubBytes))
-			return
-		}
-
-		if !priv.PublicKey.IsOnCurve(priv.PublicKey.X, priv.PublicKey.Y) {
-			vapidErr = errors.New("полученный VAPID публичный ключ не соответствует кривой P-256")
-			return
-		}
-
+		// webpush-go ожидает публичный/приватный ключ в base64url — то же что
+		// генерирует `npx web-push generate-vapid-keys`. Дополнительной валидации
+		// не делаем: библиотека сама вернёт ошибку при первом SendNotification.
 		vapidCfg = &vapidConfig{
-			privateKey: priv,
+			privateKey: privRaw,
 			publicKey:  pubRaw,
 			subject:    ensureMailto(subject),
 		}
@@ -243,90 +226,93 @@ func getVAPIDConfig() (*vapidConfig, error) {
 	return vapidCfg, vapidErr
 }
 
-func sendWebPushNotification(cfg *vapidConfig, sub *models.PushSubscription) (int, error) {
-	aud, err := audienceFromEndpoint(sub.Endpoint)
+// SendMooovingPushToSubscriptions отправляет push на список подписок (no-op без VAPID).
+// Используется при доставке нового сообщения в moooving-чате — driver/client получает
+// push если не подключён по WebSocket. Payload зашифровывается через webpush-go,
+// браузерный SW покажет {title, body, data}. Удаляет недействительные подписки.
+func SendMooovingPushToSubscriptions(subs []models.PushSubscription, payload *PushPayload) int {
+	if len(subs) == 0 {
+		return 0
+	}
+	cfg, err := getVAPIDConfig()
 	if err != nil {
-		return 0, err
+		log.Printf("SendMooovingPushToSubscriptions: VAPID не настроен: %v", err)
+		return 0
+	}
+	body := MarshalPushPayload(payload)
+	sent := 0
+	for i := range subs {
+		sub := &subs[i]
+		status, sendErr := sendWebPushNotification(cfg, sub, body)
+		if sendErr != nil {
+			log.Printf("SendMooovingPushToSubscriptions: ошибка %s: %v", sub.Endpoint, sendErr)
+			continue
+		}
+		switch {
+		case status == http.StatusGone || status == http.StatusNotFound:
+			_ = database.RemovePushSubscriptionByEndpoint(sub.Endpoint)
+		case status >= 200 && status < 300:
+			sent++
+			_ = database.TouchPushSubscription(sub.Endpoint)
+		default:
+			log.Printf("SendMooovingPushToSubscriptions: статус %d для %s", status, sub.Endpoint)
+		}
+	}
+	return sent
+}
+
+// VAPIDPublicKey возвращает текущий VAPID public key (или пустую строку если не настроен).
+// Фронту нужен этот ключ для pushManager.subscribe(applicationServerKey=...).
+func VAPIDPublicKey() string {
+	cfg, err := getVAPIDConfig()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	return cfg.publicKey
+}
+
+// sendWebPushNotification шифрует payload через webpush-go (RFC 8291, aes128gcm)
+// и доставляет его браузерному push-сервису. Возвращает HTTP-статус,
+// чтобы вызывающий код мог удалить мёртвые подписки (410/404).
+//
+// payload может быть nil — тогда уйдёт пустой push (SW покажет generic-нотификацию).
+// При ненулевом payload SW парсит JSON через event.data.json().
+func sendWebPushNotification(cfg *vapidConfig, sub *models.PushSubscription, payload []byte) (int, error) {
+	wpSub := &webpush.Subscription{
+		Endpoint: sub.Endpoint,
+		Keys: webpush.Keys{
+			P256dh: sub.P256dh,
+			Auth:   sub.Auth,
+		},
 	}
 
-	token, err := buildVAPIDToken(cfg.privateKey, cfg.subject, aud)
-	if err != nil {
-		return 0, err
-	}
-
-	// Пока отправляем пустой payload, чтобы избежать обязательного шифрования.
-	httpReq, err := http.NewRequest(http.MethodPost, sub.Endpoint, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	httpReq.Header.Set("TTL", "90")
-	httpReq.Header.Set("Urgency", "normal")
-	httpReq.Header.Set("Authorization", "WebPush "+token)
-	httpReq.Header.Set("Crypto-Key", "p256ecdsa="+cfg.publicKey)
-	httpReq.Header.Set("Content-Length", "0")
-	httpReq.Header.Set("Content-Type", "application/octet-stream")
-
-	resp, err := pushHTTPClient.Do(httpReq)
+	resp, err := webpush.SendNotification(payload, wpSub, &webpush.Options{
+		Subscriber:      cfg.subject,
+		VAPIDPublicKey:  cfg.publicKey,
+		VAPIDPrivateKey: cfg.privateKey,
+		TTL:             90,
+		Urgency:         webpush.UrgencyNormal,
+		HTTPClient:      pushHTTPClient,
+	})
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode, nil
 }
 
-func buildVAPIDToken(priv *ecdsa.PrivateKey, subject, aud string) (string, error) {
-	headerJSON := `{"alg":"ES256","typ":"JWT"}`
-	header := base64.RawURLEncoding.EncodeToString([]byte(headerJSON))
-
-	exp := time.Now().Add(12 * time.Hour).Unix()
-	payloadStruct := map[string]interface{}{
-		"aud": aud,
-		"exp": exp,
-		"sub": subject,
+// MarshalPushPayload сериализует payload в JSON. nil-вход → nil-выход (пустой push).
+func MarshalPushPayload(p *PushPayload) []byte {
+	if p == nil {
+		return nil
 	}
-	payloadBytes, err := json.Marshal(payloadStruct)
+	raw, err := json.Marshal(p)
 	if err != nil {
-		return "", err
+		log.Printf("MarshalPushPayload: %v", err)
+		return nil
 	}
-	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
-
-	signingInput := header + "." + payload
-	hash := sha256.Sum256([]byte(signingInput))
-
-	r, s, err := ecdsa.Sign(rand.Reader, priv, hash[:])
-	if err != nil {
-		return "", err
-	}
-
-	sigBytes := make([]byte, 64)
-	copyWithPadding(sigBytes[:32], r.Bytes())
-	copyWithPadding(sigBytes[32:], s.Bytes())
-
-	signature := base64.RawURLEncoding.EncodeToString(sigBytes)
-	return signingInput + "." + signature, nil
-}
-
-func audienceFromEndpoint(endpoint string) (string, error) {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return "", fmt.Errorf("не удалось разобрать endpoint: %w", err)
-	}
-	return fmt.Sprintf("%s://%s", u.Scheme, u.Host), nil
-}
-
-func decodeBase64URL(input string) ([]byte, error) {
-	return base64.RawURLEncoding.DecodeString(input)
-}
-
-func copyWithPadding(dst, src []byte) {
-	if len(src) > len(dst) {
-		copy(dst, src[len(src)-len(dst):])
-		return
-	}
-	copy(dst[len(dst)-len(src):], src)
+	return raw
 }
 
 func ensureMailto(subject string) string {

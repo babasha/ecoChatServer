@@ -17,6 +17,33 @@ import (
 	"github.com/egor/ecochatserver/websocket"
 )
 
+// isMooovingChat возвращает true, если чат принадлежит интеграции moooving.
+// Используется чтобы пропускать перевод/AutoResponder/external dispatch.
+func isMooovingChat(chatID uuid.UUID) bool {
+	chat, err := queries.GetChatLightweight(database.DB, chatID)
+	if err != nil || chat == nil {
+		return false
+	}
+	return chat.Source == database.MooovingChatSource
+}
+
+// enforceMooovingChatScope гарантирует, что moooving driver/mo_client
+// работает только с тем chatID, к которому привязано его WS-соединение.
+// Возвращает true, если запрос разрешён.
+func enforceMooovingChatScope(client *websocket.Client, chatID uuid.UUID) bool {
+	if client.ClientType != websocket.ClientTypeDriver &&
+		client.ClientType != websocket.ClientTypeMoClient {
+		return true
+	}
+	if client.ChatID == uuid.Nil || client.ChatID == chatID {
+		return true
+	}
+	log.Printf("enforceMooovingChatScope[security]: %s обратился к чату %s (его чат: %s)",
+		client.ClientType, chatID, client.ChatID)
+	client.SendError("forbidden", "Это не ваш чат")
+	return false
+}
+
 // parsePagination извлекает и валидирует параметры пагинации из query string
 func parsePagination(c *gin.Context) (page, size int) {
 	page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))

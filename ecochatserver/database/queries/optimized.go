@@ -21,11 +21,15 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
 	// Получаем только базовую информацию
 	var assignedNull sql.NullString
 	var userSourceID sql.NullString
+	var orderIDNull sql.NullInt64
+	var clientExtNull sql.NullInt64
+	var driverExtNull sql.NullInt64
 
 	var userProfileURL sql.NullString
 	err := db.QueryRowContext(ctx, `
         SELECT c.id, c.created_at, c.updated_at, c.status,
                c.user_id, c.source, c.bot_id, c.client_id, c.auto_responder_enabled, c.assigned_to,
+               c.order_id, c.client_id_ext, c.driver_id_ext,
                u.id, u.name, u.email, u.source, u.source_id, u.profile_url
         FROM chats c
         JOIN users u ON c.user_id = u.id
@@ -33,6 +37,7 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
     `, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
 		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &chat.AutoResponderEnabled, &assignedNull,
+		&orderIDNull, &clientExtNull, &driverExtNull,
 		&chat.User.ID, &chat.User.Name, &chat.User.Email, &chat.User.Source, &userSourceID, &userProfileURL,
 	)
 
@@ -44,6 +49,18 @@ func GetChatLightweight(db *sql.DB, chatID uuid.UUID) (*models.Chat, error) {
 		if assignedUUID, err := uuid.Parse(assignedNull.String); err == nil {
 			chat.AssignedTo = &assignedUUID
 		}
+	}
+	if orderIDNull.Valid {
+		v := orderIDNull.Int64
+		chat.OrderID = &v
+	}
+	if clientExtNull.Valid {
+		v := clientExtNull.Int64
+		chat.ClientIDExt = &v
+	}
+	if driverExtNull.Valid {
+		v := driverExtNull.Int64
+		chat.DriverIDExt = &v
 	}
 
 	if userSourceID.Valid {
@@ -97,6 +114,34 @@ func GetClientLanguageFromChat(db *sql.DB, chatID uuid.UUID) (string, error) {
 		return "", nil
 	}
 
+	return detectedLang.String, nil
+}
+
+// GetDetectedLanguageBySender возвращает detectedLanguage последнего сообщения
+// указанного sender'а ('user', 'driver', 'admin'). Возвращает "" если не найдено.
+// Используется для двусторонних переводов в moooving-чатах.
+func GetDetectedLanguageBySender(db *sql.DB, chatID uuid.UUID, sender string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
+	defer cancel()
+
+	var detectedLang sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT metadata->>'detectedLanguage'
+		FROM messages
+		WHERE chat_id = $1 AND sender = $2 AND metadata ? 'detectedLanguage'
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`, chatID, sender).Scan(&detectedLang)
+
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !detectedLang.Valid {
+		return "", nil
+	}
 	return detectedLang.String, nil
 }
 

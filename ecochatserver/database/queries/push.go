@@ -122,6 +122,94 @@ func ListPushSubscriptions(db *sql.DB, adminID uuid.UUID) ([]models.PushSubscrip
 	return result, nil
 }
 
+// UpsertMooovingPushSubscription сохраняет подписку для moooving driver/client.
+// admin_id используется как детерминированный UUID, чтобы переиспользовать
+// существующую схему (id остаётся PK; FK admin_id NOT NULL).
+func UpsertMooovingPushSubscription(
+	db *sql.DB,
+	source string, // MooovingDriverSource | MooovingClientSource
+	extUserID int64,
+	endpoint, p256dh, auth string,
+	subscription json.RawMessage,
+) error {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	syntheticAdminID := MooovingUserUUID(source, extUserID)
+
+	_, err := db.ExecContext(ctx, `
+        INSERT INTO push_subscriptions
+            (admin_id, endpoint, p256dh, auth, subscription, source, ext_user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (endpoint)
+        DO UPDATE SET
+            admin_id     = EXCLUDED.admin_id,
+            p256dh       = EXCLUDED.p256dh,
+            auth         = EXCLUDED.auth,
+            subscription = EXCLUDED.subscription,
+            source       = EXCLUDED.source,
+            ext_user_id  = EXCLUDED.ext_user_id,
+            updated_at   = NOW(),
+            last_used_at = NOW()
+    `, syntheticAdminID, endpoint, p256dh, auth, subscription, source, extUserID)
+	if err != nil {
+		log.Printf("UpsertMooovingPushSubscription: %v", err)
+	}
+	return err
+}
+
+// DeleteMooovingPushSubscription удаляет подписку moooving-юзера по endpoint.
+func DeleteMooovingPushSubscription(db *sql.DB, source string, extUserID int64, endpoint string) error {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	_, err := db.ExecContext(ctx, `
+        DELETE FROM push_subscriptions
+         WHERE source = $1 AND ext_user_id = $2 AND endpoint = $3
+    `, source, extUserID, endpoint)
+	if err != nil {
+		log.Printf("DeleteMooovingPushSubscription: %v", err)
+	}
+	return err
+}
+
+// ListMooovingPushSubscriptions возвращает все подписки moooving-юзера.
+func ListMooovingPushSubscriptions(db *sql.DB, source string, extUserID int64) ([]models.PushSubscription, error) {
+	ctx, cancel := WithDBContext()
+	defer cancel()
+
+	rows, err := db.QueryContext(ctx, `
+        SELECT id, admin_id, endpoint, p256dh, auth, subscription,
+               created_at, updated_at, last_used_at
+          FROM push_subscriptions
+         WHERE source = $1 AND ext_user_id = $2
+         ORDER BY updated_at DESC
+    `, source, extUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []models.PushSubscription
+	for rows.Next() {
+		var (
+			sub models.PushSubscription
+			raw []byte
+		)
+		if err := rows.Scan(
+			&sub.ID, &sub.AdminID, &sub.Endpoint, &sub.P256dh, &sub.Auth,
+			&raw, &sub.CreatedAt, &sub.UpdatedAt, &sub.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		if len(raw) > 0 {
+			sub.Subscription = json.RawMessage(raw)
+		}
+		result = append(result, sub)
+	}
+	return result, rows.Err()
+}
+
 // TouchPushSubscription обновляет last_used_at для подписки.
 func TouchPushSubscription(db *sql.DB, endpoint string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)

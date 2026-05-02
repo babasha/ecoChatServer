@@ -270,19 +270,24 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 	defer cancel()
 
 	var (
-		chat         models.Chat
-		userID       uuid.UUID
-		assignedNull sql.NullString
+		chat            models.Chat
+		userID          uuid.UUID
+		assignedNull    sql.NullString
+		orderIDNull     sql.NullInt64
+		clientExtNull   sql.NullInt64
+		driverExtNull   sql.NullInt64
 	)
 
 	chatQuery := `
         SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to,auto_responder_enabled,is_archived
+               source,bot_id,client_id,assigned_to,auto_responder_enabled,is_archived,
+               order_id, client_id_ext, driver_id_ext
           FROM chats WHERE id=$1`
 
 	if err := db.QueryRowContext(ctx, chatQuery, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
 		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled, &chat.IsArchived,
+		&orderIDNull, &clientExtNull, &driverExtNull,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, 0, fmt.Errorf("чат не найден")
@@ -294,6 +299,18 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 	chat.AssignedTo, err = nullUUIDToPointer(assignedNull)
 	if err != nil {
 		return nil, 0, fmt.Errorf("ошибка преобразования assigned_to: %w", err)
+	}
+	if orderIDNull.Valid {
+		v := orderIDNull.Int64
+		chat.OrderID = &v
+	}
+	if clientExtNull.Valid {
+		v := clientExtNull.Int64
+		chat.ClientIDExt = &v
+	}
+	if driverExtNull.Valid {
+		v := driverExtNull.Int64
+		chat.DriverIDExt = &v
 	}
 
 	// DEBUG: log.Printf("GetChatByID: найден чат ID=%s, userID=%s", chat.ID, userID)

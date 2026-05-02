@@ -26,6 +26,11 @@ type Chat struct {
 	ArchiveTimerPaused   bool                   `json:"archiveTimerPaused"`      // Приостановлен ли таймер архивации
 	Metadata             map[string]interface{} `json:"metadata,omitempty"`      // Метаданные чата, включая историю LLM
 	IsNewChat            bool                   `json:"-"`                       // Флаг нового чата (не отправляется на фронт)
+
+	// moooving integration: chat per order (client↔driver), int-ID из внешней системы
+	OrderID       *int64 `json:"orderId,omitempty"`       // ID заказа в moooving
+	ClientIDExt   *int64 `json:"clientIdExt,omitempty"`   // ID клиента в moooving
+	DriverIDExt   *int64 `json:"driverIdExt,omitempty"`   // ID водителя в moooving
 }
 
 // ChatResponse для отправки на фронтенд

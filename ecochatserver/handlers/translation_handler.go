@@ -335,6 +335,95 @@ func (ts *TranslationService) TranslateAdminMessage(ctx context.Context, content
 	}, nil
 }
 
+// TranslateMooovingMessage переводит сообщение в чате moooving (client↔driver).
+// senderRole: "user" (mo_client) или "driver". Получателем считается противоположная сторона.
+// Язык получателя определяется по metadata.detectedLanguage его последних сообщений;
+// если получатель ещё не писал, перевод пропускается (язык станет известен после первого ответа).
+func (ts *TranslationService) TranslateMooovingMessage(ctx context.Context, content string, chatID uuid.UUID, senderRole string) (*TranslationResult, error) {
+	var recipientSender string
+	switch senderRole {
+	case "user":
+		recipientSender = "driver"
+	case "driver":
+		recipientSender = "user"
+	default:
+		return &TranslationResult{
+			Metadata:      map[string]interface{}{},
+			WasTranslated: false,
+		}, nil
+	}
+
+	// Язык получателя — берём из его последнего сообщения
+	targetLang, err := database.GetDetectedLanguageBySender(chatID, recipientSender)
+	if err != nil {
+		log.Printf("TranslateMooovingMessage: ошибка получения языка получателя (%s): %v", recipientSender, err)
+	}
+	targetLang = strings.TrimSpace(targetLang)
+
+	// Если язык получателя неизвестен — определяем хотя бы свой язык, чтобы он сохранился в metadata
+	if targetLang == "" || strings.EqualFold(targetLang, "unknown") {
+		log.Printf("TranslateMooovingMessage: язык получателя (%s) пока неизвестен — определяем только язык отправителя", recipientSender)
+		// Используем DetectAndTranslate с фиктивным targetLang=en — нам нужен только detected lang.
+		// Если случайно совпадёт, перевод останется как оригинал (бесплатно).
+		probe, err := ts.provider.DetectAndTranslate(ctx, content, "en")
+		if err != nil {
+			log.Printf("TranslateMooovingMessage: detect failed: %v", err)
+			return &TranslationResult{
+				Metadata:         map[string]interface{}{},
+				DetectedLanguage: "unknown",
+				WasTranslated:    false,
+			}, nil
+		}
+		return &TranslationResult{
+			Metadata: map[string]interface{}{
+				"detectedLanguage": probe.DetectedLang,
+			},
+			DetectedLanguage: probe.DetectedLang,
+			WasTranslated:    false,
+		}, nil
+	}
+
+	// Определяем язык отправителя и переводим за один вызов
+	var result *llm.TranslationResult
+	if ts.useTOON.Load() {
+		if providerWithTOON, ok := ts.provider.(llm.ProviderWithTOON); ok {
+			result, err = providerWithTOON.DetectAndTranslateTOON(ctx, content, targetLang)
+		} else {
+			result, err = ts.provider.DetectAndTranslate(ctx, content, targetLang)
+		}
+	} else {
+		result, err = ts.provider.DetectAndTranslate(ctx, content, targetLang)
+	}
+	if err != nil {
+		log.Printf("TranslateMooovingMessage: DetectAndTranslate failed: %v", err)
+		return &TranslationResult{
+			Metadata:      map[string]interface{}{},
+			WasTranslated: false,
+		}, nil
+	}
+
+	wasTranslated := false
+	translation := content
+	if !strings.EqualFold(result.DetectedLang, targetLang) {
+		translation = result.Translation
+		wasTranslated = true
+	}
+
+	log.Printf("TranslateMooovingMessage: %s→%s, detected=%s, wasTranslated=%v",
+		senderRole, recipientSender, result.DetectedLang, wasTranslated)
+
+	return &TranslationResult{
+		Metadata: map[string]interface{}{
+			"detectedLanguage": result.DetectedLang,
+			"translations": map[string]interface{}{
+				targetLang: translation,
+			},
+		},
+		DetectedLanguage: result.DetectedLang,
+		WasTranslated:    wasTranslated,
+	}, nil
+}
+
 // getClientLanguageFromLastMessage получает язык клиента из последнего сообщения в БД
 // ОПТИМИЗАЦИЯ: Не делает повторный API вызов, только читает из БД
 // Язык уже должен быть определен и сохранен при получении сообщения от клиента

@@ -630,6 +630,11 @@ func GetLastUserMessage(chatID uuid.UUID) (*models.Message, error) {
 	return queries.GetLastUserMessage(DB, chatID)
 }
 
+// GetDetectedLanguageBySender возвращает язык последнего сообщения указанного sender.
+func GetDetectedLanguageBySender(chatID uuid.UUID, sender string) (string, error) {
+	return queries.GetDetectedLanguageBySender(DB, chatID, sender)
+}
+
 func UpdateUserProfile(userID uuid.UUID, avatar, profileURL string) error {
 	return queries.UpdateUserProfile(DB, userID, avatar, profileURL)
 }
@@ -673,6 +678,21 @@ func SavePushSubscription(adminID uuid.UUID, endpoint, p256dh, auth string, subs
 	return queries.UpsertPushSubscription(UsersDB, adminID, endpoint, p256dh, auth, json.RawMessage(subscription))
 }
 
+// SaveMooovingPushSubscription сохраняет подписку moooving driver/client.
+func SaveMooovingPushSubscription(source string, extUserID int64, endpoint, p256dh, auth string, subscription []byte) error {
+	return queries.UpsertMooovingPushSubscription(UsersDB, source, extUserID, endpoint, p256dh, auth, json.RawMessage(subscription))
+}
+
+// RemoveMooovingPushSubscription удаляет подписку moooving driver/client.
+func RemoveMooovingPushSubscription(source string, extUserID int64, endpoint string) error {
+	return queries.DeleteMooovingPushSubscription(UsersDB, source, extUserID, endpoint)
+}
+
+// ListMooovingPushSubscriptions возвращает подписки moooving driver/client.
+func ListMooovingPushSubscriptions(source string, extUserID int64) ([]models.PushSubscription, error) {
+	return queries.ListMooovingPushSubscriptions(UsersDB, source, extUserID)
+}
+
 func RemovePushSubscription(adminID uuid.UUID, endpoint string) error {
 	return queries.DeletePushSubscription(UsersDB, adminID, endpoint)
 }
@@ -694,6 +714,73 @@ func TouchPushSubscription(endpoint string) error {
 func FindChatByUserSourceID(userSourceID, source string) (*models.Chat, error) {
 	return queries.FindChatByUserSourceID(DB, userSourceID, source)
 }
+
+// ============================================================================
+// moooving Chat Integration (chat per order, client↔driver)
+// ============================================================================
+
+// MooovingChatRequest re-exports queries.MooovingChatRequest.
+type MooovingChatRequest = queries.MooovingChatRequest
+
+// MooovingChatSummary re-exports queries.MooovingChatSummary.
+type MooovingChatSummary = queries.MooovingChatSummary
+
+// GetOrCreateMooovingChat создаёт или возвращает чат для заказа moooving.
+func GetOrCreateMooovingChat(req queries.MooovingChatRequest) (*models.Chat, error) {
+	chat, err := queries.GetOrCreateMooovingChat(DB, req)
+	if err != nil {
+		return nil, err
+	}
+	if chat.IsNewChat {
+		InvalidateChatsCache()
+	}
+	return chat, nil
+}
+
+// GetMooovingChatByOrderID возвращает активный чат заказа.
+func GetMooovingChatByOrderID(orderID int64) (*models.Chat, error) {
+	return queries.GetMooovingChatByOrderID(DB, orderID)
+}
+
+// CloseMooovingChat архивирует чат заказа.
+func CloseMooovingChat(chatID uuid.UUID) error {
+	if err := queries.CloseMooovingChat(DB, chatID); err != nil {
+		return err
+	}
+	InvalidateChatsCache()
+	return nil
+}
+
+// GetMooovingChatsForDriver возвращает активные чаты водителя.
+func GetMooovingChatsForDriver(driverExtID int64, limit int) ([]queries.MooovingChatSummary, error) {
+	return queries.GetMooovingChatsForDriver(DB, driverExtID, limit)
+}
+
+// GetMooovingChatsForClient возвращает активные чаты клиента.
+func GetMooovingChatsForClient(clientExtID int64, limit int) ([]queries.MooovingChatSummary, error) {
+	return queries.GetMooovingChatsForClient(DB, clientExtID, limit)
+}
+
+// MooovingUnreadCount re-exports queries type.
+type MooovingUnreadCount = queries.MooovingUnreadCount
+
+// GetMooovingUnreadByOrders возвращает количество непрочитанных по списку orderID.
+func GetMooovingUnreadByOrders(orderIDs []int64, viewerSender string) ([]queries.MooovingUnreadCount, error) {
+	return queries.GetMooovingUnreadByOrders(DB, orderIDs, viewerSender)
+}
+
+// MooovingUserUUID — детерминированный UUID для int-ID из moooving.
+// Используется как sender_id в messages.
+func MooovingUserUUID(role string, extUserID int64) uuid.UUID {
+	return queries.MooovingUserUUID(role, extUserID)
+}
+
+const (
+	MooovingClientSource = queries.MooovingClientSource
+	MooovingDriverSource = queries.MooovingDriverSource
+	MooovingChatSource   = queries.MooovingChatSource
+	MooovingBotID        = queries.MooovingBotID
+)
 
 // ============================================================================
 // Director Webhook Events (external trigger logging)

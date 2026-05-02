@@ -491,6 +491,32 @@ func setupAPIRoutes(r *gin.Engine) {
 		// OAuth 2.0 token endpoint для админки (DEPRECATED - используйте /auth/login)
 		api.POST("/auth/token", middleware.StrictRateLimitMiddleware(), handlers.TokenHandler)
 
+		// ─── moooving integration ─────────────────────────────────────────
+		// Server-to-server endpoints (вызываются из moooving Rust-бекенда)
+		moo := api.Group("/moooving")
+		moo.Use(middleware.StrictRateLimitMiddleware())
+		{
+			s2s := moo.Group("/")
+			s2s.Use(handlers.MooovingSharedSecretMiddleware())
+			{
+				s2s.POST("/chat/open", handlers.MooovingOpenChat)
+				s2s.POST("/chat/close", handlers.MooovingCloseChat)
+				s2s.POST("/chat/token", handlers.MooovingIssueToken)
+				s2s.POST("/chats/unread", handlers.MooovingUnread)
+				s2s.POST("/push/subscribe",   handlers.MooovingPushSubscribe)
+				s2s.POST("/push/unsubscribe", handlers.MooovingPushUnsubscribe)
+				s2s.GET("/push/vapid-key",    handlers.MooovingVAPIDKey)
+			}
+
+			// Frontend endpoints (driver/client из moooving приложения)
+			fe := moo.Group("/")
+			fe.Use(handlers.MooovingTokenMiddleware())
+			{
+				fe.GET("/chats", handlers.MooovingMyChats)
+				fe.GET("/chats/:id/messages", handlers.MooovingChatMessages)
+			}
+		}
+
 		// Webhook для Telegram и других внешних сервисов
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 		api.GET("/instagram/webhook", handlers.InstagramWebhookVerify)
