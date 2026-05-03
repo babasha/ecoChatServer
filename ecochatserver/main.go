@@ -364,8 +364,10 @@ func setupCORS(r *gin.Engine) {
 		// Разрешаем только указанные домены
 		allow := []string{"http://localhost:3000", "http://localhost:1420"}
 
-		// Добавляем адреса из переменных окружения
-		for _, key := range []string{"FRONTEND_URL", "ADDITIONAL_ALLOWED_ORIGINS"} {
+		// Добавляем адреса из переменных окружения. ALLOWED_ORIGINS — основное
+		// имя, под которое заточен .env на проде (CORS — only ucargo frontend);
+		// FRONTEND_URL/ADDITIONAL_ALLOWED_ORIGINS оставлены для legacy-конфигов.
+		for _, key := range []string{"ALLOWED_ORIGINS", "FRONTEND_URL", "ADDITIONAL_ALLOWED_ORIGINS"} {
 			if v := os.Getenv(key); v != "" {
 				for _, u := range strings.Split(v, ",") {
 					u = strings.TrimSpace(u)
