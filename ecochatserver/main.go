@@ -494,7 +494,12 @@ func setupAPIRoutes(r *gin.Engine) {
 		// ─── moooving integration ─────────────────────────────────────────
 		// Server-to-server endpoints (вызываются из moooving Rust-бекенда)
 		moo := api.Group("/moooving")
-		moo.Use(middleware.StrictRateLimitMiddleware())
+		// Strict (5/min) был скопирован из /auth/login — он отбивает легитимный
+		// трафик: все s2s-вызовы летят с одного IP moooving-VPS, а unread-poll
+		// + auto_open_chat на двух драйверах уже выбирает квоту за секунды.
+		// Шаред-секрет (для s2s) и JWT (для fe) — настоящий гейт; здесь
+		// держим только мягкий per-IP cap как страховку от DDoS.
+		moo.Use(middleware.ModerateRateLimitMiddleware())
 		{
 			s2s := moo.Group("/")
 			s2s.Use(handlers.MooovingSharedSecretMiddleware())
