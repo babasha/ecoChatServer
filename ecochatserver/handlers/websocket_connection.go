@@ -104,6 +104,16 @@ func ServeWs(c *gin.Context) {
 		// Для admin подключений поддерживаем как query ?token=, так и session cookie
 		if token == "" {
 			if cookieToken, cookieErr := c.Cookie("session"); cookieErr == nil && cookieToken != "" {
+				// SECURITY (CSWSH): cookie отправляется браузером автоматически при
+				// кросс-доменном WS-апгрейде, поэтому cookie-аутентификацию принимаем
+				// только с доверенного Origin. Query-токен — секрет, его проверять
+				// по Origin не нужно (и нельзя — виджеты живут на чужих доменах).
+				if !checkOrigin(c.Request) {
+					log.Printf("ServeWs: cookie-auth с недоверенного origin отклонён: %q",
+						c.Request.Header.Get("Origin"))
+					c.JSON(http.StatusForbidden, gin.H{"error": "Недоверенный источник подключения"})
+					return
+				}
 				token = cookieToken
 				// DEBUG: log.Printf("ServeWs: использован session cookie для admin подключения")
 			} else {
@@ -279,7 +289,10 @@ func ServeWs(c *gin.Context) {
 
 	// Создаем нового клиента
 	client := websocketpkg.NewClient(WebSocketHub, conn, clientType, adminID, chatID)
-	client.Context = c
+	// ВАЖНО: c.Copy(), а не c — gin возвращает *gin.Context в sync.Pool после
+	// выхода из хендлера, а WS-соединение живёт часами и читает Keys (adminID и др.)
+	// уже из переиспользованного контекста. Copy() делает независимую копию Keys.
+	client.Context = c.Copy()
 
 	// Устанавливаем IP и UserAgent для мониторинга
 	client.IP = c.ClientIP()

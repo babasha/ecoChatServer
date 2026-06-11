@@ -9,7 +9,21 @@
       "Bash(npx tsc *)",
       "Bash(npm install *)",
       "Bash(go get *)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(xargs wc -l)",
+      "PowerShell(go version *)",
+      "PowerShell(cmd /c \"where go 2>nul\"; Write-Output \"---scoop---\"; if \\(Test-Path \"$env:USERPROFILE\\\\scoop\\\\shims\\\\go.exe\"\\) { \"$env:USERPROFILE\\\\scoop\\\\shims\\\\go.exe\" }; Write-Output \"---winget/choco---\"; if \\(Test-Path \"C:\\\\ProgramData\\\\chocolatey\\\\bin\\\\go.exe\"\\) { \"choco go\" }; Write-Output \"---PATH go---\"; $env:Path -split ';' | Where-Object { $_ -match 'go' })",
+      "PowerShell(Write-Output \"--- winget ---\"; \\(Get-Command winget -ErrorAction SilentlyContinue\\).Source; Write-Output \"--- scoop ---\"; \\(Get-Command scoop -ErrorAction SilentlyContinue\\).Source; Write-Output \"--- choco ---\"; \\(Get-Command choco -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(winget install *)",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; if \\(-not \\(Test-Path $go\\)\\) { $go = \"$env:LOCALAPPDATA\\\\Programs\\\\Go\\\\bin\\\\go.exe\" }; & $go version)",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go build ./... 2>&1 | Select-Object -First 60; Write-Output \"=== EXIT: $LASTEXITCODE ===\")",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go build ./...; Write-Output \"=== EXIT: $LASTEXITCODE ===\")",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go vet ./handlers/... ./websocket/...; Write-Output \"=== VET EXIT: $LASTEXITCODE ===\")",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go test ./handlers/... ./websocket/...; Write-Output \"=== TEST EXIT: $LASTEXITCODE ===\")",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go test ./handlers/... -skip 'LMStudio'; Write-Output \"=== TEST EXIT: $LASTEXITCODE ===\")",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go build ./...; Write-Output \"=== BUILD EXIT: $LASTEXITCODE ===\"; & $go vet ./handlers/... ./websocket/...; Write-Output \"=== VET EXIT: $LASTEXITCODE ===\")",
+      "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go test ./handlers/... -skip 'LMStudio'; Write-Output \"=== HANDLERS TEST EXIT: $LASTEXITCODE ===\"; & $go vet ./handlers/sessions_handler.go 2>$null; & $go build -race ./websocket/...; Write-Output \"=== RACE BUILD EXIT: $LASTEXITCODE ===\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" build ./... ; & \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" vet ./handlers ./websocket \"./database/queries\")"
     ]
   }
 }

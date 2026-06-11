@@ -17,31 +17,73 @@ import (
 	"github.com/egor/ecochatserver/websocket"
 )
 
-// isMooovingChat возвращает true, если чат принадлежит интеграции moooving.
-// Используется чтобы пропускать перевод/AutoResponder/external dispatch.
-func isMooovingChat(chatID uuid.UUID) bool {
-	chat, err := queries.GetChatLightweight(database.DB, chatID)
-	if err != nil || chat == nil {
-		return false
+// enforceChatScope гарантирует, что клиент, привязанный к конкретному чату
+// (moooving driver/mo_client или widget), работает только со своим chatID.
+// admin и непривязанные соединения (ChatID == Nil) не ограничиваются.
+// Возвращает true, если запрос разрешён.
+func enforceChatScope(client *websocket.Client, chatID uuid.UUID) bool {
+	// Читаем chatID один раз — он может меняться (виджет) из другой горутины.
+	clientChatID := client.GetChatID()
+	// Не ограничиваем admin и соединения без привязки к чату.
+	if clientChatID == uuid.Nil || clientChatID == chatID {
+		return true
 	}
-	return chat.Source == database.MooovingChatSource
+	switch client.ClientType {
+	case websocket.ClientTypeDriver, websocket.ClientTypeMoClient:
+		log.Printf("enforceChatScope[security]: %s обратился к чату %s (его чат: %s)",
+			client.ClientType, chatID, clientChatID)
+		client.SendError("forbidden", "Это не ваш чат")
+		return false
+	case websocket.ClientTypeWidget:
+		log.Printf("enforceChatScope[security]: widget обратился к чату %s (его чат: %s)",
+			chatID, clientChatID)
+		client.SendError("access_denied", "Доступ к чату запрещен")
+		return false
+	default:
+		return true
+	}
 }
 
-// enforceMooovingChatScope гарантирует, что moooving driver/mo_client
-// работает только с тем chatID, к которому привязано его WS-соединение.
-// Возвращает true, если запрос разрешён.
-func enforceMooovingChatScope(client *websocket.Client, chatID uuid.UUID) bool {
-	if client.ClientType != websocket.ClientTypeDriver &&
-		client.ClientType != websocket.ClientTypeMoClient {
-		return true
+// wsOperationTimeout ограничивает длительность операций (перевод и т.п.),
+// инициированных входящим WebSocket-сообщением и выполняемых синхронно
+// в горутине ReadPump.
+const wsOperationTimeout = 30 * time.Second
+
+// newWSContext возвращает свежий контекст для операций, инициированных живым
+// WebSocket-соединением. Контекст исходного HTTP-запроса (ginCtx.Request.Context())
+// ОТМЕНЯЕТСЯ сразу после WS-апгрейда (hijack соединения), поэтому использовать
+// его здесь нельзя — иначе перевод/LLM-вызовы падают с context.Canceled.
+func newWSContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), wsOperationTimeout)
+}
+
+// resolveChatID применяет обратную совместимость chatId/chatID и парсит UUID.
+// При ошибке отправляет клиенту WS-ошибку "invalid_uuid" и возвращает ok=false.
+func resolveChatID(client *websocket.Client, primary, legacy string) (uuid.UUID, bool) {
+	if primary == "" {
+		primary = legacy
 	}
-	if client.ChatID == uuid.Nil || client.ChatID == chatID {
-		return true
+	chatID, err := uuid.Parse(primary)
+	if err != nil {
+		client.SendError("invalid_uuid", "Некорректный формат chatID")
+		return uuid.Nil, false
 	}
-	log.Printf("enforceMooovingChatScope[security]: %s обратился к чату %s (его чат: %s)",
-		client.ClientType, chatID, client.ChatID)
-	client.SendError("forbidden", "Это не ваш чат")
-	return false
+	return chatID, true
+}
+
+// parseMessageIDs конвертирует строковые ID сообщений в UUID.
+// При ошибке отправляет клиенту WS-ошибку "invalid_uuid" и возвращает ok=false.
+func parseMessageIDs(client *websocket.Client, ids []string) ([]uuid.UUID, bool) {
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, idStr := range ids {
+		msgUUID, err := uuid.Parse(idStr)
+		if err != nil {
+			client.SendError("invalid_uuid", "Некорректный формат messageId: "+idStr)
+			return nil, false
+		}
+		out = append(out, msgUUID)
+	}
+	return out, true
 }
 
 // parsePagination извлекает и валидирует параметры пагинации из query string

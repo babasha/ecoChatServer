@@ -49,7 +49,8 @@ func GetActiveSessions(c *gin.Context) {
 		// Определяем статус (активный или простаивающий)
 		status := "active"
 		idleThreshold := 2 * time.Minute
-		if time.Since(client.LastActivity) > idleThreshold {
+		lastActivity := client.LastActivity()
+		if time.Since(lastActivity) > idleThreshold {
 			status = "idle"
 		}
 
@@ -63,8 +64,8 @@ func GetActiveSessions(c *gin.Context) {
 			UserAgent:     client.UserAgent,
 			ConnectedAt:   client.ConnectedAt.Format(time.RFC3339),
 			Duration:      duration,
-			LastActivity:  client.LastActivity.Format(time.RFC3339),
-			MessagesCount: client.MessageCount,
+			LastActivity:  lastActivity.Format(time.RFC3339),
+			MessagesCount: client.MessageCount(),
 			Status:        status,
 		}
 
@@ -108,11 +109,10 @@ func DisconnectSession(c *gin.Context) {
 		"message": "You have been disconnected by an administrator",
 	}
 
-	select {
-	case client.Send <- disconnectMessage:
+	if client.TrySend(disconnectMessage) {
 		log.Printf("DisconnectSession: отправлено сообщение о принудительном отключении клиенту %s", sessionID)
-	default:
-		log.Printf("DisconnectSession: не удалось отправить сообщение клиенту %s, канал заполнен", sessionID)
+	} else {
+		log.Printf("DisconnectSession: не удалось отправить сообщение клиенту %s, канал недоступен", sessionID)
 	}
 
 	// Закрываем соединение после небольшой задержки, чтобы сообщение успело дойти

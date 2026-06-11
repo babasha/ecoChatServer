@@ -23,25 +23,6 @@ func AddMessage(
 	ctx, cancel := WithDBContext()
 	defer cancel()
 
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	// Проверяем, существует ли чат и не архивирован ли он (один запрос вместо двух подзапросов)
-	var isArchived bool
-	err = tx.QueryRowContext(ctx, "SELECT is_archived FROM chats WHERE id=$1", chatID).Scan(&isArchived)
-	if err == sql.ErrNoRows {
-		return nil, errors.New("chat not found")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("проверка чата: %w", err)
-	}
-	if isArchived {
-		return nil, errors.New("chat is archived")
-	}
-
 	now := time.Now()
 	msgID := uuid.New()
 	var metaJSON []byte
@@ -49,26 +30,42 @@ func AddMessage(
 		metaJSON, _ = json.Marshal(meta)
 	}
 
-	// Вставляем сообщение
-	if _, err := tx.ExecContext(ctx, `
-        INSERT INTO messages
-               (id,chat_id,content,sender,sender_id,
-                timestamp,read,type,metadata)
-        VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8)`,
+	// Один атомарный statement вместо транзакции из SELECT+INSERT+UPDATE:
+	// проверяем чат, вставляем сообщение и двигаем updated_at чата за один
+	// round-trip. В PostgreSQL data-modifying части CTE выполняются ровно один
+	// раз и под единым снапшотом, поэтому проверка is_archived согласована со
+	// вставкой (без TOCTOU исходной транзакции). Возвращаем существование чата и
+	// факт вставки, чтобы отличить "not found" от "archived".
+	const q = `
+        WITH chat_state AS (
+            SELECT id, is_archived FROM chats WHERE id = $2
+        ), ins AS (
+            INSERT INTO messages
+                   (id, chat_id, content, sender, sender_id, timestamp, read, type, metadata)
+            SELECT $1, $2, $3, $4, $5, $6, false, $7, $8
+              FROM chat_state
+             WHERE is_archived = false
+            RETURNING id
+        ), upd AS (
+            UPDATE chats SET updated_at = $6
+             WHERE id = (SELECT id FROM chat_state WHERE is_archived = false)
+            RETURNING id
+        )
+        SELECT
+            (SELECT count(*) FROM chat_state) AS chat_exists,
+            (SELECT count(*) FROM ins)        AS inserted`
+
+	var chatExists, inserted int
+	if err := db.QueryRowContext(ctx, q,
 		msgID, chatID, content, sender, senderID, now, msgType, metaJSON,
-	); err != nil {
+	).Scan(&chatExists, &inserted); err != nil {
 		return nil, fmt.Errorf("вставка сообщения: %w", err)
 	}
-
-	// Обновляем время последнего изменения чата
-	if _, err := tx.ExecContext(ctx,
-		"UPDATE chats SET updated_at=$1 WHERE id=$2", now, chatID,
-	); err != nil {
-		return nil, fmt.Errorf("обновление чата: %w", err)
+	if chatExists == 0 {
+		return nil, errors.New("chat not found")
 	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
+	if inserted == 0 {
+		return nil, errors.New("chat is archived")
 	}
 
 	return &models.Message{

@@ -28,7 +28,6 @@ type Hub struct {
 	driversByChatID   map[string]*Client
 	moClientsByChatID map[string]*Client
 
-	Broadcast  chan []byte
 	Register   chan *Client
 	Unregister chan *Client
 
@@ -36,9 +35,6 @@ type Hub struct {
 
 	// Статистика для мониторинга
 	stats hubStatsInternal
-
-	// Дедупликация сообщений
-	sentMessages sync.Map // key: messageHash, value: time.Time
 }
 
 type pendingWidgetChat struct {
@@ -74,36 +70,14 @@ func NewHub() *Hub {
 		pendingWidgetChatIDs: make(map[string]pendingWidgetChat),
 		driversByChatID:      make(map[string]*Client),
 		moClientsByChatID:    make(map[string]*Client),
-		Broadcast:            make(chan []byte),
 		Register:             make(chan *Client),
 		Unregister:           make(chan *Client),
 	}
 
-	// Запускаем очистку старых сообщений
-	go hub.cleanupOldMessages()
-
 	return hub
 }
 
-// cleanupOldMessages периодически очищает старые записи дедупликации
-func (h *Hub) cleanupOldMessages() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		now := time.Now()
-		h.sentMessages.Range(func(key, value interface{}) bool {
-			if timestamp, ok := value.(time.Time); ok {
-				if now.Sub(timestamp) > 5*time.Minute {
-					h.sentMessages.Delete(key)
-				}
-			}
-			return true
-		})
-	}
-}
-
-// Run слушает события регистрации, отключения и широковещания.
+// Run слушает события регистрации и отключения клиентов.
 func (h *Hub) Run() {
 	// Запускаем горутину для периодического логирования статистики
 	go h.logStats()
@@ -115,9 +89,6 @@ func (h *Hub) Run() {
 
 		case c := <-h.Unregister:
 			h.unregisterClient(c)
-
-		case msg := <-h.Broadcast:
-			h.broadcastMessage(msg)
 		}
 	}
 }
@@ -136,10 +107,11 @@ func (h *Hub) registerClient(c *Client) {
 		h.adminsByID[c.ID] = c
 		// DEBUG: log.Printf("Админ %s зарегистрирован в adminsByID, всего админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
-		if _, ok := h.widgetsByID[c.ChatID.String()]; !ok {
-			h.widgetsByID[c.ChatID.String()] = make(map[*Client]bool)
+		widgetChatID := c.GetChatID().String()
+		if _, ok := h.widgetsByID[widgetChatID]; !ok {
+			h.widgetsByID[widgetChatID] = make(map[*Client]bool)
 		}
-		h.widgetsByID[c.ChatID.String()][c] = true
+		h.widgetsByID[widgetChatID][c] = true
 
 		// Всегда сохраняем виджет по userID для возможности обновления chat_id
 		if c.UserIDString != "" {
@@ -171,19 +143,23 @@ func (h *Hub) registerClient(c *Client) {
 		}
 	} else if c.ClientType == ClientTypeDriver {
 		// moooving driver: один driver на чат
-		if c.ChatID != uuid.Nil {
-			h.driversByChatID[c.ChatID.String()] = c
+		if cid := c.GetChatID(); cid != uuid.Nil {
+			h.driversByChatID[cid.String()] = c
 		}
 	} else if c.ClientType == ClientTypeMoClient {
 		// moooving client: один client на чат
-		if c.ChatID != uuid.Nil {
-			h.moClientsByChatID[c.ChatID.String()] = c
+		if cid := c.GetChatID(); cid != uuid.Nil {
+			h.moClientsByChatID[cid.String()] = c
 		}
 	}
 
-	// Добавляем в карту клиентов чата
-	chatID := c.ChatID.String()
-	if chatID != "" {
+	// Добавляем в карту клиентов чата — только для клиентов, реально
+	// привязанных к чату (uuid.Nil — admin/виджет до создания чата — не группируем,
+	// иначе все они попадали в общий бакет "00000000-..." и могли получать чужие
+	// сообщения/typing). GetChatID читаем заново — для виджета он мог измениться
+	// выше в applyWidgetChatIDUpdateLocked.
+	if cid := c.GetChatID(); cid != uuid.Nil {
+		chatID := cid.String()
 		if _, ok := h.chatClients[chatID]; !ok {
 			h.chatClients[chatID] = make(map[*Client]bool)
 		}
@@ -223,14 +199,14 @@ func (h *Hub) unregisterClient(c *Client) {
 
 	// Удаляем из основной мапы
 	delete(h.clients, c)
-	close(c.Send)
+	c.closeSend()
 
 	// Удаляем по типу клиента
 	if c.ClientType == ClientTypeAdmin {
 		delete(h.adminsByID, c.ID)
 		// DEBUG: log.Printf("Админ %s удален из adminsByID, осталось админов: %d", c.ID, len(h.adminsByID))
 	} else if c.ClientType == ClientTypeWidget {
-		chatID := c.ChatID.String()
+		chatID := c.GetChatID().String()
 		if widgets, ok := h.widgetsByID[chatID]; ok {
 			delete(widgets, c)
 			if len(widgets) == 0 {
@@ -243,24 +219,24 @@ func (h *Hub) unregisterClient(c *Client) {
 		}
 		delete(h.widgetsByUserID, c.ID)
 	} else if c.ClientType == ClientTypeDriver {
-		if c.ChatID != uuid.Nil {
-			chatStr := c.ChatID.String()
+		if cid := c.GetChatID(); cid != uuid.Nil {
+			chatStr := cid.String()
 			if existing, ok := h.driversByChatID[chatStr]; ok && existing == c {
 				delete(h.driversByChatID, chatStr)
 			}
 		}
 	} else if c.ClientType == ClientTypeMoClient {
-		if c.ChatID != uuid.Nil {
-			chatStr := c.ChatID.String()
+		if cid := c.GetChatID(); cid != uuid.Nil {
+			chatStr := cid.String()
 			if existing, ok := h.moClientsByChatID[chatStr]; ok && existing == c {
 				delete(h.moClientsByChatID, chatStr)
 			}
 		}
 	}
 
-	// Удаляем из карты клиентов чата
-	chatID := c.ChatID.String()
-	if chatID != "" {
+	// Удаляем из карты клиентов чата (симметрично registerClient — только не-Nil)
+	if cid := c.GetChatID(); cid != uuid.Nil {
+		chatID := cid.String()
 		if clients, ok := h.chatClients[chatID]; ok {
 			delete(clients, c)
 			if len(clients) == 0 {
@@ -283,31 +259,6 @@ func (h *Hub) unregisterClient(c *Client) {
 	go h.SendConnectionStatus(c, false)
 }
 
-// broadcastMessage отправляет сообщение всем клиентам (исправлена race condition)
-func (h *Hub) broadcastMessage(msg []byte) {
-	h.mu.Lock()
-	disconnected := make([]*Client, 0)
-
-	for client := range h.clients {
-		select {
-		case client.Send <- msg:
-			// Сообщение успешно отправлено
-		default:
-			// Клиент не готов принять сообщение
-			disconnected = append(disconnected, client)
-		}
-	}
-	h.mu.Unlock()
-
-	// Отключаем клиентов, которые не смогли получить сообщение
-	for _, client := range disconnected {
-		h.cleanupClient(client)
-	}
-
-	// Примечание: TotalMessages теперь увеличивается только для реальных сообщений чата
-	// через IncrementChatMessage(), а не для служебных broadcast'ов
-}
-
 // cleanupClient асинхронно очищает клиента
 func (h *Hub) cleanupClient(client *Client) {
 	go func() {
@@ -317,26 +268,55 @@ func (h *Hub) cleanupClient(client *Client) {
 	}()
 }
 
-// BroadcastMessage шлёт сообщение всем подключённым клиентам.
-func (h *Hub) BroadcastMessage(message []byte) {
-	h.Broadcast <- message
+// trySend безопасно кладёт сообщение в канал клиента.
+// Если канал переполнен/закрыт — планирует очистку клиента и возвращает false.
+func (h *Hub) trySend(c *Client, message []byte) bool {
+	if c.TrySend(message) {
+		return true
+	}
+	go h.cleanupClient(c)
+	return false
+}
+
+// snapshotAdmins возвращает снапшот подключённых админов под RLock,
+// чтобы рассылка шла без удержания мьютекса.
+func (h *Hub) snapshotAdmins() []*Client {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	admins := make([]*Client, 0, len(h.adminsByID))
+	for _, admin := range h.adminsByID {
+		admins = append(admins, admin)
+	}
+	return admins
+}
+
+// fanout рассылает сообщения снапшоту клиентов. messageFor вызывается для
+// каждого клиента и может вернуть персонализированный payload; nil — пропуск.
+// Возвращает число успешно поставленных в очередь сообщений.
+func (h *Hub) fanout(clients []*Client, messageFor func(*Client) []byte) int {
+	sent := 0
+	for _, c := range clients {
+		msg := messageFor(c)
+		if msg == nil {
+			continue
+		}
+		if h.trySend(c, msg) {
+			sent++
+		}
+	}
+	return sent
 }
 
 // SendToAdmin пытается отправить сообщение конкретному админу.
 func (h *Hub) SendToAdmin(adminID string, message []byte) bool {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	if c, ok := h.adminsByID[adminID]; ok {
-		select {
-		case c.Send <- message:
-			return true
-		default:
-			go h.cleanupClient(c)
-			return false
-		}
+	c, ok := h.adminsByID[adminID]
+	h.mu.RUnlock()
+	if !ok {
+		return false
 	}
-	return false
+	return h.trySend(c, message)
 }
 
 // SendToChat вещает сообщение всем клиентам конкретного чата.
@@ -354,16 +334,7 @@ func (h *Hub) SendToChat(chatID string, message []byte) int {
 		return 0
 	}
 
-	sent := 0
-	for _, c := range clients {
-		select {
-		case c.Send <- message:
-			sent++
-		default:
-			go h.cleanupClient(c)
-		}
-	}
-
+	sent := h.fanout(clients, func(*Client) []byte { return message })
 	log.Printf("Отправлено %d сообщений в чат %s", sent, chatID)
 	return sent
 }
@@ -380,7 +351,7 @@ func (h *Hub) SendConnectionStatus(c *Client, online bool) {
 	}{
 		ClientType: c.ClientType,
 		ID:         c.ID,
-		ChatID:     c.ChatID.String(),
+		ChatID:     c.GetChatID().String(),
 		Online:     online,
 		Timestamp:  time.Now().Format(time.RFC3339),
 	}
@@ -440,103 +411,24 @@ func (h *Hub) GetOnlineAdminIDs() []uuid.UUID {
 
 // SendToAllAdmins отправляет сообщение всем подключенным админам
 func (h *Hub) SendToAllAdmins(message []byte) int {
-	h.mu.RLock()
-	admins := make([]*Client, 0, len(h.adminsByID))
-	for _, admin := range h.adminsByID {
-		admins = append(admins, admin)
-	}
-	h.mu.RUnlock()
-
-	if len(admins) == 0 {
-		// Не логируем, если админов нет - это частая ситуация
-		return 0
-	}
-
-	sent := 0
-	for _, admin := range admins {
-		// DEBUG: log.Printf("SendToAllAdmins: попытка отправить админу %s", admin.ID)
-		select {
-		case admin.Send <- message:
-			sent++
-			// DEBUG: log.Printf("SendToAllAdmins: сообщение успешно добавлено в канал админа %s", admin.ID)
-		default:
-			log.Printf("SendToAllAdmins: не удалось отправить админу %s (канал занят)", admin.ID)
-			go h.cleanupClient(admin)
-		}
-	}
-
-	// DEBUG: log.Printf("Отправлено %d сообщений всем админам (всего админов: %d)", sent, len(admins))
-	return sent
+	return h.fanout(h.snapshotAdmins(), func(*Client) []byte { return message })
 }
 
-// SendToAllAdminsWithCallback отправляет персонализированное сообщение каждому админу
-// callback вызывается для каждого админа и должен вернуть сообщение для этого админа
+// SendToAllAdminsWithCallback отправляет персонализированное сообщение каждому админу.
+// callback вызывается для каждого админа и должен вернуть сообщение для этого админа.
 func (h *Hub) SendToAllAdminsWithCallback(callback func(*Client) []byte) int {
-	h.mu.RLock()
-	admins := make([]*Client, 0, len(h.adminsByID))
-	for _, admin := range h.adminsByID {
-		admins = append(admins, admin)
-	}
-	h.mu.RUnlock()
-
-	if len(admins) == 0 {
-		log.Printf("SendToAllAdminsWithCallback: нет подключенных админов")
-		return 0
-	}
-
-	sent := 0
-	for _, admin := range admins {
-		// Генерируем персонализированное сообщение для этого админа
-		personalizedMessage := callback(admin)
-
-		select {
-		case admin.Send <- personalizedMessage:
-			sent++
-			log.Printf("SendToAllAdminsWithCallback: персонализированное сообщение отправлено админу %s", admin.ID)
-		default:
-			log.Printf("SendToAllAdminsWithCallback: не удалось отправить админу %s (канал занят)", admin.ID)
-			go h.cleanupClient(admin)
-		}
-	}
-
-	log.Printf("SendToAllAdminsWithCallback: отправлено %d персонализированных сообщений (всего админов: %d)", sent, len(admins))
-	return sent
+	return h.fanout(h.snapshotAdmins(), callback)
 }
 
-// SendToAllAdminsExcept отправляет сообщение всем админам КРОМЕ указанного
-// Используется чтобы не отправлять админу его собственное сообщение (оптимистичный UI)
+// SendToAllAdminsExcept отправляет сообщение всем админам КРОМЕ указанного.
+// Используется чтобы не отправлять админу его собственное сообщение (оптимистичный UI).
 func (h *Hub) SendToAllAdminsExcept(message []byte, excludeAdminID uuid.UUID) int {
-	h.mu.RLock()
-	admins := make([]*Client, 0, len(h.adminsByID))
-	for _, admin := range h.adminsByID {
-		// Пропускаем админа-отправителя
-		if admin.UserID == excludeAdminID {
-			log.Printf("SendToAllAdminsExcept: пропускаем админа-отправителя %s", excludeAdminID)
-			continue
+	return h.fanout(h.snapshotAdmins(), func(c *Client) []byte {
+		if c.UserID == excludeAdminID {
+			return nil // пропускаем админа-отправителя
 		}
-		admins = append(admins, admin)
-	}
-	h.mu.RUnlock()
-
-	if len(admins) == 0 {
-		log.Printf("SendToAllAdminsExcept: нет других админов (кроме %s)", excludeAdminID)
-		return 0
-	}
-
-	sent := 0
-	for _, admin := range admins {
-		select {
-		case admin.Send <- message:
-			sent++
-			log.Printf("SendToAllAdminsExcept: сообщение отправлено админу %s", admin.ID)
-		default:
-			log.Printf("SendToAllAdminsExcept: не удалось отправить админу %s (канал занят)", admin.ID)
-			go h.cleanupClient(admin)
-		}
-	}
-
-	log.Printf("SendToAllAdminsExcept: отправлено %d админам (исключен %s)", sent, excludeAdminID)
-	return sent
+		return message
+	})
 }
 
 // SendToChatAndAdmins отправляет сообщение как в чат, так и всем админам
@@ -547,7 +439,7 @@ func (h *Hub) SendToChatAndAdmins(chatID string, message []byte) int {
 }
 
 func (h *Hub) applyWidgetChatIDUpdateLocked(client *Client, newChatID uuid.UUID) {
-	oldChatIDStr := client.ChatID.String()
+	oldChatIDStr := client.GetChatID().String()
 	if oldChatIDStr != "" {
 		if widgets, ok := h.widgetsByID[oldChatIDStr]; ok {
 			delete(widgets, client)
@@ -563,7 +455,7 @@ func (h *Hub) applyWidgetChatIDUpdateLocked(client *Client, newChatID uuid.UUID)
 		}
 	}
 
-	client.ChatID = newChatID
+	client.SetChatID(newChatID)
 
 	newChatIDStr := newChatID.String()
 	if _, ok := h.widgetsByID[newChatIDStr]; !ok {
@@ -587,13 +479,7 @@ func (h *Hub) emitChatCreated(client *Client, newChatID uuid.UUID) bool {
 	if err != nil {
 		return false
 	}
-
-	select {
-	case client.Send <- msg:
-		return true
-	default:
-		return false
-	}
+	return client.TrySend(msg)
 }
 
 // UpdateWidgetChatID обновляет chat_id для виджета после создания чата
@@ -640,7 +526,7 @@ func (h *Hub) UpdateWidgetChatID(userID string, newChatID uuid.UUID, chatUserSou
 		return false
 	}
 
-	oldChatID := client.ChatID
+	oldChatID := client.GetChatID()
 	log.Printf("UpdateWidgetChatID: [SAFE] обновление chat_id для виджета %s: %s -> %s",
 		userID, oldChatID, newChatID)
 
@@ -717,13 +603,7 @@ func (h *Hub) SendToDriverInChat(chatID string, message []byte) bool {
 	if !ok {
 		return false
 	}
-	select {
-	case c.Send <- message:
-		return true
-	default:
-		go h.cleanupClient(c)
-		return false
-	}
+	return h.trySend(c, message)
 }
 
 // SendToMoClientInChat отправляет сообщение moooving-клиенту, подключенному к чату.
@@ -734,13 +614,7 @@ func (h *Hub) SendToMoClientInChat(chatID string, message []byte) bool {
 	if !ok {
 		return false
 	}
-	select {
-	case c.Send <- message:
-		return true
-	default:
-		go h.cleanupClient(c)
-		return false
-	}
+	return h.trySend(c, message)
 }
 
 // CloseMooovingChat отключает WS-клиентов moooving (driver, mo_client),
@@ -759,10 +633,7 @@ func (h *Hub) CloseMooovingChat(chatID string, finalMessage []byte) {
 
 	for _, c := range toDisconnect {
 		if finalMessage != nil {
-			select {
-			case c.Send <- finalMessage:
-			default:
-			}
+			c.TrySend(finalMessage)
 		}
 		go func(client *Client) {
 			time.Sleep(200 * time.Millisecond) // дать клиенту получить финальное сообщение

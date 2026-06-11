@@ -52,15 +52,22 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
 	// DEBUG: log.Printf("GetChats: найдено всего чатов с фильтром: %d", total)
 
 	// Основной запрос для получения чатов
+	// Непрочитанные считаем коррелированным LATERAL-подзапросом вместо
+	// LEFT JOIN messages + GROUP BY: это убирает раздувание строк
+	// (chat × messages) и группировку для чатов с большой историей.
 	const q = `
       SELECT
         c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,
         u.id,u.name,u.email,u.avatar,u.profile_url,
-        COUNT(CASE WHEN m.sender='user' AND m.read=false THEN 1 END) AS unread,
+        COALESCE(unr.cnt,0) AS unread,
         l.id,l.content,l.sender,l.timestamp
       FROM chats c
       JOIN users u ON c.user_id=u.id
-      LEFT JOIN messages m ON m.chat_id=c.id
+      LEFT JOIN LATERAL (
+        SELECT count(*) AS cnt
+          FROM messages
+         WHERE chat_id=c.id AND sender='user' AND read=false
+      ) unr ON TRUE
       LEFT JOIN LATERAL (
         SELECT id,content,sender,timestamp
           FROM messages
@@ -69,7 +76,6 @@ func GetChats(db *sql.DB, clientID, adminID uuid.UUID, page, size int) ([]models
          LIMIT 1
       ) l ON TRUE
       WHERE %s
-      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,u.profile_url,l.id,l.content,l.sender,l.timestamp
       ORDER BY c.updated_at DESC
       LIMIT $%d OFFSET $%d
     `
@@ -179,11 +185,15 @@ func GetRecentChatsForDirector(db *sql.DB, limit int, search string) ([]models.C
       SELECT
         c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,
         u.id,u.name,u.email,u.avatar,u.profile_url,
-        COUNT(CASE WHEN m.sender='user' AND m.read=false THEN 1 END) AS unread,
+        COALESCE(unr.cnt,0) AS unread,
         l.id,l.content,l.sender,l.timestamp
       FROM chats c
       JOIN users u ON c.user_id=u.id
-      LEFT JOIN messages m ON m.chat_id=c.id
+      LEFT JOIN LATERAL (
+        SELECT count(*) AS cnt
+          FROM messages
+         WHERE chat_id=c.id AND sender='user' AND read=false
+      ) unr ON TRUE
       LEFT JOIN LATERAL (
         SELECT id,content,sender,timestamp
           FROM messages
@@ -192,17 +202,16 @@ func GetRecentChatsForDirector(db *sql.DB, limit int, search string) ([]models.C
          LIMIT 1
       ) l ON TRUE`
 
-	groupAndOrder := `
-      GROUP BY c.id,c.created_at,c.updated_at,c.status,c.source,c.client_id,c.auto_responder_enabled,u.id,u.name,u.email,u.avatar,u.profile_url,l.id,l.content,l.sender,l.timestamp
+	orderBy := `
       ORDER BY c.updated_at DESC`
 
 	var rows *sql.Rows
 	var err error
 	if search != "" {
-		q := baseQ + ` WHERE u.name ILIKE '%' || $1 || '%'` + groupAndOrder + ` LIMIT $2`
+		q := baseQ + ` WHERE u.name ILIKE '%' || $1 || '%'` + orderBy + ` LIMIT $2`
 		rows, err = db.QueryContext(ctx, q, search, limit)
 	} else {
-		q := baseQ + groupAndOrder + ` LIMIT $1`
+		q := baseQ + orderBy + ` LIMIT $1`
 		rows, err = db.QueryContext(ctx, q, limit)
 	}
 	if err != nil {
@@ -270,24 +279,32 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 	defer cancel()
 
 	var (
-		chat            models.Chat
-		userID          uuid.UUID
-		assignedNull    sql.NullString
-		orderIDNull     sql.NullInt64
-		clientExtNull   sql.NullInt64
-		driverExtNull   sql.NullInt64
+		chat           models.Chat
+		user           models.User
+		assignedNull   sql.NullString
+		orderIDNull    sql.NullInt64
+		clientExtNull  sql.NullInt64
+		driverExtNull  sql.NullInt64
+		avatarNull     sql.NullString
+		profileURLNull sql.NullString
 	)
 
+	// Чат и пользователь — одним JOIN-запросом вместо двух round-trip'ов
+	// (симметрично GetChatLightweight).
 	chatQuery := `
-        SELECT id,created_at,updated_at,status,user_id,
-               source,bot_id,client_id,assigned_to,auto_responder_enabled,is_archived,
-               order_id, client_id_ext, driver_id_ext
-          FROM chats WHERE id=$1`
+        SELECT c.id,c.created_at,c.updated_at,c.status,
+               c.source,c.bot_id,c.client_id,c.assigned_to,c.auto_responder_enabled,c.is_archived,
+               c.order_id, c.client_id_ext, c.driver_id_ext,
+               u.id,u.name,u.email,u.avatar,u.profile_url,u.source,u.source_id
+          FROM chats c
+          JOIN users u ON c.user_id = u.id
+         WHERE c.id=$1`
 
 	if err := db.QueryRowContext(ctx, chatQuery, chatID).Scan(
 		&chat.ID, &chat.CreatedAt, &chat.UpdatedAt, &chat.Status,
-		&userID, &chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled, &chat.IsArchived,
+		&chat.Source, &chat.BotID, &chat.ClientID, &assignedNull, &chat.AutoResponderEnabled, &chat.IsArchived,
 		&orderIDNull, &clientExtNull, &driverExtNull,
+		&user.ID, &user.Name, &user.Email, &avatarNull, &profileURLNull, &user.Source, &user.SourceID,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, 0, fmt.Errorf("чат не найден")
@@ -311,22 +328,6 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 	if driverExtNull.Valid {
 		v := driverExtNull.Int64
 		chat.DriverIDExt = &v
-	}
-
-	// DEBUG: log.Printf("GetChatByID: найден чат ID=%s, userID=%s", chat.ID, userID)
-
-	// Получаем данные пользователя
-	var (
-		user       models.User
-		avatarNull sql.NullString
-	)
-	userQuery := `SELECT id,name,email,avatar,profile_url,source,source_id FROM users WHERE id=$1`
-
-	var profileURLNull sql.NullString
-	if err := db.QueryRowContext(ctx, userQuery, userID).Scan(
-		&user.ID, &user.Name, &user.Email, &avatarNull, &profileURLNull, &user.Source, &user.SourceID,
-	); err != nil {
-		return nil, 0, fmt.Errorf("ошибка получения пользователя: %w", err)
 	}
 
 	user.Avatar = nullStringToPointer(avatarNull)
@@ -407,27 +408,38 @@ func GetChatByID(db *sql.DB, chatID uuid.UUID, limit int, beforeTimestamp string
 		return nil, 0, fmt.Errorf("ошибка обработки сообщений: %w", err)
 	}
 
-	// Получаем последнее сообщение в чате
-	var last models.Message
-	var raw []byte
-	lastMsgQuery := `
+	// Последнее сообщение чата. При первой загрузке (before=="") оно уже является
+	// последним элементом chat.Messages (порядок ASC) — отдельный запрос не нужен.
+	// Берём копию (а не указатель в слайс), чтобы последующий перевод истории
+	// in-place не затронул LastMessage. При пагинации в историю (before!="")
+	// последний элемент — старое сообщение, поэтому подгружаем явно.
+	if beforeTimestamp == "" {
+		if n := len(chat.Messages); n > 0 {
+			lastCopy := chat.Messages[n-1]
+			chat.LastMessage = &lastCopy
+		}
+	} else {
+		var last models.Message
+		var raw []byte
+		lastMsgQuery := `
         SELECT id,content,sender,sender_id,timestamp,read,type,metadata
           FROM messages
          WHERE chat_id=$1
          ORDER BY timestamp DESC LIMIT 1`
 
-	err = db.QueryRowContext(ctx, lastMsgQuery, chatID).Scan(
-		&last.ID, &last.Content, &last.Sender, &last.SenderID,
-		&last.Timestamp, &last.Read, &last.Type, &raw,
-	)
-	if err == nil {
-		last.ChatID = chatID
-		if len(raw) > 0 {
-			_ = json.Unmarshal(raw, &last.Metadata)
+		err = db.QueryRowContext(ctx, lastMsgQuery, chatID).Scan(
+			&last.ID, &last.Content, &last.Sender, &last.SenderID,
+			&last.Timestamp, &last.Read, &last.Type, &raw,
+		)
+		if err == nil {
+			last.ChatID = chatID
+			if len(raw) > 0 {
+				_ = json.Unmarshal(raw, &last.Metadata)
+			}
+			chat.LastMessage = &last
+		} else if err != sql.ErrNoRows {
+			return nil, 0, fmt.Errorf("ошибка получения последнего сообщения: %w", err)
 		}
-		chat.LastMessage = &last
-	} else if err != sql.ErrNoRows {
-		return nil, 0, fmt.Errorf("ошибка получения последнего сообщения: %w", err)
 	}
 
 	// DEBUG: log.Printf("GetChatByID: успешно, возвращаем чат с %d сообщениями", len(chat.Messages))

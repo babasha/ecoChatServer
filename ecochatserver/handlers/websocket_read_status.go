@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/egor/ecochatserver/database"
 	"github.com/egor/ecochatserver/database/queries"
@@ -24,17 +23,12 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 		return
 	}
 
-	if p.ChatID == "" && p.ChatIDOld != "" {
-		p.ChatID = p.ChatIDOld
-	}
-
-	chatID, err := uuid.Parse(p.ChatID)
-	if err != nil {
-		client.SendError("invalid_uuid", "Некорректный формат chatID")
+	chatID, ok := resolveChatID(client, p.ChatID, p.ChatIDOld)
+	if !ok {
 		return
 	}
 
-	if !enforceMooovingChatScope(client, chatID) {
+	if !enforceChatScope(client, chatID) {
 		return
 	}
 
@@ -44,14 +38,9 @@ func processMarkAsRead(client *websocketpkg.Client, payload json.RawMessage, gin
 	}
 
 	// Конвертируем строки в UUID
-	messageUUIDs := make([]uuid.UUID, 0, len(p.MessageIDs))
-	for _, idStr := range p.MessageIDs {
-		msgUUID, err := uuid.Parse(idStr)
-		if err != nil {
-			client.SendError("invalid_uuid", "Некорректный формат messageId: "+idStr)
-			return
-		}
-		messageUUIDs = append(messageUUIDs, msgUUID)
+	messageUUIDs, ok := parseMessageIDs(client, p.MessageIDs)
+	if !ok {
+		return
 	}
 
 	log.Printf("processMarkAsRead: отметка %d сообщений как прочитанных в чате %s", len(messageUUIDs), chatID)
@@ -104,13 +93,12 @@ func processMarkReadFromWidget(client *websocketpkg.Client, payload json.RawMess
 		return
 	}
 
-	chatID, err := uuid.Parse(p.ChatID)
-	if err != nil {
-		client.SendError("invalid_uuid", "Некорректный формат chatID")
+	chatID, ok := resolveChatID(client, p.ChatID, "")
+	if !ok {
 		return
 	}
 
-	if !enforceMooovingChatScope(client, chatID) {
+	if !enforceChatScope(client, chatID) {
 		return
 	}
 
@@ -138,15 +126,9 @@ func processMarkReadFromWidget(client *websocketpkg.Client, payload json.RawMess
 	log.Printf("processMarkReadFromWidget: клиент пометил %d конкретных сообщений админа как прочитанные в чате %s", len(p.MessageIDs), chatID)
 
 	// Конвертируем строки в UUID
-	messageUUIDs := make([]uuid.UUID, 0, len(p.MessageIDs))
-	for _, idStr := range p.MessageIDs {
-		msgUUID, err := uuid.Parse(idStr)
-		if err != nil {
-			log.Printf("processMarkReadFromWidget: некорректный UUID: %s", idStr)
-			client.SendError("invalid_uuid", "Некорректный формат messageId: "+idStr)
-			return
-		}
-		messageUUIDs = append(messageUUIDs, msgUUID)
+	messageUUIDs, ok := parseMessageIDs(client, p.MessageIDs)
+	if !ok {
+		return
 	}
 
 	// Помечаем конкретные сообщения как прочитанные
