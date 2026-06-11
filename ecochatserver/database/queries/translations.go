@@ -14,11 +14,16 @@ func SaveTranslation(db *sql.DB, messageID uuid.UUID, language string, translati
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
 
-	// Обновляем metadata используя jsonb_set для добавления перевода
+	// Обновляем metadata используя jsonb_set для добавления перевода.
+	// ВАЖНО: jsonb_set НЕ создаёт промежуточный объект 'translations', если его
+	// ещё нет (возвращает JSON без изменений). Поэтому сначала гарантируем его
+	// наличие через `|| jsonb_build_object('translations', <existing or {}>)`,
+	// сохраняя уже записанные языки, и только потом ставим конкретный ключ.
 	query := `
 		UPDATE messages
 		SET metadata = jsonb_set(
-			COALESCE(metadata, '{}'::jsonb),
+			COALESCE(metadata, '{}'::jsonb)
+				|| jsonb_build_object('translations', COALESCE(metadata->'translations', '{}'::jsonb)),
 			ARRAY['translations', $2],
 			to_jsonb($3::text),
 			true
@@ -72,7 +77,8 @@ func SaveTranslationsBatch(db *sql.DB, translations map[uuid.UUID]map[string]str
 	stmt, err := tx.PrepareContext(ctx, `
 		UPDATE messages
 		SET metadata = jsonb_set(
-			COALESCE(metadata, '{}'::jsonb),
+			COALESCE(metadata, '{}'::jsonb)
+				|| jsonb_build_object('translations', COALESCE(metadata->'translations', '{}'::jsonb)),
 			ARRAY['translations', $2],
 			to_jsonb($3::text),
 			true
