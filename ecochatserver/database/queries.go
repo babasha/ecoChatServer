@@ -782,6 +782,62 @@ const (
 	MooovingBotID        = queries.MooovingBotID
 )
 
+// ─── morada integration (visitor↔agent) ────────────────────────────────────
+
+// MoradaChatRequest re-exports queries.MoradaChatRequest.
+type MoradaChatRequest = queries.MoradaChatRequest
+
+// MoradaChatSummary re-exports queries.MoradaChatSummary.
+type MoradaChatSummary = queries.MoradaChatSummary
+
+// GetOrCreateMoradaChat создаёт или возвращает чат (объект↔посетитель) morada.
+func GetOrCreateMoradaChat(req queries.MoradaChatRequest) (*models.Chat, error) {
+	chat, err := queries.GetOrCreateMoradaChat(DB, req)
+	if err != nil {
+		return nil, err
+	}
+	if chat.IsNewChat {
+		InvalidateChatsCache()
+	}
+	return chat, nil
+}
+
+// GetMoradaChatByID возвращает morada-чат по UUID (или nil, если это не morada-чат).
+func GetMoradaChatByID(chatID uuid.UUID) (*models.Chat, error) {
+	return queries.GetMoradaChatByID(DB, chatID)
+}
+
+// CloseMoradaChat архивирует morada-чат.
+func CloseMoradaChat(chatID uuid.UUID) error {
+	if err := queries.CloseMoradaChat(DB, chatID); err != nil {
+		return err
+	}
+	InvalidateChatsCache()
+	return nil
+}
+
+// GetMoradaChatsForAgent возвращает активные morada-чаты владельца/агента.
+func GetMoradaChatsForAgent(agentExtID int64, limit int) ([]queries.MoradaChatSummary, error) {
+	return queries.GetMoradaChatsForAgent(DB, agentExtID, limit)
+}
+
+// GetMoradaChatsForVisitor возвращает активные morada-чаты посетителя.
+func GetMoradaChatsForVisitor(visitorExtID int64, limit int) ([]queries.MoradaChatSummary, error) {
+	return queries.GetMoradaChatsForVisitor(DB, visitorExtID, limit)
+}
+
+// MoradaUserUUID — детерминированный UUID для int-ID из morada (sender_id в messages).
+func MoradaUserUUID(role string, extUserID int64) uuid.UUID {
+	return queries.MoradaUserUUID(role, extUserID)
+}
+
+const (
+	MoradaVisitorSource = queries.MoradaVisitorSource
+	MoradaAgentSource   = queries.MoradaAgentSource
+	MoradaChatSource    = queries.MoradaChatSource
+	MoradaBotID         = queries.MoradaBotID
+)
+
 // ============================================================================
 // Director Webhook Events (external trigger logging)
 // ============================================================================

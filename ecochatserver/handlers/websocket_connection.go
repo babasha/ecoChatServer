@@ -244,6 +244,87 @@ func ServeWs(c *gin.Context) {
 		c.Set("moooving_user_type", expectedUserType)
 		c.Set("moooving_ext_user_id", claims.ExtUserID)
 		c.Set("moooving_order_id", claims.OrderID)
+	} else if clientType == websocketpkg.ClientTypeMoradaVisitor || clientType == websocketpkg.ClientTypeMoradaAgent {
+		// morada: посетитель сайта или владелец/агентство.
+		// Аутентификация — через JWT с Issuer=morada-chat, выпускаемый REST endpoint
+		// POST /api/morada/chat/token (см. morada_handler.go). Токен несёт целевой
+		// chat_id, поэтому здесь грузим чат по нему и проверяем принадлежность.
+		if token == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Отсутствует токен авторизации"})
+			return
+		}
+		claims, err := middleware.ValidateToken(token)
+		if err != nil {
+			log.Printf("ServeWs[morada]: ошибка валидации токена: %v", err)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
+			return
+		}
+		if claims.Issuer != middleware.MoradaTokenIssuer {
+			log.Printf("ServeWs[morada]: неверный Issuer=%q (ожидается %q)", claims.Issuer, middleware.MoradaTokenIssuer)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Токен не предназначен для чата morada"})
+			return
+		}
+
+		expectedUserType := "visitor"
+		if clientType == websocketpkg.ClientTypeMoradaAgent {
+			expectedUserType = "agent"
+		}
+		if claims.MoradaUserType != expectedUserType {
+			log.Printf("ServeWs[morada]: token UserType=%q, требуется %q", claims.MoradaUserType, expectedUserType)
+			c.JSON(http.StatusForbidden, gin.H{"error": "Токен не соответствует типу клиента"})
+			return
+		}
+		if claims.MoradaChatID == "" || claims.MoradaExtID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "В токене отсутствует chat_id/ext_id"})
+			return
+		}
+
+		moradaChatID, perr := uuid.Parse(claims.MoradaChatID)
+		if perr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный chat_id в токене"})
+			return
+		}
+
+		moChat, err := database.GetMoradaChatByID(moradaChatID)
+		if err != nil {
+			log.Printf("ServeWs[morada]: ошибка поиска чата %s: %v", moradaChatID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска чата"})
+			return
+		}
+		if moChat == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Чат не найден"})
+			return
+		}
+
+		// Проверка принадлежности: ext_id должен совпадать со стороной чата.
+		if expectedUserType == "agent" {
+			if moChat.DriverIDExt == nil || *moChat.DriverIDExt != claims.MoradaExtID {
+				log.Printf("ServeWs[morada]: agent ext=%d не привязан к чату %s", claims.MoradaExtID, moradaChatID)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Вы не назначены на этот чат"})
+				return
+			}
+		} else {
+			if moChat.ClientIDExt == nil || *moChat.ClientIDExt != claims.MoradaExtID {
+				log.Printf("ServeWs[morada]: visitor ext=%d не привязан к чату %s", claims.MoradaExtID, moradaChatID)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Вы не участник этого чата"})
+				return
+			}
+		}
+
+		chatID = moChat.ID
+
+		// userID для sender_id в messages — детерминированный UUID.
+		var userSource string
+		if expectedUserType == "agent" {
+			userSource = database.MoradaAgentSource
+		} else {
+			userSource = database.MoradaVisitorSource
+		}
+		adminID = database.MoradaUserUUID(userSource, claims.MoradaExtID)
+
+		c.Set("morada_user_type", expectedUserType)
+		c.Set("morada_ext_id", claims.MoradaExtID)
+		c.Set("morada_chat_id", claims.MoradaChatID)
 	} else if clientType == "widget" {
 		// Для виджета парсим chatID только если он передан
 		if chatIDStr != "" {

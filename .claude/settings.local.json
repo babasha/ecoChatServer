@@ -23,7 +23,17 @@
       "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go test ./handlers/... -skip 'LMStudio'; Write-Output \"=== TEST EXIT: $LASTEXITCODE ===\")",
       "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go build ./...; Write-Output \"=== BUILD EXIT: $LASTEXITCODE ===\"; & $go vet ./handlers/... ./websocket/...; Write-Output \"=== VET EXIT: $LASTEXITCODE ===\")",
       "PowerShell($go = \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\"; Set-Location \"C:\\\\Users\\\\egorb\\\\OneDrive\\\\Documentos\\\\ecoChatServer\\\\ecochatserver\"; & $go test ./handlers/... -skip 'LMStudio'; Write-Output \"=== HANDLERS TEST EXIT: $LASTEXITCODE ===\"; & $go vet ./handlers/sessions_handler.go 2>$null; & $go build -race ./websocket/...; Write-Output \"=== RACE BUILD EXIT: $LASTEXITCODE ===\")",
-      "PowerShell(& \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" build ./... ; & \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" vet ./handlers ./websocket \"./database/queries\")"
+      "PowerShell(& \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" build ./... ; & \"C:\\\\Program Files\\\\Go\\\\bin\\\\go.exe\" vet ./handlers ./websocket \"./database/queries\")",
+      "PowerShell(railway *)",
+      "PowerShell(railway list *)",
+      "PowerShell(railway variables *)",
+      "PowerShell(railway logs *)",
+      "PowerShell(railway status *)",
+      "PowerShell(New-Item *)",
+      "PowerShell($env:PG_URL=\"postgresql://postgres:dxaOuRbZatOwWAfYUZyqsaXbePlUNXzG@thomas.proxy.rlwy.net:34169/railway\"; node \"$env:TEMP\\\\ecochat-migrate\\\\run.js\" 2>&1)",
+      "PowerShell(railway domain *)",
+      "PowerShell($ErrorActionPreference='SilentlyContinue'; try { $r = Invoke-WebRequest -Uri 'https://ecochatserver-production-49b1.up.railway.app/' -UseBasicParsing -TimeoutSec 20; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output $r.Content.Substring\\(0,[Math]::Min\\(300,$r.Content.Length\\)\\) } catch { Write-Output \"HTTP ERR: $\\($_.Exception.Message\\)\"; if\\($_.Exception.Response\\){Write-Output \"CODE: $\\([int]$_.Exception.Response.StatusCode\\)\"} })",
+      "PowerShell($ErrorActionPreference='SilentlyContinue'; try { $r = Invoke-WebRequest -Uri 'https://ecochatserver-production-49b1.up.railway.app/api/health' -UseBasicParsing -TimeoutSec 20; Write-Output \"HEALTH: $\\($r.StatusCode\\)\"; Write-Output $r.Content } catch { Write-Output \"ERR: $\\($_.Exception.Message\\)\" })"
     ]
   }
 }

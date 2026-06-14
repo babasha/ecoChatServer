@@ -127,6 +127,11 @@ type JWTClaims struct {
 	ExtUserID int64  `json:"extUserId,omitempty"` // moooving user.id (int)
 	OrderID   int64  `json:"orderId,omitempty"`   // moooving order.id (int)
 
+	// morada chat integration (Issuer="morada-chat")
+	MoradaUserType string `json:"mUserType,omitempty"` // "visitor" | "agent"
+	MoradaExtID    int64  `json:"mExtId,omitempty"`    // morada user id (посетитель или агент)
+	MoradaChatID   string `json:"mChatId,omitempty"`   // целевой чат (UUID)
+
 	jwt.RegisteredClaims
 }
 
@@ -149,6 +154,33 @@ func GenerateMooovingChatToken(userType string, extUserID, orderID int64, ttl ti
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    MooovingTokenIssuer,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtKey)
+}
+
+// MoradaTokenIssuer — Issuer для JWT токенов чата, выдаваемых morada-юзерам
+// (посетителям сайта и владельцам/агентам).
+const MoradaTokenIssuer = "morada-chat"
+
+// GenerateMoradaChatToken выпускает короткоживущий JWT для подключения
+// посетителя или агента morada к WebSocket-чату конкретного объекта.
+// userType: "visitor" или "agent". extUserID — morada user id. chatID — UUID чата.
+func GenerateMoradaChatToken(userType string, extUserID int64, chatID string, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		ttl = 1 * time.Hour
+	}
+
+	claims := &JWTClaims{
+		MoradaUserType: userType,
+		MoradaExtID:    extUserID,
+		MoradaChatID:   chatID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    MoradaTokenIssuer,
 		},
 	}
 

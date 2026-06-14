@@ -13,6 +13,9 @@ const (
 	ClientTypeWidget   = "widget"
 	ClientTypeDriver   = "driver"   // moooving: водитель
 	ClientTypeMoClient = "mo_client" // moooving: авторизованный клиент
+
+	ClientTypeMoradaVisitor = "morada_visitor" // morada: посетитель сайта
+	ClientTypeMoradaAgent   = "morada_agent"   // morada: владелец/агентство
 )
 
 // Hub отвечает за регистрацию  клиентов и  вещание сообщений.

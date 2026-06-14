@@ -30,6 +30,20 @@ var allowedMessagesForClientType = map[string]map[string]bool{
 		"mark_read":   true,
 		"typing":      true,
 	},
+	websocketpkg.ClientTypeMoradaVisitor: {
+		"sendMessage": true,
+		"getChatByID": true,
+		"markAsRead":  true,
+		"mark_read":   true,
+		"typing":      true,
+	},
+	websocketpkg.ClientTypeMoradaAgent: {
+		"sendMessage": true,
+		"getChatByID": true,
+		"markAsRead":  true,
+		"mark_read":   true,
+		"typing":      true,
+	},
 	websocketpkg.ClientTypeWidget: {
 		"sendMessage":       true,
 		"getChatByID":       true,

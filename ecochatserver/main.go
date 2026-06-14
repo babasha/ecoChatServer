@@ -524,6 +524,29 @@ func setupAPIRoutes(r *gin.Engine) {
 			}
 		}
 
+		// ─── morada integration (недвижимость) ────────────────────────────
+		// Чат «посетитель сайта ↔ владелец/агентство об объекте». Структурно
+		// зеркало moooving: s2s под shared secret, fe под JWT morada-chat.
+		mor := api.Group("/morada")
+		mor.Use(middleware.ModerateRateLimitMiddleware())
+		{
+			s2sMor := mor.Group("/")
+			s2sMor.Use(handlers.MoradaSharedSecretMiddleware())
+			{
+				s2sMor.POST("/chat/open", handlers.MoradaOpenChat)
+				s2sMor.POST("/chat/close", handlers.MoradaCloseChat)
+				s2sMor.POST("/chat/token", handlers.MoradaIssueToken)
+			}
+
+			// Frontend endpoints (visitor/agent из morada приложения)
+			feMor := mor.Group("/")
+			feMor.Use(handlers.MoradaTokenMiddleware())
+			{
+				feMor.GET("/chats", handlers.MoradaMyChats)
+				feMor.GET("/chats/:id/messages", handlers.MoradaChatMessages)
+			}
+		}
+
 		// Webhook для Telegram и других внешних сервисов
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 		api.GET("/instagram/webhook", handlers.InstagramWebhookVerify)

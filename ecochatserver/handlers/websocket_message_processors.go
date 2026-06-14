@@ -44,7 +44,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	switch client.ClientType {
 	case "admin":
 		maxLength = 2000 // Админ может писать более развернуто
-	case websocketpkg.ClientTypeDriver, websocketpkg.ClientTypeMoClient:
+	case websocketpkg.ClientTypeDriver, websocketpkg.ClientTypeMoClient,
+		websocketpkg.ClientTypeMoradaVisitor, websocketpkg.ClientTypeMoradaAgent:
 		maxLength = 1500
 	default:
 		maxLength = 1000 // Клиент (виджет) ограничен меньшим лимитом
@@ -93,6 +94,10 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	isMoooving := client.ClientType == websocketpkg.ClientTypeDriver ||
 		client.ClientType == websocketpkg.ClientTypeMoClient
 
+	// morada-чаты (посетитель↔агент) доставляются напрямую внутри чата.
+	isMorada := client.ClientType == websocketpkg.ClientTypeMoradaVisitor ||
+		client.ClientType == websocketpkg.ClientTypeMoradaAgent
+
 	switch client.ClientType {
 	case "admin":
 		// Для админа берем ID из контекста аутентификации
@@ -117,6 +122,14 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		// moooving: авторизованный клиент пишет водителю по заказу
 		senderID = client.UserID
 		sender = "user"
+	case websocketpkg.ClientTypeMoradaVisitor:
+		// morada: посетитель сайта пишет владельцу/агенту об объекте
+		senderID = client.UserID
+		sender = "user"
+	case websocketpkg.ClientTypeMoradaAgent:
+		// morada: владелец/агентство отвечает посетителю
+		senderID = client.UserID
+		sender = "driver"
 	default:
 		// Виджет (анонимный клиент) — старый flow
 		senderID = client.UserID
@@ -156,6 +169,9 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	// чтобы LLM-перевод не блокировал ReadPump. Порядок у получателя держится по
 	// timestamp в payload; DB-порядок гарантирован синхронным AddMessage.
 	switch {
+	case isMorada:
+		// morada: прямая доставка обеим сторонам чата (посетитель↔агент).
+		go deliverMoradaMessage(chatID, message)
 	case sender == "user" && AutoResponder != nil && !isMoooving:
 		// Виджет-чат с автоответчиком: ответ бота обрабатывается асинхронно.
 		go runWidgetAutoResponder(lightChat, chatID, message)
