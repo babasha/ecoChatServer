@@ -56,12 +56,17 @@ func upsertMoradaUser(ctx context.Context, tx *sql.Tx, source string, extUserID 
 		}
 	}
 
+	// Synthetic but UNIQUE email per (source, ext id): the users table has a
+	// unique index on email, so the moooving pattern of inserting '' would
+	// collide on the second synthetic user. These addresses are non-routable.
+	email := fmt.Sprintf("%s+%d@morada.local", source, extUserID)
+
 	_, err := tx.ExecContext(ctx, `
         INSERT INTO users (id, name, email, source, source_id, created_at)
-        VALUES ($1, $2, '', $3, $4, $5)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (source, source_id) DO UPDATE
             SET name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE users.name END
-    `, id, displayName, source, sourceIDStr, time.Now())
+    `, id, displayName, email, source, sourceIDStr, time.Now())
 
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("upsert morada user: %w", err)
