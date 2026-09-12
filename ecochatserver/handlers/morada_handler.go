@@ -24,18 +24,28 @@ import (
 )
 
 // moradaSecretHeader — заголовок с shared secret для server-to-server вызовов.
+// morada is being renamed to tudonuma project-wide; the Rust side now sends
+// X-Tudonuma-Secret / TUDONUMA_SHARED_SECRET, so both names are accepted here
+// until every caller is confirmed to have moved.
 const moradaSecretHeader = "X-Morada-Secret"
+const tudonumaSecretHeader = "X-Tudonuma-Secret"
 
-// MoradaSharedSecretMiddleware проверяет общий секрет между ecoChat и morada Rust.
+// MoradaSharedSecretMiddleware проверяет общий секрет между ecoChat и morada/tudonuma Rust.
 func MoradaSharedSecretMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		expected := os.Getenv("MORADA_SHARED_SECRET")
 		if expected == "" {
-			log.Println("MoradaSharedSecretMiddleware: MORADA_SHARED_SECRET не задан — отклоняем все запросы")
+			expected = os.Getenv("TUDONUMA_SHARED_SECRET")
+		}
+		if expected == "" {
+			log.Println("MoradaSharedSecretMiddleware: MORADA_SHARED_SECRET/TUDONUMA_SHARED_SECRET не заданы — отклоняем все запросы")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "morada integration not configured"})
 			return
 		}
 		got := c.GetHeader(moradaSecretHeader)
+		if got == "" {
+			got = c.GetHeader(tudonumaSecretHeader)
+		}
 		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid morada secret"})
 			return

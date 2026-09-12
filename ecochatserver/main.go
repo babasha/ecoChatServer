@@ -547,6 +547,31 @@ func setupAPIRoutes(r *gin.Engine) {
 			}
 		}
 
+		// ─── tudonuma integration ──────────────────────────────────────────
+		// morada is being renamed to tudonuma project-wide; the Rust side now
+		// calls these paths (and sends X-Tudonuma-Secret) instead of /morada.
+		// Same handlers, same DB rows (MoradaChatSource) — this is a routing
+		// alias, not a second integration. Remove the /morada group above once
+		// no /api/morada/chat traffic has been seen for a while.
+		tud := api.Group("/tudonuma")
+		tud.Use(middleware.ModerateRateLimitMiddleware())
+		{
+			s2sTud := tud.Group("/")
+			s2sTud.Use(handlers.MoradaSharedSecretMiddleware())
+			{
+				s2sTud.POST("/chat/open", handlers.MoradaOpenChat)
+				s2sTud.POST("/chat/close", handlers.MoradaCloseChat)
+				s2sTud.POST("/chat/token", handlers.MoradaIssueToken)
+			}
+
+			feTud := tud.Group("/")
+			feTud.Use(handlers.MoradaTokenMiddleware())
+			{
+				feTud.GET("/chats", handlers.MoradaMyChats)
+				feTud.GET("/chats/:id/messages", handlers.MoradaChatMessages)
+			}
+		}
+
 		// Webhook для Telegram и других внешних сервисов
 		api.POST("/telegram/webhook", handlers.TelegramWebhook)
 		api.GET("/instagram/webhook", handlers.InstagramWebhookVerify)

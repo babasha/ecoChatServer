@@ -90,6 +90,16 @@ func ServeWs(c *gin.Context) {
 	clientType := c.DefaultQuery("type", "admin")
 	chatIDStr := c.Query("chat_id")
 
+	// tudonuma is the renamed morada frontend — same identity/behaviour, alias
+	// its client type onto the existing morada_* constants so every downstream
+	// switch (hub routing, message processors) needs no change.
+	switch clientType {
+	case "tudonuma_visitor":
+		clientType = websocketpkg.ClientTypeMoradaVisitor
+	case "tudonuma_agent":
+		clientType = websocketpkg.ClientTypeMoradaAgent
+	}
+
 	// Для виджета chat_id необязателен - может быть создан позже
 	// DEBUG: можно убрать этот лог
 	// if clientType == "widget" && chatIDStr == "" {
