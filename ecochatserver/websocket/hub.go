@@ -16,6 +16,7 @@ const (
 
 	ClientTypeMoradaVisitor = "morada_visitor" // morada: посетитель сайта
 	ClientTypeMoradaAgent   = "morada_agent"   // morada: владелец/агентство
+	ClientTypeMoradaSupport = "morada_support" // morada/tudonuma: поддержка сайта (админ)
 )
 
 // Hub отвечает за регистрацию  клиентов и  вещание сообщений.

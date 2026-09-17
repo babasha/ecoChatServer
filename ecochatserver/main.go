@@ -554,17 +554,28 @@ func setupAPIRoutes(r *gin.Engine) {
 		// alias, not a second integration. Remove the /morada group above once
 		// no /api/morada/chat traffic has been seen for a while.
 		tud := api.Group("/tudonuma")
-		tud.Use(middleware.ModerateRateLimitMiddleware())
 		{
+			// s2s: every call comes from the ONE tudonuma server IP, on behalf of
+			// all its users (inbox polls, token mints, the support desk). The
+			// per-IP 60/min limit the browser-facing group uses would be one
+			// shared bucket for the whole site, so the secret-authenticated
+			// group gets a ceiling sized for that instead.
 			s2sTud := tud.Group("/")
+			s2sTud.Use(middleware.RateLimitMiddleware(3000, 1*time.Minute))
 			s2sTud.Use(handlers.MoradaSharedSecretMiddleware())
 			{
 				s2sTud.POST("/chat/open", handlers.MoradaOpenChat)
 				s2sTud.POST("/chat/close", handlers.MoradaCloseChat)
 				s2sTud.POST("/chat/token", handlers.MoradaIssueToken)
+				// Чат поддержки сайта (посетитель ↔ админы tudonuma).
+				s2sTud.POST("/support/open", handlers.MoradaSupportOpen)
+				s2sTud.GET("/support/chats", handlers.MoradaSupportList)
+				s2sTud.GET("/support/counts", handlers.MoradaSupportCounts)
+				s2sTud.POST("/support/status", handlers.MoradaSupportSetStatus)
 			}
 
 			feTud := tud.Group("/")
+			feTud.Use(middleware.ModerateRateLimitMiddleware())
 			feTud.Use(handlers.MoradaTokenMiddleware())
 			{
 				feTud.GET("/chats", handlers.MoradaMyChats)

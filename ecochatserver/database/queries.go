@@ -831,7 +831,54 @@ func MoradaUserUUID(role string, extUserID int64) uuid.UUID {
 	return queries.MoradaUserUUID(role, extUserID)
 }
 
+// ─── morada support (visitor↔site support team) ────────────────────────────
+
+// MoradaSupportSummary re-exports queries.MoradaSupportSummary.
+type MoradaSupportSummary = queries.MoradaSupportSummary
+
+// MoradaSupportCounts re-exports queries.MoradaSupportCounts.
+type MoradaSupportCounts = queries.MoradaSupportCounts
+
+func ensureMoradaSupportSchema() error {
+	return queries.EnsureMoradaSupportSchema(DB)
+}
+
+// GetOrCreateMoradaSupportChat возвращает (или создаёт) чат поддержки посетителя.
+func GetOrCreateMoradaSupportChat(visitorID int64, visitorName, clientAPIKey string) (uuid.UUID, bool, error) {
+	id, created, err := queries.GetOrCreateMoradaSupportChat(DB, visitorID, visitorName, clientAPIKey)
+	if err == nil && created {
+		InvalidateChatsCache()
+	}
+	return id, created, err
+}
+
+// IsMoradaSupportChat — true, если это чат поддержки morada.
+func IsMoradaSupportChat(chatID uuid.UUID) (bool, error) {
+	return queries.IsMoradaSupportChat(DB, chatID)
+}
+
+// ListMoradaSupportChats — инбокс поддержки ("open" | "resolved" | "all").
+func ListMoradaSupportChats(filter string, limit int) ([]queries.MoradaSupportSummary, error) {
+	return queries.ListMoradaSupportChats(DB, filter, limit)
+}
+
+// CountMoradaSupportChats — счётчики инбокса поддержки.
+func CountMoradaSupportChats() (queries.MoradaSupportCounts, error) {
+	return queries.CountMoradaSupportChats(DB)
+}
+
+// SetMoradaSupportStatus — решён / снова открыт.
+func SetMoradaSupportStatus(chatID uuid.UUID, resolved bool) error {
+	return queries.SetMoradaSupportStatus(DB, chatID, resolved)
+}
+
+// ReopenMoradaSupportChat — снова открыть решённый чат (посетитель написал).
+func ReopenMoradaSupportChat(chatID uuid.UUID) (bool, error) {
+	return queries.ReopenMoradaSupportChat(DB, chatID)
+}
+
 const (
+	MoradaSupportSource = queries.MoradaSupportSource
 	MoradaVisitorSource = queries.MoradaVisitorSource
 	MoradaAgentSource   = queries.MoradaAgentSource
 	MoradaChatSource    = queries.MoradaChatSource

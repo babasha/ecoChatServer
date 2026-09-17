@@ -196,8 +196,9 @@ func MoradaIssueToken(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-	if req.UserType != "visitor" && req.UserType != "agent" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "userType must be visitor or agent"})
+	// "support" — сотрудник поддержки сайта (morada выпускает только админам).
+	if req.UserType != "visitor" && req.UserType != "agent" && req.UserType != "support" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "userType must be visitor, agent or support"})
 		return
 	}
 	if _, err := uuid.Parse(req.ChatID); err != nil {
@@ -303,6 +304,9 @@ func MoradaChatMessages(c *gin.Context) {
 		allowed = chat.DriverIDExt != nil && *chat.DriverIDExt == uID
 	case "visitor":
 		allowed = chat.ClientIDExt != nil && *chat.ClientIDExt == uID
+	case "support":
+		// Поддержка читает любой чат поддержки — и только их.
+		allowed, _ = database.IsMoradaSupportChat(chatID)
 	}
 	if !allowed {
 		c.JSON(http.StatusForbidden, gin.H{"error": "доступ к чату запрещён"})
@@ -320,6 +324,19 @@ func MoradaChatMessages(c *gin.Context) {
 // Обе стороны (посетитель и агент) зарегистрированы в hub.chatClients[chatID],
 // поэтому достаточно широковещалки по чату — moooving-специфика не задействуется.
 func deliverMoradaMessage(chatID uuid.UUID, message *models.Message) {
+	// Посетитель написал в решённый чат поддержки — чат снова открыт.
+	// Для обычных чатов по объекту UPDATE ничего не находит (morada_support=false).
+	if message.Sender == "user" {
+		if reopened, err := database.ReopenMoradaSupportChat(chatID); err != nil {
+			log.Printf("deliverMoradaMessage: reopen support chat %s: %v", chatID, err)
+		} else if reopened && WebSocketHub != nil {
+			if st, err := websocketpkg.NewMessage("support_status", map[string]interface{}{
+				"chatId": chatID.String(), "status": "open",
+			}); err == nil {
+				WebSocketHub.SendToChat(chatID.String(), st)
+			}
+		}
+	}
 	if WebSocketHub == nil {
 		return
 	}

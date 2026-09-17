@@ -224,6 +224,7 @@ type MoradaChatSummary struct {
 	ListingID   *int64          `json:"listingId,omitempty"`
 	VisitorID   *int64          `json:"visitorId,omitempty"`
 	AgentID     *int64          `json:"agentId,omitempty"`
+	IsSupport   bool            `json:"isSupport,omitempty"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 	UnreadCount int             `json:"unreadCount"`
 	LastMessage *moradaLastMsg  `json:"lastMessage,omitempty"`
@@ -269,7 +270,7 @@ func listMoradaChatsBy(db *sql.DB, column string, extID int64, limit int, unread
 
 	q := fmt.Sprintf(`
         SELECT
-          c.id, c.morada_listing_id, c.client_id_ext, c.driver_id_ext, c.updated_at,
+          c.id, c.morada_listing_id, c.client_id_ext, c.driver_id_ext, c.updated_at, c.morada_support,
           COUNT(CASE WHEN %s AND m.read = false THEN 1 END) AS unread,
           l.content, l.sender, l.timestamp
         FROM chats c
@@ -279,7 +280,7 @@ func listMoradaChatsBy(db *sql.DB, column string, extID int64, limit int, unread
              WHERE chat_id = c.id ORDER BY timestamp DESC LIMIT 1
         ) l ON TRUE
         WHERE c.source = 'morada' AND c.%s = $1 AND c.is_archived = false
-        GROUP BY c.id, c.morada_listing_id, c.client_id_ext, c.driver_id_ext, c.updated_at,
+        GROUP BY c.id, c.morada_listing_id, c.client_id_ext, c.driver_id_ext, c.updated_at, c.morada_support,
                  l.content, l.sender, l.timestamp
         ORDER BY c.updated_at DESC
         LIMIT $2`, unreadCondition, column)
@@ -305,7 +306,7 @@ func listMoradaChatsBy(db *sql.DB, column string, extID int64, limit int, unread
 			lastTimestamp sql.NullTime
 		)
 		if err := rows.Scan(
-			&s.ChatID, &listingNull, &visitorNull, &agentNull, &s.UpdatedAt,
+			&s.ChatID, &listingNull, &visitorNull, &agentNull, &s.UpdatedAt, &s.IsSupport,
 			&s.UnreadCount,
 			&lastContent, &lastSender, &lastTimestamp,
 		); err != nil {

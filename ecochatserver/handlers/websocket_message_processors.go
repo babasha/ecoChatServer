@@ -45,7 +45,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	case "admin":
 		maxLength = 2000 // Админ может писать более развернуто
 	case websocketpkg.ClientTypeDriver, websocketpkg.ClientTypeMoClient,
-		websocketpkg.ClientTypeMoradaVisitor, websocketpkg.ClientTypeMoradaAgent:
+		websocketpkg.ClientTypeMoradaVisitor, websocketpkg.ClientTypeMoradaAgent,
+		websocketpkg.ClientTypeMoradaSupport:
 		maxLength = 1500
 	default:
 		maxLength = 1000 // Клиент (виджет) ограничен меньшим лимитом
@@ -96,7 +97,8 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 
 	// morada-чаты (посетитель↔агент) доставляются напрямую внутри чата.
 	isMorada := client.ClientType == websocketpkg.ClientTypeMoradaVisitor ||
-		client.ClientType == websocketpkg.ClientTypeMoradaAgent
+		client.ClientType == websocketpkg.ClientTypeMoradaAgent ||
+		client.ClientType == websocketpkg.ClientTypeMoradaSupport
 
 	switch client.ClientType {
 	case "admin":
@@ -128,6 +130,11 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 		sender = "user"
 	case websocketpkg.ClientTypeMoradaAgent:
 		// morada: владелец/агентство отвечает посетителю
+		senderID = client.UserID
+		sender = "driver"
+	case websocketpkg.ClientTypeMoradaSupport:
+		// morada: поддержка сайта отвечает посетителю. Та же сторона чата, что и
+		// агент (sender='driver'); какой сотрудник ответил — видно по sender_id.
 		senderID = client.UserID
 		sender = "driver"
 	default:
@@ -394,9 +401,9 @@ func processTypingStatus(client *websocketpkg.Client, payload json.RawMessage, g
 	// Определяем тип отправителя
 	sender := "admin"
 	switch client.ClientType {
-	case "widget", websocketpkg.ClientTypeMoClient:
+	case "widget", websocketpkg.ClientTypeMoClient, websocketpkg.ClientTypeMoradaVisitor:
 		sender = "user"
-	case websocketpkg.ClientTypeDriver:
+	case websocketpkg.ClientTypeDriver, websocketpkg.ClientTypeMoradaAgent, websocketpkg.ClientTypeMoradaSupport:
 		sender = "driver"
 	}
 

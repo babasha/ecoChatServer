@@ -30,7 +30,8 @@ func enforceChatScope(client *websocket.Client, chatID uuid.UUID) bool {
 	}
 	switch client.ClientType {
 	case websocket.ClientTypeDriver, websocket.ClientTypeMoClient,
-		websocket.ClientTypeMoradaVisitor, websocket.ClientTypeMoradaAgent:
+		websocket.ClientTypeMoradaVisitor, websocket.ClientTypeMoradaAgent,
+		websocket.ClientTypeMoradaSupport:
 		log.Printf("enforceChatScope[security]: %s обратился к чату %s (его чат: %s)",
 			client.ClientType, chatID, clientChatID)
 		client.SendError("forbidden", "Это не ваш чат")

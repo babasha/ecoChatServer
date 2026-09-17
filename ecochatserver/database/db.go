@@ -76,6 +76,11 @@ func Init() error {
 		// Не прерываем запуск сервера из-за партиций
 	}
 
+	// Колонка/индексы чата поддержки morada/tudonuma (идемпотентно).
+	if err := ensureMoradaSupportSchema(); err != nil {
+		log.Printf("[database] Warning: схема чата поддержки morada: %v", err)
+	}
+
 	// Создаём таблицы для Director AI (если не существуют)
 	if err := ensureDirectorTables(); err != nil {
 		log.Printf("[database] Warning: не удалось создать таблицы Director: %v", err)

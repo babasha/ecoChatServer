@@ -98,6 +98,8 @@ func ServeWs(c *gin.Context) {
 		clientType = websocketpkg.ClientTypeMoradaVisitor
 	case "tudonuma_agent":
 		clientType = websocketpkg.ClientTypeMoradaAgent
+	case "tudonuma_support":
+		clientType = websocketpkg.ClientTypeMoradaSupport
 	}
 
 	// Для виджета chat_id необязателен - может быть создан позже
@@ -254,7 +256,8 @@ func ServeWs(c *gin.Context) {
 		c.Set("moooving_user_type", expectedUserType)
 		c.Set("moooving_ext_user_id", claims.ExtUserID)
 		c.Set("moooving_order_id", claims.OrderID)
-	} else if clientType == websocketpkg.ClientTypeMoradaVisitor || clientType == websocketpkg.ClientTypeMoradaAgent {
+	} else if clientType == websocketpkg.ClientTypeMoradaVisitor || clientType == websocketpkg.ClientTypeMoradaAgent ||
+		clientType == websocketpkg.ClientTypeMoradaSupport {
 		// morada: посетитель сайта или владелец/агентство.
 		// Аутентификация — через JWT с Issuer=morada-chat, выпускаемый REST endpoint
 		// POST /api/morada/chat/token (см. morada_handler.go). Токен несёт целевой
@@ -276,8 +279,11 @@ func ServeWs(c *gin.Context) {
 		}
 
 		expectedUserType := "visitor"
-		if clientType == websocketpkg.ClientTypeMoradaAgent {
+		switch clientType {
+		case websocketpkg.ClientTypeMoradaAgent:
 			expectedUserType = "agent"
+		case websocketpkg.ClientTypeMoradaSupport:
+			expectedUserType = "support"
 		}
 		if claims.MoradaUserType != expectedUserType {
 			log.Printf("ServeWs[morada]: token UserType=%q, требуется %q", claims.MoradaUserType, expectedUserType)
@@ -307,7 +313,17 @@ func ServeWs(c *gin.Context) {
 		}
 
 		// Проверка принадлежности: ext_id должен совпадать со стороной чата.
-		if expectedUserType == "agent" {
+		// Поддержка — не сторона конкретного чата, а команда: любой сотрудник
+		// (tudonuma выпускает support-токены только админам) может войти в
+		// любой чат поддержки, но только в чат поддержки.
+		if expectedUserType == "support" {
+			isSupport, serr := database.IsMoradaSupportChat(moradaChatID)
+			if serr != nil || !isSupport {
+				log.Printf("ServeWs[morada]: support ext=%d → чат %s не является чатом поддержки (err=%v)", claims.MoradaExtID, moradaChatID, serr)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Это не чат поддержки"})
+				return
+			}
+		} else if expectedUserType == "agent" {
 			if moChat.DriverIDExt == nil || *moChat.DriverIDExt != claims.MoradaExtID {
 				log.Printf("ServeWs[morada]: agent ext=%d не привязан к чату %s", claims.MoradaExtID, moradaChatID)
 				c.JSON(http.StatusForbidden, gin.H{"error": "Вы не назначены на этот чат"})
@@ -327,6 +343,8 @@ func ServeWs(c *gin.Context) {
 		var userSource string
 		if expectedUserType == "agent" {
 			userSource = database.MoradaAgentSource
+		} else if expectedUserType == "support" {
+			userSource = database.MoradaSupportSource
 		} else {
 			userSource = database.MoradaVisitorSource
 		}
