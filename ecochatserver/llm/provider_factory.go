@@ -283,6 +283,7 @@ const (
 	RoleTranslator ProviderRole = "TRANSLATOR" // Перевод сообщений (маленькая быстрая модель)
 	RoleResponder  ProviderRole = "RESPONDER"  // Авто-ответчик (средняя модель)
 	RoleDirector   ProviderRole = "DIRECTOR"   // Директор/аналитик (большая облачная модель)
+	RoleSupport    ProviderRole = "SUPPORT"    // Чат поддержки сайта (ИИ-ответчик, support_ai.go)
 )
 
 // RoleConfig — конфигурация провайдера для конкретной роли

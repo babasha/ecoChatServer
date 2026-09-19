@@ -179,6 +179,12 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	case isMorada:
 		// morada: прямая доставка обеим сторонам чата (посетитель↔агент).
 		go deliverMoradaMessage(chatID, message)
+		// Чат поддержки с включённым ИИ: ответ бота — отдельной горутиной, уже
+		// после доставки сообщения посетителя. maybeRunSupportAI сам проверит,
+		// что это чат поддержки и что ИИ включён (SUPPORT_AI_ENABLED).
+		if sender == "user" {
+			go maybeRunSupportAI(chatID, message)
+		}
 	case sender == "user" && AutoResponder != nil && !isMoooving:
 		// Виджет-чат с автоответчиком: ответ бота обрабатывается асинхронно.
 		go runWidgetAutoResponder(lightChat, chatID, message)

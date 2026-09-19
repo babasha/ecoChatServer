@@ -185,7 +185,7 @@ func (a *OpenAIAdapter) GenerateResponse(
 	chatHistory []Message,
 	opts *GenerateOptions,
 ) (*Response, error) {
-	messages := a.buildMessages(userMessage, chatHistory, "")
+	messages := a.buildMessages(userMessage, chatHistory, optsSystemPrompt(opts))
 
 	req := openAIChatRequest{
 		Model:    a.model,
@@ -234,7 +234,7 @@ func (a *OpenAIAdapter) GenerateWithTools(
 	tools []Tool,
 	opts *GenerateOptions,
 ) (*Response, error) {
-	messages := a.buildMessages(userMessage, chatHistory, "")
+	messages := a.buildMessages(userMessage, chatHistory, optsSystemPrompt(opts))
 	openaiTools := a.convertTools(tools)
 
 	req := openAIChatRequest{
@@ -633,4 +633,15 @@ func (a *OpenAIAdapter) parseResponse(resp *openAIChatResponse) *Response {
 	}
 
 	return result
+}
+
+// optsSystemPrompt возвращает системный промпт из опций (пустая строка, если
+// опций нет). До этого GenerateResponse/GenerateWithTools молча теряли
+// opts.SystemPrompt — в отличие от всех остальных адаптеров (gemini, claude,
+// codex), которые его учитывают.
+func optsSystemPrompt(opts *GenerateOptions) string {
+	if opts == nil {
+		return ""
+	}
+	return opts.SystemPrompt
 }

@@ -1,0 +1,46 @@
+[Unit]
+Description=ecoChatServer (chat bridge, Go/gin)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/ecochat
+# Read by systemd as root before the drop to `ecochat`; the file stays
+# 0600 root:root. Must carry HOST=127.0.0.1 — the only caller is nginx on
+# this box, and without it the server listens on every interface
+# (audit 2026-09-18).
+EnvironmentFile=/root/ecochat/.env
+ExecStart=/root/ecochat/ecochatserver
+Restart=on-failure
+RestartSec=3
+# System user (useradd --system --shell /usr/sbin/nologin), owns /root/ecochat
+# so server_settings.json and the binary swap keep working.
+User=ecochat
+Group=ecochat
+MemoryHigh=512M
+MemoryMax=768M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/root/ecochat
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# Postgres + Redis on loopback, the OAuth/Instagram calls outward, the journal.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

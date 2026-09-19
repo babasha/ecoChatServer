@@ -206,7 +206,11 @@ func main() {
 	setupAPIRoutes(r)
 
 	// ─── HTTP-server ─────────────────────────────────────────────────────────
-	addr := ":" + getEnv("PORT", "8080")
+	// HOST bounds the interface. Empty (the default) keeps the old behaviour
+	// of every interface; production sets HOST=127.0.0.1 because the only
+	// caller is nginx on the same box — before this the server sat on *:8080
+	// with nothing but the firewall in front of it (audit 2026-09-18).
+	addr := getEnv("HOST", "") + ":" + getEnv("PORT", "8080")
 	logInfo("HTTP сервер запускается на " + addr)
 
 	server := &http.Server{
