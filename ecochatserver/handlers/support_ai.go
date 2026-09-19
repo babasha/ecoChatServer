@@ -190,10 +190,60 @@ func supportAITakeSlot(chatID uuid.UUID) bool {
 // maybeRunSupportAI решает, должен ли ИИ ответить на сообщение посетителя, и
 // отвечает. Вызывается в отдельной горутине из processSendMessage: ни ReadPump,
 // ни доставка сообщения посетителя её не ждут.
+//
+// Один ход на чат одновременно. Люди пишут очередями («oi» / «procuro apê» /
+// «no centro»), и без этой очереди каждое сообщение запускало свой ход
+// параллельно: три оплаченных ответа внахлёст, и каждый не видит, что уже
+// показали остальные. Пока ход идёт, новые сообщения только запоминаются
+// (последнее вытесняет предыдущее); по окончании хода отвечаем ОДИН раз на
+// последнее — предыдущие оно увидит в истории.
 func maybeRunSupportAI(chatID uuid.UUID, userMsg *models.Message) {
 	if userMsg == nil || userMsg.Sender != "user" {
 		return
 	}
+
+	supportAIBusyMu.Lock()
+	if _, busy := supportAIBusy[chatID]; busy {
+		supportAIBusy[chatID] = userMsg
+		supportAIBusyMu.Unlock()
+		return
+	}
+	supportAIBusy[chatID] = nil
+	supportAIBusyMu.Unlock()
+
+	// Паника в ходе не должна навсегда оставить чат «занятым».
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[SUPPORT_AI] паника в ходе чата %s: %v", chatID, r)
+			supportAIBusyMu.Lock()
+			delete(supportAIBusy, chatID)
+			supportAIBusyMu.Unlock()
+		}
+	}()
+
+	for {
+		runSupportAI(chatID, userMsg)
+
+		supportAIBusyMu.Lock()
+		next := supportAIBusy[chatID]
+		if next == nil {
+			delete(supportAIBusy, chatID)
+			supportAIBusyMu.Unlock()
+			return
+		}
+		supportAIBusy[chatID] = nil
+		supportAIBusyMu.Unlock()
+		userMsg = next
+	}
+}
+
+var (
+	supportAIBusyMu sync.Mutex
+	// Ключ есть — ход идёт; значение — последнее сообщение, пришедшее за это время.
+	supportAIBusy = map[uuid.UUID]*models.Message{}
+)
+
+func runSupportAI(chatID uuid.UUID, userMsg *models.Message) {
 	if !database.GetSettingBool("SUPPORT_AI_ENABLED", false) {
 		return
 	}

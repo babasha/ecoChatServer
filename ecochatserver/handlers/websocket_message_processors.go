@@ -149,6 +149,16 @@ func processSendMessage(client *websocketpkg.Client, payload json.RawMessage, gi
 	// история отдаётся с ленивым переводом при чтении — корректность сохраняется.
 	log.Printf("processSendMessage: добавление сообщения в чат %s от %s (%s)", chatID, sender, senderID)
 
+	// SECURITY: metadata от участника интеграционного чата не принимаем. В этих
+	// чатах metadata — канал СЕРВЕРА: туда пишут ответчик поддержки (ai,
+	// aiHandoff) и вебхук интегратора (его вложения, которые фронт рисует как
+	// доверенные). Принятая от клиента, она позволяла любому участнику выдать
+	// своё сообщение за ответ ассистента и подложить собеседнику произвольное
+	// вложение со ссылкой. Штатные клиенты этих чатов metadata не шлют.
+	if isMorada {
+		p.Metadata = nil
+	}
+
 	message, err := database.AddMessage(chatID, p.Content, sender, senderID, p.Type, p.Metadata)
 	if err != nil {
 		log.Printf("processSendMessage: ошибка добавления сообщения: %v", err)
