@@ -384,15 +384,12 @@ func setupCORS(r *gin.Engine) {
 
 		conf = cors.Config{
 			AllowOriginFunc: func(origin string) bool {
-				// Разрешаем все домены из списка
-				if slices.Contains(allow, origin) {
-					return true
-				}
-				// Разрешаем все Vercel preview deployments
-				if strings.HasSuffix(origin, ".vercel.app") {
-					return true
-				}
-				return false
+				// Только домены из списка. Раньше сюда же проходил любой
+				// *.vercel.app — с AllowCredentials: true, то есть любой, кто
+				// выложит страницу на Vercel, читал бы ответы от имени
+				// посетителя. Превью-домен, который нужен, пишется в
+				// ALLOWED_ORIGINS явно.
+				return slices.Contains(allow, origin)
 			},
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Widget-User-ID", "X-API-Key", "Cookie", "X-Hub-Signature-256"},
